@@ -1,6 +1,7 @@
 {
     "compilerOptions": {
         "composite": true,
+        "erasableSyntaxOnly": true,
         "lib": ["ES2024"],
         "module": "ESNext",
         "moduleResolution": "bundler",
@@ -9,5 +10,5 @@
     },
     "exclude": ["worker-configuration.d.ts"],
     "extends": "./tsconfig.json",
-    "include": ["*.ts", "*.mts"]
+    "include": ["*.ts", "*.mts", "migrations/**/*.ts", "scripts/**/*.ts"]
 }

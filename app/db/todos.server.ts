@@ -1,13 +1,8 @@
-import { env } from "cloudflare:workers";
-import { and, asc, desc, eq, gte, lt, or, type SQL, sql } from "drizzle-orm";
-import { drizzle as drizzleD1, type DrizzleD1Database } from "drizzle-orm/d1";
-import { drizzle as drizzlePg } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { type Expression, type ExpressionBuilder, type Selectable, sql, type SqlBool } from "kysely";
 
-import * as d1Schema from "./schema.d1";
-import * as pgSchema from "./schema.pg";
+import { type Database, getDb } from "./db.server";
 
-export type Todo = typeof d1Schema.todos.$inferSelect;
+export type Todo = { id: string; userId: string; title: string; done: boolean; createdAt: Date };
 
 export type TodoSort = { field: "title" | "done" | "createdAt"; direction: "asc" | "desc" };
 
@@ -27,81 +22,78 @@ type TodoRepository = {
     delete(userId: string, id: string): Promise<void>;
 };
 
+type TodoExpressionBuilder = ExpressionBuilder<Database, "todos">;
+
 // Create per request: Workers don't allow sharing I/O objects (e.g. db connections) between requests
 export function getTodoRepository(): TodoRepository {
-    if (env.DB_DIALECT === "postgres") {
-        if (!env.HYPERDRIVE) {
-            throw new Error("HYPERDRIVE binding missing");
-        }
-        const db = drizzlePg(postgres(env.HYPERDRIVE.connectionString, { max: 5, fetch_types: false }), { casing: "snake_case" });
-        // The query builder API used below is identical for both dialects, only the TypeScript types differ
-        return createTodoRepository(db as unknown as DrizzleD1Database, pgSchema.todos as unknown as typeof d1Schema.todos);
-    }
+    const db = getDb();
 
-    if (!env.DB) {
-        throw new Error("DB binding missing");
-    }
-    return createTodoRepository(drizzleD1(env.DB, { casing: "snake_case" }), d1Schema.todos);
-}
-
-function createTodoRepository(db: DrizzleD1Database, todos: typeof d1Schema.todos): TodoRepository {
     return {
         list: async (userId, { offset, limit, sort, filter }) => {
-            const filterConditions = filter.items.map((item) => filterCondition(todos, item));
-            const where = and(eq(todos.userId, userId), filter.logicOperator === "or" ? or(...filterConditions) : and(...filterConditions));
-            const orderBy = sort.map(({ field, direction }) => {
+            const where = (eb: TodoExpressionBuilder) => {
+                const conditions: Expression<SqlBool>[] = [eb("userId", "=", userId)];
+                if (filter.items.length > 0) {
+                    const filterConditions = filter.items.map((item) => filterCondition(eb, item));
+                    conditions.push(filter.logicOperator === "or" ? eb.or(filterConditions) : eb.and(filterConditions));
+                }
+                return eb.and(conditions);
+            };
+
+            let rowsQuery = db.selectFrom("todos").selectAll().where(where);
+            for (const { field, direction } of sort) {
                 // case-insensitive in both dialects (SQLite compares binary by default)
-                const column = field === "title" ? sql`lower(${todos.title})` : todos[field];
-                return direction === "asc" ? asc(column) : desc(column);
-            });
-            const [rows, totalCount] = await Promise.all([
+                rowsQuery = rowsQuery.orderBy(field === "title" ? sql`lower(${sql.ref("title")})` : field, direction);
+            }
+            rowsQuery = rowsQuery.orderBy("createdAt", "desc").orderBy("id", "desc").limit(limit).offset(offset);
+
+            const [rows, { count }] = await Promise.all([
+                rowsQuery.execute(),
                 db
-                    .select()
-                    .from(todos)
+                    .selectFrom("todos")
+                    .select((eb) => eb.fn.countAll().as("count"))
                     .where(where)
-                    .orderBy(...orderBy, desc(todos.createdAt), desc(todos.id))
-                    .limit(limit)
-                    .offset(offset),
-                db.$count(todos, where),
+                    .executeTakeFirstOrThrow(),
             ]);
-            return { rows, totalCount };
+            // count is a string in PostgreSQL (bigint) and a number in D1
+            return { rows: rows.map(toTodo), totalCount: Number(count) };
         },
         create: async (userId, title) => {
-            await db.insert(todos).values({ userId, title });
+            await db.insertInto("todos").values({ id: crypto.randomUUID(), userId, title, createdAt: new Date() }).execute();
         },
         update: async (userId, id, values) => {
-            await db
-                .update(todos)
-                .set(values)
-                .where(and(eq(todos.id, id), eq(todos.userId, userId)));
+            await db.updateTable("todos").set(values).where("id", "=", id).where("userId", "=", userId).execute();
         },
         delete: async (userId, id) => {
-            await db.delete(todos).where(and(eq(todos.id, id), eq(todos.userId, userId)));
+            await db.deleteFrom("todos").where("id", "=", id).where("userId", "=", userId).execute();
         },
     };
 }
 
-function filterCondition(todos: typeof d1Schema.todos, filter: TodoFilter): SQL | undefined {
+function toTodo(row: Selectable<Database["todos"]>): Todo {
+    return { ...row, done: Boolean(row.done), createdAt: new Date(row.createdAt) };
+}
+
+function filterCondition(eb: TodoExpressionBuilder, filter: TodoFilter): Expression<SqlBool> {
     switch (filter.field) {
         case "title": {
             // case-insensitive in both dialects (no ILIKE in SQLite), wildcards in the value are matched literally
             const value = filter.value.toLowerCase().replace(/[\\%_]/g, "\\$&");
             const pattern = { contains: `%${value}%`, equals: value, startsWith: `${value}%`, endsWith: `%${value}` }[filter.operator];
-            return sql`lower(${todos.title}) like ${pattern} escape '\\'`;
+            return sql<SqlBool>`lower(${eb.ref("title")}) like ${pattern} escape '\\'`;
         }
         case "done":
-            return eq(todos.done, filter.value);
+            return eb("done", "=", filter.value);
         case "createdAt": {
             // minute precision, like the DataGrid's dateTime filter
             const minute = new Date(filter.value);
             minute.setSeconds(0, 0);
             const nextMinute = new Date(minute.getTime() + 60_000);
             return {
-                after: gte(todos.createdAt, nextMinute),
-                onOrAfter: gte(todos.createdAt, minute),
-                before: lt(todos.createdAt, minute),
-                onOrBefore: lt(todos.createdAt, nextMinute),
-            }[filter.operator];
+                after: () => eb("createdAt", ">=", nextMinute),
+                onOrAfter: () => eb("createdAt", ">=", minute),
+                before: () => eb("createdAt", "<", minute),
+                onOrBefore: () => eb("createdAt", "<", nextMinute),
+            }[filter.operator]();
         }
     }
 }

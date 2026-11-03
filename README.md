@@ -1,6 +1,6 @@
 # serverless-todos
 
-Minimal todo app: React Router (framework mode) on Cloudflare Workers, MUI + DataGrid, Drizzle, OIDC login.
+Minimal todo app: React Router (framework mode) on Cloudflare Workers, MUI + DataGrid, Kysely, OIDC login.
 
 Locally the app runs in the real Workers runtime (workerd) via `@cloudflare/vite-plugin`; D1 is emulated as a local SQLite database in `.wrangler/`.
 
@@ -23,14 +23,19 @@ Login users are defined in `dev-oidc-provider.config.mts`.
 
 ## Database
 
-Two dialects with one schema each (`app/db/schema.d1.ts`, `app/db/schema.pg.ts`) and a common repository (`app/db/todos.server.ts`). The dialect is selected by the wrangler environment (`DB_DIALECT`).
+[Kysely](https://kysely.dev) with one schema type for both dialects (`app/db/db.server.ts`) and a common repository (`app/db/todos.server.ts`). The dialect is selected by the wrangler environment (`DB_DIALECT`):
 
-After changing a schema (keep both in sync):
+- D1: own minimal dialect (`app/db/d1-dialect.ts`), stores booleans as 0/1 and dates as epoch milliseconds. No transactions.
+- PostgreSQL: Kysely's `PostgresDialect` with `pg` via Hyperdrive.
+
+Migrations are written once in TypeScript with the Kysely schema builder (`migrations/*.ts`). Column types that differ between the dialects come from the migration context (`types.uuid`, `types.boolean`, `types.timestamp`).
+
+After adding a migration:
 
 ```bash
-pnpm db:generate     # generates migrations into drizzle/d1 and drizzle/pg
+pnpm db:generate     # compiles migrations to SQL for D1 (migrations/d1, applied by wrangler)
 pnpm db:migrate:d1   # local D1
-pnpm db:migrate:pg   # postgres from DATABASE_URL
+pnpm db:migrate:pg   # postgres from DATABASE_URL (Kysely Migrator)
 ```
 
 ## Deployment (Cloudflare)
