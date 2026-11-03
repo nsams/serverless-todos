@@ -1,78 +1,21 @@
 import { Add, Delete, Logout } from "@dextinity/admin-icons";
 import { AppBar, Box, Button, Checkbox, Container, IconButton, Paper, Stack, TextField, Toolbar, Typography } from "@mui/material";
-import {
-    DataGridPro,
-    getGridBooleanOperators,
-    getGridDateOperators,
-    getGridStringOperators,
-    GridActionsCellItem,
-    type GridColDef,
-    type GridFilterModel,
-    type GridFilterOperator,
-    GridLogicOperator,
-    type GridSortModel,
-} from "@mui/x-data-grid-pro";
+import { DataGridPro, GridActionsCellItem, type GridColDef } from "@mui/x-data-grid-pro";
 import { useEffect, useRef } from "react";
 import { data, Form, redirect, useFetcher, useLocation, useNavigation, useSearchParams, useSubmit } from "react-router";
 
 import { requireUser } from "~/auth.server";
-import { getTodoRepository, type Todo, type TodoFilter, type TodoFilterModel, type TodoSort } from "~/db/todos.server";
+import { todoGridFields } from "~/db/todos";
+import { getTodoRepository, type Todo } from "~/db/todos.server";
+import { filterModelToSearchParams, gridFilterOperators, pageSizeOptions, parseGridState, sortModelToSearchParams } from "~/grid/searchParams";
 
 import type { Route } from "./+types/todos";
 
-const pageSizeOptions = [10, 25, 50];
-
-const filterOperators: { [Field in TodoFilter["field"]]: Extract<TodoFilter, { field: Field }>["operator"][] } = {
-    title: ["contains", "equals", "startsWith", "endsWith"],
-    done: ["is"],
-    createdAt: ["after", "onOrAfter", "before", "onOrBefore"],
-};
-
-function isTodoField(field: string | undefined): field is TodoFilter["field"] {
-    return field !== undefined && Object.hasOwn(filterOperators, field);
-}
-
-// Grid state (pagination, sorting, filtering) lives in the URL, parsed the same way on server and client:
-// ?page=0&pageSize=25&sort=title:asc&sort=done:desc&filter=title:contains:milk&filter=done:is:false&filterLogic=or
-function parseGridState(searchParams: URLSearchParams) {
-    const page = Math.max(0, Number.parseInt(searchParams.get("page") ?? "", 10) || 0);
-    const requestedPageSize = Number(searchParams.get("pageSize"));
-    const pageSize = pageSizeOptions.includes(requestedPageSize) ? requestedPageSize : 25;
-
-    const sort: TodoSort[] = [];
-    for (const param of searchParams.getAll("sort")) {
-        const [field, direction] = param.split(":");
-        if (isTodoField(field) && (direction === "asc" || direction === "desc") && !sort.some((item) => item.field === field)) {
-            sort.push({ field, direction });
-        }
-    }
-    const sortModel: GridSortModel = sort.map(({ field, direction }) => ({ field, sort: direction }));
-
-    const logicOperator = searchParams.get("filterLogic") === "or" ? "or" : "and";
-    const filter: TodoFilterModel = { items: [], logicOperator };
-    const filterModel: GridFilterModel = { items: [], logicOperator: logicOperator === "or" ? GridLogicOperator.Or : GridLogicOperator.And };
-    for (const param of searchParams.getAll("filter")) {
-        const [field, operator = "", ...rest] = param.split(":");
-        const rawValue = rest.join(":");
-        if (!isTodoField(field) || !(filterOperators[field] as string[]).includes(operator)) {
-            continue;
-        }
-        // Items without a value are kept for the filter panel, but don't filter
-        filterModel.items.push({ id: filterModel.items.length, field, operator, value: rawValue || undefined });
-        const value = field === "done" ? rawValue === "true" : field === "createdAt" ? new Date(rawValue) : rawValue;
-        if (rawValue && !(value instanceof Date && Number.isNaN(value.getTime()))) {
-            filter.items.push({ field, operator, value } as TodoFilter);
-        }
-    }
-
-    return { page, pageSize, sort, sortModel, filter, filterModel };
-}
-
 export async function loader({ request, url }: Route.LoaderArgs) {
     const user = await requireUser(request);
-    const { page, pageSize, sort, filter } = parseGridState(url.searchParams);
+    const { page, pageSize, listOptions } = parseGridState(url.searchParams, todoGridFields);
 
-    const { rows, totalCount } = await getTodoRepository().list(user.id, { offset: page * pageSize, limit: pageSize, sort, filter });
+    const { rows, totalCount } = await getTodoRepository().list(user.id, listOptions);
 
     // e.g. after deleting the last todo of the last page
     if (rows.length === 0 && page > 0) {
@@ -115,17 +58,6 @@ export async function action({ request }: Route.ActionArgs) {
     }
 }
 
-function supportedOperators(field: TodoFilter["field"], operators: GridFilterOperator[]) {
-    return operators.filter((operator) => (filterOperators[field] as string[]).includes(operator.value));
-}
-
-function serializeFilterValue(value: unknown) {
-    if (value instanceof Date) {
-        return Number.isNaN(value.getTime()) ? "" : value.toISOString();
-    }
-    return value == null ? "" : String(value);
-}
-
 export default function Todos({ loaderData }: Route.ComponentProps) {
     const { user, todos, totalCount } = loaderData;
     const submit = useSubmit();
@@ -135,7 +67,7 @@ export default function Todos({ loaderData }: Route.ComponentProps) {
 
     // Use the pending location while loading, otherwise the grid would show the old state until the loader is done (e.g. reset a filter value while typing)
     const searchParams = new URLSearchParams((navigation.location?.pathname === location.pathname ? navigation.location : location).search);
-    const { page, pageSize, sortModel, filterModel } = parseGridState(searchParams);
+    const { page, pageSize, sortModel, filterModel } = parseGridState(searchParams, todoGridFields);
 
     const updateSearchParams = (values: Record<string, string | string[] | undefined>, { replace = false } = {}) => {
         const nextSearchParams = new URLSearchParams(searchParams);
@@ -158,16 +90,16 @@ export default function Todos({ loaderData }: Route.ComponentProps) {
             headerName: "Done",
             type: "boolean",
             width: 80,
-            filterOperators: supportedOperators("done", getGridBooleanOperators()),
+            filterOperators: gridFilterOperators(todoGridFields.done),
             renderCell: ({ row }) => <Checkbox checked={row.done} onChange={(event) => updateTodo(row.id, { done: event.target.checked })} />,
         },
-        { field: "title", headerName: "Title", flex: 1, editable: true, filterOperators: supportedOperators("title", getGridStringOperators()) },
+        { field: "title", headerName: "Title", flex: 1, editable: true, filterOperators: gridFilterOperators(todoGridFields.title) },
         {
             field: "createdAt",
             headerName: "Created",
             type: "dateTime",
             width: 200,
-            filterOperators: supportedOperators("createdAt", getGridDateOperators(true)),
+            filterOperators: gridFilterOperators(todoGridFields.createdAt),
         },
         {
             field: "actions",
@@ -215,20 +147,11 @@ export default function Todos({ loaderData }: Route.ComponentProps) {
                             pageSizeOptions={pageSizeOptions}
                             onPaginationModelChange={(model) => updateSearchParams({ page: String(model.page), pageSize: String(model.pageSize) })}
                             sortModel={sortModel}
-                            onSortModelChange={(model) =>
-                                updateSearchParams({ page: undefined, sort: model.map((item) => `${item.field}:${item.sort}`) })
-                            }
+                            onSortModelChange={(model) => updateSearchParams(sortModelToSearchParams(model))}
                             filterModel={filterModel}
                             onFilterModelChange={(model) =>
-                                updateSearchParams(
-                                    {
-                                        page: undefined,
-                                        filter: model.items.map((item) => `${item.field}:${item.operator}:${serializeFilterValue(item.value)}`),
-                                        filterLogic: model.logicOperator === GridLogicOperator.Or ? "or" : undefined,
-                                    },
-                                    // no history entry per keystroke
-                                    { replace: true },
-                                )
+                                // no history entry per keystroke
+                                updateSearchParams(filterModelToSearchParams(model), { replace: true })
                             }
                             loading={navigation.state === "loading"}
                             processRowUpdate={(newRow, oldRow) => {
