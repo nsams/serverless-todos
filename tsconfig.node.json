@@ -1,0 +1,13 @@
+{
+    "compilerOptions": {
+        "composite": true,
+        "lib": ["ES2024"],
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "target": "ES2024",
+        "types": ["node"]
+    },
+    "exclude": ["worker-configuration.d.ts"],
+    "extends": "./tsconfig.json",
+    "include": ["*.ts", "*.mts"]
+}

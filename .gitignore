@@ -1,0 +1,11 @@
+node_modules
+*.tsbuildinfo
+.env.local
+
+# React Router
+/.react-router/
+/build/
+
+# Cloudflare
+.wrangler
+worker-configuration.d.ts

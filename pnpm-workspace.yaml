@@ -1,0 +1,4 @@
+allowBuilds:
+    esbuild: true
+    workerd: true
+    "@mui/x-telemetry": false
