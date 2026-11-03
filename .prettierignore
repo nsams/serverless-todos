@@ -1,3 +1,4 @@
 package-lock.json
-drizzle/**/meta/
+migrations/**/.snapshot.json
 worker-configuration.d.ts
+app/db/compiled-functions.*

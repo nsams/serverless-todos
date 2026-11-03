@@ -3,12 +3,14 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "react-router build",
-        "build:postgres": "CLOUDFLARE_ENV=postgres react-router build",
-        "db:generate": "drizzle-kit generate --config drizzle.config.d1.ts && drizzle-kit generate --config drizzle.config.pg.ts",
+        "build": "npm run orm:compile && react-router build",
+        "build:postgres": "npm run orm:compile && CLOUDFLARE_ENV=postgres react-router build",
+        "db:generate": "npm run db:generate:d1 && npm run db:generate:pg && npm run orm:compile",
+        "db:generate:d1": "mikro-orm migration:create --config ./mikro-orm.config.d1.ts && prettier --write migrations/d1",
+        "db:generate:pg": "dotenv -e .env.local -e .env -- mikro-orm migration:create --config ./mikro-orm.config.pg.ts && prettier --write migrations/pg",
         "db:migrate:d1": "wrangler d1 migrations apply DB --local",
         "db:migrate:d1:remote": "wrangler d1 migrations apply DB --remote",
-        "db:migrate:pg": "dotenv -e .env.local -e .env -- drizzle-kit migrate --config drizzle.config.pg.ts",
+        "db:migrate:pg": "dotenv -e .env.local -e .env -- mikro-orm migration:up --config ./mikro-orm.config.pg.ts",
         "deploy": "npm run build && wrangler deploy",
         "deploy:postgres": "npm run build:postgres && wrangler deploy",
         "dev": "dev-pm start @dev",
@@ -23,8 +25,9 @@
         "lint:fix:prettier": "npm run lint:prettier -- --write",
         "lint:prettier": "prettier --check '**/*.{ts,mts,tsx,js,mjs,json,jsonc,md,yml,yaml}'",
         "lint:tsc": "npm run typegen && tsc -b",
+        "orm:compile": "mikro-orm compile --quiet --config ./mikro-orm.config.d1.ts --out app/db/compiled-functions.d1.js && dotenv -e .env.local -e .env -- mikro-orm compile --quiet --config ./mikro-orm.config.pg.ts --out app/db/compiled-functions.pg.js",
         "preview": "npm run build && vite preview",
-        "typegen": "wrangler types && react-router typegen"
+        "typegen": "wrangler types && react-router typegen && npm run orm:compile"
     },
     "engines": {
         "node": "24"
@@ -34,12 +37,14 @@
         "@emotion/react": "^11.14.0",
         "@emotion/styled": "^11.14.1",
         "@fontsource-variable/roboto-flex": "^5.3.0",
+        "@mikro-orm/core": "^7.2.6",
+        "@mikro-orm/postgresql": "^7.2.6",
+        "@mikro-orm/sql": "^7.2.6",
         "@mui/material": "^7.3.11",
         "@mui/x-data-grid-pro": "^8.29.5",
-        "drizzle-orm": "^0.45.4",
         "isbot": "^5.2.2",
+        "kysely-d1": "^0.4.0",
         "openid-client": "^6.8.8",
-        "postgres": "^4.0.0",
         "react": "^19.3.1",
         "react-dom": "^19.3.1",
         "react-router": "^8.5.1"
@@ -47,6 +52,8 @@
     "devDependencies": {
         "@cloudflare/vite-plugin": "^1.66.0",
         "@dextinity/eslint-config": "^10.11.0",
+        "@mikro-orm/cli": "^7.2.6",
+        "@mikro-orm/migrations": "^7.2.6",
         "@react-router/dev": "^8.5.1",
         "@types/node": "^24.19.2",
         "@types/react": "^19.3.0",
@@ -54,10 +61,10 @@
         "dev-oidc-provider": "^2.1.2",
         "dev-process-manager": "^4.1.0",
         "dotenv-cli": "^11.1.0",
-        "drizzle-kit": "^0.31.11",
         "eslint": "^9.39.5",
         "npm-run-all2": "^9.0.4",
         "prettier": "^3.9.10",
+        "tsx": "^4.23.15",
         "typescript": "~6.0.3",
         "vite": "^8.3.5",
         "wrangler": "^4.156.0"
