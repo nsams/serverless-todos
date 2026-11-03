@@ -4,12 +4,12 @@ export default defineConfig({
     scripts: [
         {
             name: "oidc-provider",
-            script: "pnpm run dev:oidc-provider",
+            script: "npm run dev:oidc-provider",
             group: ["dev", "dev-postgres"],
         },
         {
             name: "app",
-            script: "pnpm run dev:app",
+            script: "npm run dev:app",
             group: ["dev"],
             waitOn: ["tcp:$IDP_PORT"],
         },
@@ -21,7 +21,7 @@ export default defineConfig({
         },
         {
             name: "app-postgres",
-            script: "pnpm run db:migrate:pg && pnpm run dev:app:postgres",
+            script: "npm run db:migrate:pg && npm run dev:app:postgres",
             group: ["dev-postgres"],
             waitOn: ["tcp:$IDP_PORT", "tcp:$POSTGRESQL_PORT"],
         },

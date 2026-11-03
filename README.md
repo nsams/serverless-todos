@@ -13,8 +13,8 @@ Locally the app runs in the real Workers runtime (workerd) via `@cloudflare/vite
 ## Development
 
 ```bash
-pnpm dev            # dev-oidc-provider + app with D1 (http://localhost:5180)
-pnpm dev:postgres   # dev-oidc-provider + docker compose postgres + app with PostgreSQL (via Hyperdrive)
+npm run dev           # dev-oidc-provider + app with D1 (http://localhost:5180)
+npm run dev:postgres  # dev-oidc-provider + docker compose postgres + app with PostgreSQL (via Hyperdrive)
 ```
 
 Processes are managed by [dev-process-manager](https://www.npmjs.com/package/dev-process-manager) (`npx dev-pm status`, `npx dev-pm logs`, `npx dev-pm stop`).
@@ -28,14 +28,14 @@ Two dialects with one schema each (`app/db/schema.d1.ts`, `app/db/schema.pg.ts`)
 After changing a schema (keep both in sync):
 
 ```bash
-pnpm db:generate     # generates migrations into drizzle/d1 and drizzle/pg
-pnpm db:migrate:d1   # local D1
-pnpm db:migrate:pg   # postgres from DATABASE_URL
+npm run db:generate     # generates migrations into drizzle/d1 and drizzle/pg
+npm run db:migrate:d1   # local D1
+npm run db:migrate:pg   # postgres from DATABASE_URL
 ```
 
 ## Deployment (Cloudflare)
 
 1. Replace the placeholder ids and `OIDC_*` vars in `wrangler.jsonc` (D1: `wrangler d1 create serverless-todos`, Hyperdrive: `wrangler hyperdrive create`).
 2. Set secrets: `wrangler secret put OIDC_CLIENT_SECRET`, `wrangler secret put SESSION_SECRET`
-3. Migrate: `pnpm db:migrate:d1:remote` (or `DATABASE_URL=… pnpm db:migrate:pg`)
-4. Deploy: `pnpm deploy` (D1) or `pnpm deploy:postgres`
+3. Migrate: `npm run db:migrate:d1:remote` (or `DATABASE_URL=… npm run db:migrate:pg`)
+4. Deploy: `npm run deploy` (D1) or `npm run deploy:postgres`

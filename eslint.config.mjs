@@ -2,7 +2,16 @@ import eslintConfigReact, { restrictedImportPaths } from "@dextinity/eslint-conf
 import { defineConfig, globalIgnores } from "eslint/config";
 
 export default defineConfig([
-    globalIgnores([".react-router/**", ".wrangler/**", "build/**", "drizzle/**", "worker-configuration.d.ts", "eslint.config.mjs", "wrangler.jsonc"]),
+    globalIgnores([
+        ".react-router/**",
+        ".wrangler/**",
+        "build/**",
+        "drizzle/**",
+        "worker-configuration.d.ts",
+        "eslint.config.mjs",
+        "wrangler.jsonc",
+        "package-lock.json",
+    ]),
     ...eslintConfigReact,
     {
         rules: {

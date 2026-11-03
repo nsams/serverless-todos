@@ -12,12 +12,11 @@ fi
 # use correct node version and install dependencies
 nvm install
 nvm use
-corepack enable
 
-pnpm install
+npm install
 
 # generate types for worker env and routes
-pnpm run typegen
+npm run typegen
 
 # create local D1 database
-pnpm run db:migrate:d1
+npm run db:migrate:d1
