@@ -15,7 +15,7 @@ nvm use
 
 npm install
 
-# generate types for worker env and routes
+# generate types for worker env
 npm run typegen
 
 # create local D1 database

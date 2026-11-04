@@ -3,8 +3,8 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "react-router build",
-        "build:postgres": "CLOUDFLARE_ENV=postgres react-router build",
+        "build": "vite build",
+        "build:postgres": "CLOUDFLARE_ENV=postgres vite build",
         "db:generate": "drizzle-kit generate --config drizzle.config.d1.ts && drizzle-kit generate --config drizzle.config.pg.ts",
         "db:migrate:d1": "wrangler d1 migrations apply DB --local",
         "db:migrate:d1:remote": "wrangler d1 migrations apply DB --remote",
@@ -12,8 +12,8 @@
         "deploy": "npm run build && wrangler deploy",
         "deploy:postgres": "npm run build:postgres && wrangler deploy",
         "dev": "dev-pm start @dev",
-        "dev:app": "dotenv -e .env.local -e .env -- react-router dev",
-        "dev:app:postgres": "dotenv -e .env.local -e .env -- sh -c 'CLOUDFLARE_ENV=postgres react-router dev'",
+        "dev:app": "dotenv -e .env.local -e .env -- vite dev",
+        "dev:app:postgres": "dotenv -e .env.local -e .env -- sh -c 'CLOUDFLARE_ENV=postgres vite dev'",
         "dev:oidc-provider": "dotenv -e .env.local -e .env -- dev-oidc-provider",
         "dev:postgres": "dev-pm start @dev-postgres",
         "lint": "run-p lint:prettier lint:eslint lint:tsc",
@@ -24,7 +24,7 @@
         "lint:prettier": "prettier --check '**/*.{ts,mts,tsx,js,mjs,json,jsonc,md,yml,yaml}'",
         "lint:tsc": "npm run typegen && tsc -b",
         "preview": "npm run build && vite preview",
-        "typegen": "wrangler types && react-router typegen"
+        "typegen": "wrangler types"
     },
     "engines": {
         "node": "24"
@@ -36,21 +36,21 @@
         "@fontsource-variable/roboto-flex": "^5.3.0",
         "@mui/material": "^7.3.11",
         "@mui/x-data-grid-pro": "^8.29.5",
+        "@tanstack/react-router": "^1.170.46",
+        "@tanstack/react-start": "^1.169.4",
         "drizzle-orm": "^0.45.4",
-        "isbot": "^5.2.2",
         "openid-client": "^6.8.8",
         "postgres": "^4.0.0",
         "react": "^19.3.1",
-        "react-dom": "^19.3.1",
-        "react-router": "^8.5.1"
+        "react-dom": "^19.3.1"
     },
     "devDependencies": {
         "@cloudflare/vite-plugin": "^1.66.0",
         "@dextinity/eslint-config": "^10.11.0",
-        "@react-router/dev": "^8.5.1",
         "@types/node": "^24.19.2",
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",
+        "@vitejs/plugin-react": "^6.2.1",
         "dev-oidc-provider": "^2.1.2",
         "dev-process-manager": "^4.1.0",
         "dotenv-cli": "^11.1.0",

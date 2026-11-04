@@ -3,7 +3,7 @@
     "name": "serverless-todos",
     "compatibility_date": "2026-10-20",
     "compatibility_flags": ["nodejs_compat"],
-    "main": "./workers/app.ts",
+    "main": "@tanstack/react-start/server-entry",
     // OIDC_CLIENT_SECRET and SESSION_SECRET are secrets: `wrangler secret put <NAME>` (locally from .env)
     "vars": {
         "DB_DIALECT": "d1",
