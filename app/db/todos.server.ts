@@ -1,13 +1,13 @@
+import { MikroORM as PostgreSqlMikroORM } from "@mikro-orm/postgresql";
+import { type EntityManager, type FilterQuery, MikroORM, type QueryOrderMap, raw, SqliteDriver, wrap } from "@mikro-orm/sql";
 import { env } from "cloudflare:workers";
-import { and, asc, desc, eq, gte, lt, or, type SQL, sql } from "drizzle-orm";
-import { drizzle as drizzleD1, type DrizzleD1Database } from "drizzle-orm/d1";
-import { drizzle as drizzlePg } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { D1Dialect } from "kysely-d1";
 
-import * as d1Schema from "./schema.d1";
-import * as pgSchema from "./schema.pg";
+import compiledFunctionsD1 from "./compiled-functions.d1.js";
+import compiledFunctionsPg from "./compiled-functions.pg.js";
+import { type Todo as TodoEntity, TodoSchema } from "./todo.entity";
 
-export type Todo = typeof d1Schema.todos.$inferSelect;
+export type Todo = Pick<TodoEntity, "id" | "userId" | "title" | "done" | "createdAt">;
 
 export type TodoSort = { field: "title" | "done" | "createdAt"; direction: "asc" | "desc" };
 
@@ -27,80 +27,97 @@ type TodoRepository = {
     delete(userId: string, id: string): Promise<void>;
 };
 
+// compiledFunctions: Workers don't allow `new Function()`, which MikroORM uses for hydration etc. by default.
+// Pre-compiled with `npm run orm:compile` (part of typegen and build), must be regenerated after changing entities.
+const ormOptions = {
+    entities: [TodoSchema],
+    // the schema is managed by migrations, skip the "does the database exist" query on every connect (= request)
+    ensureDatabase: false,
+    debug: import.meta.env.DEV,
+};
+
 // Create per request: Workers don't allow sharing I/O objects (e.g. db connections) between requests
 export function getTodoRepository(): TodoRepository {
     if (env.DB_DIALECT === "postgres") {
         if (!env.HYPERDRIVE) {
             throw new Error("HYPERDRIVE binding missing");
         }
-        const db = drizzlePg(postgres(env.HYPERDRIVE.connectionString, { max: 5, fetch_types: false }), { casing: "snake_case" });
-        // The query builder API used below is identical for both dialects, only the TypeScript types differ
-        return createTodoRepository(db as unknown as DrizzleD1Database, pgSchema.todos as unknown as typeof d1Schema.todos);
+        const orm = new PostgreSqlMikroORM({
+            ...ormOptions,
+            clientUrl: env.HYPERDRIVE.connectionString,
+            pool: { max: 5 },
+            compiledFunctions: compiledFunctionsPg,
+        });
+        return createTodoRepository(orm.em.fork());
     }
 
     if (!env.DB) {
         throw new Error("DB binding missing");
     }
-    return createTodoRepository(drizzleD1(env.DB, { casing: "snake_case" }), d1Schema.todos);
+    const orm = new MikroORM({
+        ...ormOptions,
+        driver: SqliteDriver,
+        dbName: "d1", // required by MikroORM, the database is selected by the binding
+        driverOptions: new D1Dialect({ database: env.DB }),
+        // D1 doesn't support BEGIN/COMMIT statements
+        implicitTransactions: false,
+        compiledFunctions: compiledFunctionsD1,
+    });
+    return createTodoRepository(orm.em.fork());
 }
 
-function createTodoRepository(db: DrizzleD1Database, todos: typeof d1Schema.todos): TodoRepository {
+function createTodoRepository(em: EntityManager): TodoRepository {
     return {
         list: async (userId, { offset, limit, sort, filter }) => {
-            const filterConditions = filter.items.map((item) => filterCondition(todos, item));
-            const where = and(eq(todos.userId, userId), filter.logicOperator === "or" ? or(...filterConditions) : and(...filterConditions));
-            const orderBy = sort.map(({ field, direction }) => {
-                // case-insensitive in both dialects (SQLite compares binary by default)
-                const column = field === "title" ? sql`lower(${todos.title})` : todos[field];
-                return direction === "asc" ? asc(column) : desc(column);
-            });
-            const [rows, totalCount] = await Promise.all([
-                db
-                    .select()
-                    .from(todos)
-                    .where(where)
-                    .orderBy(...orderBy, desc(todos.createdAt), desc(todos.id))
-                    .limit(limit)
-                    .offset(offset),
-                db.$count(todos, where),
-            ]);
-            return { rows, totalCount };
+            const filterConditions = filter.items.map(filterCondition);
+            const where: FilterQuery<TodoEntity> = {
+                userId,
+                ...(filterConditions.length > 0 && { [filter.logicOperator === "or" ? "$or" : "$and"]: filterConditions }),
+            };
+            const orderBy: QueryOrderMap<TodoEntity>[] = [
+                ...sort.map(({ field, direction }) =>
+                    // case-insensitive in both dialects (SQLite compares binary by default)
+                    field === "title" ? { [raw((alias) => `lower(${alias}.title)`)]: direction } : { [field]: direction },
+                ),
+                { createdAt: "desc" },
+                { id: "desc" },
+            ];
+            const [rows, totalCount] = await em.findAndCount(TodoSchema, where, { orderBy, limit, offset });
+            return { rows: rows.map((row) => wrap(row).toPOJO()), totalCount };
         },
         create: async (userId, title) => {
-            await db.insert(todos).values({ userId, title });
+            em.create(TodoSchema, { userId, title });
+            await em.flush();
         },
         update: async (userId, id, values) => {
-            await db
-                .update(todos)
-                .set(values)
-                .where(and(eq(todos.id, id), eq(todos.userId, userId)));
+            await em.nativeUpdate(TodoSchema, { id, userId }, values);
         },
         delete: async (userId, id) => {
-            await db.delete(todos).where(and(eq(todos.id, id), eq(todos.userId, userId)));
+            await em.nativeDelete(TodoSchema, { id, userId });
         },
     };
 }
 
-function filterCondition(todos: typeof d1Schema.todos, filter: TodoFilter): SQL | undefined {
+function filterCondition(filter: TodoFilter): FilterQuery<TodoEntity> {
     switch (filter.field) {
         case "title": {
             // case-insensitive in both dialects (no ILIKE in SQLite), wildcards in the value are matched literally
             const value = filter.value.toLowerCase().replace(/[\\%_]/g, "\\$&");
             const pattern = { contains: `%${value}%`, equals: value, startsWith: `${value}%`, endsWith: `%${value}` }[filter.operator];
-            return sql`lower(${todos.title}) like ${pattern} escape '\\'`;
+            return { [raw((alias) => `lower(${alias}.title) like ? escape '\\'`, [pattern])]: [] };
         }
         case "done":
-            return eq(todos.done, filter.value);
+            return { done: filter.value };
         case "createdAt": {
             // minute precision, like the DataGrid's dateTime filter
             const minute = new Date(filter.value);
             minute.setSeconds(0, 0);
             const nextMinute = new Date(minute.getTime() + 60_000);
             return {
-                after: gte(todos.createdAt, nextMinute),
-                onOrAfter: gte(todos.createdAt, minute),
-                before: lt(todos.createdAt, minute),
-                onOrBefore: lt(todos.createdAt, nextMinute),
+                after: { createdAt: { $gte: nextMinute } },
+                onOrAfter: { createdAt: { $gte: minute } },
+                before: { createdAt: { $lt: minute } },
+                onOrBefore: { createdAt: { $lt: nextMinute } },
             }[filter.operator];
         }
     }
