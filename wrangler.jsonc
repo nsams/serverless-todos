@@ -9,10 +9,10 @@
     "preview_urls": false,
     // overridden locally by .env (Access emulation)
     "vars": {
-        // https://<team-name>.cloudflareaccess.com
-        "ACCESS_TEAM_DOMAIN": "https://example.cloudflareaccess.com",
-        // Application Audience (AUD) Tag of the Access application
-        "ACCESS_AUD": "00000000000000000000000000000000000000000000000000000000000000000",
+        // https://<team-name>.cloudflareaccess.com (public)
+        "ACCESS_TEAM_DOMAIN": "https://tight-hill-daff.cloudflareaccess.com",
+        // Application Audience (AUD) Tag of the Access application (public, part of every Access JWT)
+        "ACCESS_AUD": "e1e1e831a2e368c145fae82cc0100b1c0728b61c4bbf7608a53ee38e83fcedc7",
     },
     "d1_databases": [
         {
