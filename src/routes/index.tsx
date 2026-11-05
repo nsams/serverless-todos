@@ -114,13 +114,11 @@ function Todos() {
                     <Typography variant="h6" sx={{ flexGrow: 1 }}>
                         Todos
                     </Typography>
-                    <Typography sx={{ mr: 1 }}>{user.name}</Typography>
-                    {/* /logout is a server route redirecting to the IdP, so a native form post */}
-                    <form method="post" action="/logout">
-                        <IconButton type="submit" color="inherit" aria-label="Logout">
-                            <Logout />
-                        </IconButton>
-                    </form>
+                    <Typography sx={{ mr: 1 }}>{user.email}</Typography>
+                    {/* handled by Cloudflare Access, so a full page load */}
+                    <IconButton href="/cdn-cgi/access/logout" color="inherit" aria-label="Logout">
+                        <Logout />
+                    </IconButton>
                 </Toolbar>
             </AppBar>
             <Container sx={{ py: 4 }}>

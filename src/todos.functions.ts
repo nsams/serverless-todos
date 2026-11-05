@@ -1,6 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
 
-import { requireUser } from "./auth.server";
 import { getTodoRepository } from "./db/todos.server";
 import { parseTodoSearch, validateTodoSearch } from "./todoSearch";
 
@@ -10,8 +9,7 @@ function isObject(input: unknown): input is Record<string, unknown> {
 
 export const listTodos = createServerFn()
     .validator(validateTodoSearch)
-    .handler(async ({ data }) => {
-        const user = await requireUser();
+    .handler(async ({ data, context: { user } }) => {
         const { page, pageSize, sort, filter } = parseTodoSearch(data);
         const { rows, totalCount } = await getTodoRepository().list(user.id, { offset: page * pageSize, limit: pageSize, sort, filter });
         return { user, todos: rows, totalCount };
@@ -19,8 +17,7 @@ export const listTodos = createServerFn()
 
 export const createTodo = createServerFn({ method: "POST" })
     .validator((input: unknown) => ({ title: String(isObject(input) ? (input.title ?? "") : "").trim() }))
-    .handler(async ({ data: { title } }) => {
-        const user = await requireUser();
+    .handler(async ({ data: { title }, context: { user } }) => {
         if (!title) {
             return { error: "Title is required" };
         }
@@ -39,8 +36,7 @@ export const updateTodo = createServerFn({ method: "POST" })
             ...(typeof input.done === "boolean" && { done: input.done }),
         };
     })
-    .handler(async ({ data: { id, ...values } }) => {
-        const user = await requireUser();
+    .handler(async ({ data: { id, ...values }, context: { user } }) => {
         await getTodoRepository().update(user.id, id, values);
     });
 
@@ -51,7 +47,6 @@ export const deleteTodo = createServerFn({ method: "POST" })
         }
         return { id: input.id };
     })
-    .handler(async ({ data: { id } }) => {
-        const user = await requireUser();
+    .handler(async ({ data: { id }, context: { user } }) => {
         await getTodoRepository().delete(user.id, id);
     });
