@@ -3,6 +3,10 @@
     "name": "serverless-todos",
     "compatibility_date": "2026-10-20",
     "compatibility_flags": ["nodejs_compat"],
+    // Workers Logs: persisted runtime logs (dashboard → Worker → Logs)
+    "observability": {
+        "enabled": true,
+    },
     "main": "src/server.ts",
     // served on workers.dev, protected by Cloudflare Access (see README); preview URLs would need their own Access setup
     "workers_dev": true,
