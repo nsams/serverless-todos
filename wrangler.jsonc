@@ -3,7 +3,7 @@
     "name": "serverless-todos",
     "compatibility_date": "2026-10-20",
     "compatibility_flags": ["nodejs_compat"],
-    // Workers Logs: persisted runtime logs (dashboard → Worker → Logs)
+    // Workers Logs: persisted runtime logs (dashboard → Worker → Observability → Events)
     "observability": {
         "enabled": true,
     },
