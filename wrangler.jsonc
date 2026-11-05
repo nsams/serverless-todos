@@ -4,8 +4,8 @@
     "compatibility_date": "2026-10-20",
     "compatibility_flags": ["nodejs_compat"],
     "main": "@tanstack/react-start/server-entry",
-    // only reachable through Cloudflare Access (on a custom domain), see README
-    "workers_dev": false,
+    // served on workers.dev, protected by Cloudflare Access (see README); preview URLs would need their own Access setup
+    "workers_dev": true,
     "preview_urls": false,
     // overridden locally by .env (Access emulation)
     "vars": {
