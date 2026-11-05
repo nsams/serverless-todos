@@ -3,14 +3,12 @@
     "name": "serverless-todos",
     "compatibility_date": "2026-10-20",
     "compatibility_flags": ["nodejs_compat"],
-    "main": "@tanstack/react-start/server-entry",
+    "main": "src/server.ts",
     // served on workers.dev, protected by Cloudflare Access (see README); preview URLs would need their own Access setup
     "workers_dev": true,
     "preview_urls": false,
-    // overridden locally by .env (Access emulation)
+    // overridden locally by .env
     "vars": {
-        // https://<team-name>.cloudflareaccess.com (public)
-        "ACCESS_TEAM_DOMAIN": "https://tight-hill-daff.cloudflareaccess.com",
         // Application Audience (AUD) Tag of the Access application (public, part of every Access JWT)
         "ACCESS_AUD": "e1e1e831a2e368c145fae82cc0100b1c0728b61c4bbf7608a53ee38e83fcedc7",
     },

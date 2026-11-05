@@ -1,14 +1,17 @@
 import { createCsrfMiddleware, createMiddleware, createStart } from "@tanstack/react-start";
 
-import { getUserFromAccessJwt } from "./auth.server";
+import { getUser } from "./auth.server";
+import type { RequestContext } from "./server";
 
 const csrfMiddleware = createCsrfMiddleware({
     filter: (ctx) => ctx.handlerType === "serverFn",
 });
 
-// Every request (pages and server functions) must carry a valid Cloudflare Access JWT; the user is passed on as context
-const authMiddleware = createMiddleware().server(async ({ request, next }) => {
-    const user = await getUserFromAccessJwt(request);
+// Every request (pages and server functions) must have been authenticated by Cloudflare Access; the user is passed on as context
+const authMiddleware = createMiddleware().server(async ({ context, next }) => {
+    // the request context passed in src/server.ts; not reflected in the request middleware's context type
+    const { access } = context as unknown as RequestContext;
+    const user = await getUser(access);
     if (!user) {
         return new Response("Forbidden", { status: 403 });
     }

@@ -3,13 +3,16 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-import { accessEmulation } from "./vite-plugin-access-emulation";
-
 export default defineConfig({
     plugins: [
-        // dev only: emulates Cloudflare Access, which handles the login in production
-        accessEmulation({ users: ["admin@example.com", "user@example.com"] }),
-        cloudflare({ viteEnvironment: { name: "ssr" } }),
+        cloudflare({
+            viteEnvironment: { name: "ssr" },
+            // Local simulation of Cloudflare Access (sets `ctx.access` on every request), configured in .env/.env.local; not set in production builds
+            config: () =>
+                process.env.DEV_USER_EMAIL && process.env.ACCESS_AUD
+                    ? { access: { dev: { aud: process.env.ACCESS_AUD, identity: { email: process.env.DEV_USER_EMAIL } } } }
+                    : {},
+        }),
         tanstackStart(),
         viteReact(),
     ],

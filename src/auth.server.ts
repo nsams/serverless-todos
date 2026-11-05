@@ -1,34 +1,18 @@
 import { env } from "cloudflare:workers";
-import { createRemoteJWKSet, jwtVerify } from "jose";
 
-// Authentication is done by Cloudflare Access in front of the worker (locally emulated by `vite-plugin-access-emulation.ts`).
-// Access adds a signed JWT to every request it lets through; it is verified here so the app can't be reached by bypassing Access
-// (e.g. via a workers.dev or preview URL).
-// See https://developers.cloudflare.com/cloudflare-one/identity/authorization-cookie/validating-json/
+// Authentication is done by Cloudflare Access in front of the worker; the runtime sets `ctx.access` on requests that matched an Access application
+// (locally simulated via `access.dev`, see vite.config.ts). Requests that bypassed Access (or matched another Access application) are rejected.
+// See https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/
 
 export type User = { id: string; email: string };
 
-let jwks: ReturnType<typeof createRemoteJWKSet> | undefined;
-
-function getJwks() {
-    jwks ??= createRemoteJWKSet(new URL("/cdn-cgi/access/certs", env.ACCESS_TEAM_DOMAIN));
-    return jwks;
-}
-
-export async function getUserFromAccessJwt(request: Request): Promise<User | undefined> {
-    const token = request.headers.get("cf-access-jwt-assertion");
-    if (!token) {
+export async function getUser(access: CloudflareAccessContext | undefined): Promise<User | undefined> {
+    if (!access || access.aud !== env.ACCESS_AUD) {
         return undefined;
     }
-    try {
-        const { payload } = await jwtVerify(token, getJwks(), { issuer: env.ACCESS_TEAM_DOMAIN, audience: env.ACCESS_AUD });
-        if (typeof payload.email !== "string" || !payload.email) {
-            return undefined;
-        }
-        const email = payload.email.toLowerCase();
-        return { id: email, email };
-    } catch (error) {
-        console.warn("Invalid Cloudflare Access JWT", error);
+    const email = (await access.getIdentity())?.email?.toLowerCase();
+    if (!email) {
         return undefined;
     }
+    return { id: email, email };
 }
