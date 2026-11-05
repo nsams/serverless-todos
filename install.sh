@@ -19,4 +19,4 @@ npm install
 npm run typegen
 
 # create local D1 database
-npm run db:migrate:d1
+npm run db:migrate
