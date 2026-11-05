@@ -1,13 +1,10 @@
 import { env } from "cloudflare:workers";
 import { and, asc, desc, eq, gte, lt, or, type SQL, sql } from "drizzle-orm";
-import { drizzle as drizzleD1, type DrizzleD1Database } from "drizzle-orm/d1";
-import { drizzle as drizzlePg } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { drizzle } from "drizzle-orm/d1";
 
-import * as d1Schema from "./schema.d1";
-import * as pgSchema from "./schema.pg";
+import { todos } from "./schema";
 
-export type Todo = typeof d1Schema.todos.$inferSelect;
+export type Todo = typeof todos.$inferSelect;
 
 export type TodoSort = { field: "title" | "done" | "createdAt"; direction: "asc" | "desc" };
 
@@ -27,30 +24,15 @@ type TodoRepository = {
     delete(userId: string, id: string): Promise<void>;
 };
 
-// Create per request: Workers don't allow sharing I/O objects (e.g. db connections) between requests
+// Cheap to create: the D1 binding is just a handle, no connection pool to manage
 export function getTodoRepository(): TodoRepository {
-    if (env.DB_DIALECT === "postgres") {
-        if (!env.HYPERDRIVE) {
-            throw new Error("HYPERDRIVE binding missing");
-        }
-        const db = drizzlePg(postgres(env.HYPERDRIVE.connectionString, { max: 5, fetch_types: false }), { casing: "snake_case" });
-        // The query builder API used below is identical for both dialects, only the TypeScript types differ
-        return createTodoRepository(db as unknown as DrizzleD1Database, pgSchema.todos as unknown as typeof d1Schema.todos);
-    }
-
-    if (!env.DB) {
-        throw new Error("DB binding missing");
-    }
-    return createTodoRepository(drizzleD1(env.DB, { casing: "snake_case" }), d1Schema.todos);
-}
-
-function createTodoRepository(db: DrizzleD1Database, todos: typeof d1Schema.todos): TodoRepository {
+    const db = drizzle(env.DB, { casing: "snake_case" });
     return {
         list: async (userId, { offset, limit, sort, filter }) => {
-            const filterConditions = filter.items.map((item) => filterCondition(todos, item));
+            const filterConditions = filter.items.map((item) => filterCondition(item));
             const where = and(eq(todos.userId, userId), filter.logicOperator === "or" ? or(...filterConditions) : and(...filterConditions));
             const orderBy = sort.map(({ field, direction }) => {
-                // case-insensitive in both dialects (SQLite compares binary by default)
+                // case-insensitive (SQLite compares binary by default)
                 const column = field === "title" ? sql`lower(${todos.title})` : todos[field];
                 return direction === "asc" ? asc(column) : desc(column);
             });
@@ -81,10 +63,10 @@ function createTodoRepository(db: DrizzleD1Database, todos: typeof d1Schema.todo
     };
 }
 
-function filterCondition(todos: typeof d1Schema.todos, filter: TodoFilter): SQL | undefined {
+function filterCondition(filter: TodoFilter): SQL | undefined {
     switch (filter.field) {
         case "title": {
-            // case-insensitive in both dialects (no ILIKE in SQLite), wildcards in the value are matched literally
+            // case-insensitive (no ILIKE in SQLite), wildcards in the value are matched literally
             const value = filter.value.toLowerCase().replace(/[\\%_]/g, "\\$&");
             const pattern = { contains: `%${value}%`, equals: value, startsWith: `${value}%`, endsWith: `%${value}` }[filter.operator];
             return sql`lower(${todos.title}) like ${pattern} escape '\\'`;

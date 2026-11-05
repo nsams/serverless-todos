@@ -5,25 +5,13 @@ export default defineConfig({
         {
             name: "oidc-provider",
             script: "npm run dev:oidc-provider",
-            group: ["dev", "dev-postgres"],
+            group: ["dev"],
         },
         {
             name: "app",
-            script: "npm run dev:app",
+            script: "npm run db:migrate && npm run dev:app",
             group: ["dev"],
             waitOn: ["tcp:$IDP_PORT"],
-        },
-        {
-            name: "docker",
-            // Export the env files so Docker Compose binds the ports from `.env.local`.
-            script: "set -a; . ./.env; [ ! -f .env.local ] || . ./.env.local; set +a; docker compose up",
-            group: ["dev-postgres"],
-        },
-        {
-            name: "app-postgres",
-            script: "npm run db:migrate:pg && npm run dev:app:postgres",
-            group: ["dev-postgres"],
-            waitOn: ["tcp:$IDP_PORT", "tcp:$POSTGRESQL_PORT"],
         },
     ],
 });

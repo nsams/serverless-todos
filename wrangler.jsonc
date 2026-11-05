@@ -6,7 +6,6 @@
     "main": "@tanstack/react-start/server-entry",
     // OIDC_CLIENT_SECRET and SESSION_SECRET are secrets: `wrangler secret put <NAME>` (locally from .env)
     "vars": {
-        "DB_DIALECT": "d1",
         "OIDC_ISSUER": "https://idp.example.com",
         "OIDC_CLIENT_ID": "serverless-todos",
     },
@@ -15,23 +14,7 @@
             "binding": "DB",
             "database_name": "serverless-todos",
             "database_id": "00000000-0000-0000-0000-000000000000",
-            "migrations_dir": "drizzle/d1",
+            "migrations_dir": "drizzle",
         },
     ],
-    "env": {
-        // CLOUDFLARE_ENV=postgres: PostgreSQL via Hyperdrive (locally docker compose, see .env)
-        "postgres": {
-            "vars": {
-                "DB_DIALECT": "postgres",
-                "OIDC_ISSUER": "https://idp.example.com",
-                "OIDC_CLIENT_ID": "serverless-todos",
-            },
-            "hyperdrive": [
-                {
-                    "binding": "HYPERDRIVE",
-                    "id": "00000000000000000000000000000000",
-                },
-            ],
-        },
-    },
 }

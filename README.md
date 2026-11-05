@@ -2,7 +2,7 @@
 
 Minimal todo app: TanStack Start on Cloudflare Workers, MUI + DataGrid, Drizzle, OIDC login.
 
-Locally the app runs in the real Workers runtime (workerd) via `@cloudflare/vite-plugin`; D1 is emulated as a local SQLite database in `.wrangler/`.
+The app runs only on Cloudflare (Workers + D1). Locally it runs in the real Workers runtime (workerd) via `@cloudflare/vite-plugin`, D1 is emulated by Miniflare as a local SQLite database in `.wrangler/state/` (no Docker or external database needed).
 
 ## Setup
 
@@ -13,13 +13,19 @@ Locally the app runs in the real Workers runtime (workerd) via `@cloudflare/vite
 ## Development
 
 ```bash
-npm run dev           # dev-oidc-provider + app with D1 (http://localhost:5180)
-npm run dev:postgres  # dev-oidc-provider + docker compose postgres + app with PostgreSQL (via Hyperdrive)
+npm run dev  # applies pending migrations to the local D1, starts dev-oidc-provider + app (http://localhost:5180)
 ```
 
 Processes are managed by [dev-process-manager](https://www.npmjs.com/package/dev-process-manager) (`npx dev-pm status`, `npx dev-pm logs`, `npx dev-pm stop`).
 
 Login users are defined in `dev-oidc-provider.config.mts`.
+
+The local D1 database can be browsed and queried in the Cloudflare Local Explorer at http://localhost:5180/cdn-cgi/explorer (while `npm run dev` is running), or from the command line:
+
+```bash
+npx wrangler d1 execute DB --local --command "SELECT * FROM todos"
+npm run db:reset  # delete the local database and re-apply all migrations
+```
 
 ## Structure
 
@@ -30,19 +36,18 @@ Login users are defined in `dev-oidc-provider.config.mts`.
 
 ## Database
 
-Two dialects with one schema each (`src/db/schema.d1.ts`, `src/db/schema.pg.ts`) and a common repository (`src/db/todos.server.ts`). The dialect is selected by the wrangler environment (`DB_DIALECT`).
+Cloudflare D1 (SQLite) with Drizzle: schema in `src/db/schema.ts`, repository in `src/db/todos.server.ts`, migrations in `drizzle/`.
 
-After changing a schema (keep both in sync):
+After changing the schema:
 
 ```bash
-npm run db:generate     # generates migrations into drizzle/d1 and drizzle/pg
-npm run db:migrate:d1   # local D1
-npm run db:migrate:pg   # postgres from DATABASE_URL
+npm run db:generate  # generates a migration into drizzle/
+npm run db:migrate   # applies it to the local D1 (also done on `npm run dev`)
 ```
 
 ## Deployment (Cloudflare)
 
-1. Replace the placeholder ids and `OIDC_*` vars in `wrangler.jsonc` (D1: `wrangler d1 create serverless-todos`, Hyperdrive: `wrangler hyperdrive create`).
+1. Create the database (`wrangler d1 create serverless-todos`) and replace the placeholder `database_id` and the `OIDC_*` vars in `wrangler.jsonc`.
 2. Set secrets: `wrangler secret put OIDC_CLIENT_SECRET`, `wrangler secret put SESSION_SECRET`
-3. Migrate: `npm run db:migrate:d1:remote` (or `DATABASE_URL=… npm run db:migrate:pg`)
-4. Deploy: `npm run deploy` (D1) or `npm run deploy:postgres`
+3. Migrate: `npm run db:migrate:remote`
+4. Deploy: `npm run deploy`
