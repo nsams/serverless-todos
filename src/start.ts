@@ -8,10 +8,10 @@ const csrfMiddleware = createCsrfMiddleware({
 });
 
 // Every request (pages and server functions) must have been authenticated by Cloudflare Access; the user is passed on as context
-const authMiddleware = createMiddleware().server(async ({ context, next }) => {
+const authMiddleware = createMiddleware().server(async ({ request, context, next }) => {
     // the request context passed in src/server.ts; not reflected in the request middleware's context type
     const { access } = context as unknown as RequestContext;
-    const user = await getUser(access);
+    const user = await getUser(request, access);
     if (!user) {
         return new Response("Forbidden", { status: 403 });
     }

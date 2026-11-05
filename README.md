@@ -37,7 +37,12 @@ npm run db:reset  # delete the local database and re-apply all migrations
 
 ## Authentication
 
-There is no login logic in the app: Cloudflare Access sits in front of the worker like an authenticating reverse proxy, lets users sign in with Entra ID and only forwards authenticated requests. The Workers runtime then sets [`ctx.access`](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/) (it can't be set by the client): the app rejects requests without it or with another application's `aud` than `ACCESS_AUD`, and uses the email of `ctx.access.getIdentity()` as user id.
+There is no login logic in the app: Cloudflare Access sits in front of the worker like an authenticating reverse proxy, lets users sign in with Entra ID and only forwards authenticated requests. The app rejects requests not authenticated by Access (`src/auth.server.ts`) and uses the user's email as user id:
+
+- In production it verifies the Access JWT in the `Cf-Access-Jwt-Assertion` header (signature against `${ACCESS_TEAM_DOMAIN}/cdn-cgi/access/certs`, issuer and audience `ACCESS_AUD`). [`ctx.access`](https://developers.cloudflare.com/workers/configuration/cloudflare-access/) is not available there: workers with static assets run behind an internal router worker that doesn't pass it on.
+- Locally it uses `ctx.access`, simulated by the Workers runtime (`access.dev`).
+
+Denied requests are logged with the reason (Workers Logs).
 
 ## Database
 
@@ -59,5 +64,5 @@ Deploy with `npm run deploy` (build, deploy, apply pending D1 migrations), eithe
     1. Add Microsoft Entra ID as identity provider (Settings → Authentication → Login methods), see the [Cloudflare docs](https://developers.cloudflare.com/cloudflare-one/identity/idp-integration/entra-id/).
     2. Protect the `workers.dev` URL: Workers & Pages → serverless-todos → Settings → Domains & Routes → `workers.dev` → Enable Cloudflare Access. This creates an Access application for the URL (preview URLs are disabled in `wrangler.jsonc`).
     3. Edit that Access application (Zero Trust → Access → Applications): use Entra ID as the only login method and a policy that allows the intended users (e.g. an Entra group or email domain).
-    4. Set `ACCESS_AUD` (the Application Audience (AUD) Tag on the application's overview) in `wrangler.jsonc`.
+    4. Set `ACCESS_TEAM_DOMAIN` (`https://<team-name>.cloudflareaccess.com`, see Zero Trust → Settings → Team name and domain) and `ACCESS_AUD` (the Application Audience (AUD) Tag on the application's overview) in `wrangler.jsonc`.
 3. Deploy: `npm run deploy`

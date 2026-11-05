@@ -13,6 +13,8 @@
     "preview_urls": false,
     // overridden locally by .env
     "vars": {
+        // https://<team-name>.cloudflareaccess.com (public; used to verify the Access JWT)
+        "ACCESS_TEAM_DOMAIN": "https://tight-hill-daff.cloudflareaccess.com",
         // Application Audience (AUD) Tag of the Access application (public, part of every Access JWT)
         "ACCESS_AUD": "e1e1e831a2e368c145fae82cc0100b1c0728b61c4bbf7608a53ee38e83fcedc7",
     },
