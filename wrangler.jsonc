@@ -17,8 +17,8 @@
     "d1_databases": [
         {
             "binding": "DB",
+            // no database_id: `wrangler deploy` creates the database on first deploy (or connects to an existing one with this name)
             "database_name": "serverless-todos",
-            "database_id": "00000000-0000-0000-0000-000000000000",
             "migrations_dir": "drizzle",
         },
     ],
