@@ -51,11 +51,12 @@ npm run db:migrate   # applies it to the local D1 (also done on `npm run dev`)
 
 ## Deployment (Cloudflare)
 
-1. Create the database (`wrangler d1 create serverless-todos`) and replace the placeholder `database_id` in `wrangler.jsonc`.
+Deploy with `npm run deploy` (build, deploy, apply pending D1 migrations), either locally or with [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/) (Git integration): leave the build command empty and set the deploy command to `npm run deploy`.
+
+1. The D1 database doesn't need to be created manually: `wrangler.jsonc` has no `database_id`, so the first `wrangler deploy` creates a database named `serverless-todos` (or connects to an existing one with that name).
 2. Set up Cloudflare Access (Zero Trust dashboard):
     1. Add Microsoft Entra ID as identity provider (Settings → Authentication → Login methods), see the [Cloudflare docs](https://developers.cloudflare.com/cloudflare-one/identity/idp-integration/entra-id/).
     2. Add a custom domain route for the worker (`routes` in `wrangler.jsonc`); `workers.dev` and preview URLs are disabled, so the app is only reachable through Access.
     3. Create a self-hosted Access application for that domain with Entra ID as the only login method and a policy that allows the intended users (e.g. an Entra group or email domain).
     4. Set `ACCESS_TEAM_DOMAIN` (`https://<team-name>.cloudflareaccess.com`) and `ACCESS_AUD` (the application's Audience (AUD) Tag) in `wrangler.jsonc`.
-3. Migrate: `npm run db:migrate:remote`
-4. Deploy: `npm run deploy`
+3. Deploy: `npm run deploy`
