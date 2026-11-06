@@ -9,6 +9,8 @@
         "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
         "db:reset": "rm -rf .wrangler/state/v3/d1 && npm run db:migrate",
         "deploy": "npm run build && wrangler deploy && wrangler d1 migrations apply DB --remote",
+        "deploy:preview": "npm run build && node scripts/preview.ts deploy",
+        "deploy:preview:delete": "node scripts/preview.ts delete",
         "dev": "dev-pm start @dev",
         "dev:app": "dotenv -e .env.local -e .env -- vite dev",
         "lint": "run-p lint:prettier lint:eslint lint:tsc",

@@ -9,5 +9,5 @@
     },
     "exclude": ["worker-configuration.d.ts"],
     "extends": "./tsconfig.json",
-    "include": ["*.ts", "*.mts"]
+    "include": ["*.ts", "*.mts", "scripts/**/*.ts"]
 }

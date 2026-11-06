@@ -8,9 +8,10 @@
         "enabled": true,
     },
     "main": "src/server.ts",
-    // served on workers.dev, protected by Cloudflare Access (see README); preview URLs would need their own Access setup
+    // served on workers.dev, protected by Cloudflare Access (see README)
     "workers_dev": true,
-    "preview_urls": false,
+    // Worker Previews on workers.dev (<preview-name>-serverless-todos.<subdomain>.workers.dev), protected by their own Access application (see README)
+    "preview_urls": true,
     // overridden locally by .env
     "vars": {
         // https://<team-name>.cloudflareaccess.com (public; used to verify the Access JWT)
@@ -26,4 +27,19 @@
             "migrations_dir": "drizzle",
         },
     ],
+    // Worker Previews (`npm run deploy:preview`, see README): Previews don't inherit the production settings
+    "previews": {
+        "observability": {
+            "enabled": true,
+        },
+        "vars": {
+            "ACCESS_TEAM_DOMAIN": "https://tight-hill-daff.cloudflareaccess.com",
+            // AUD tag of the Access application that protects the Previews (not the production one)
+            "ACCESS_AUD": "TODO-preview-access-aud",
+            // new users get sample lists and todos (src/db/fixtures.server.ts)
+            "SEED_FIXTURES": "true",
+        },
+        // every Preview gets its own database: set by scripts/deployPreview.ts (database created on the first deploy of a Preview)
+        "d1_databases": [],
+    },
 }
