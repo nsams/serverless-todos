@@ -1,7 +1,8 @@
+import { isDateString } from "./dates";
 import type { TodoFilter, TodoFilterModel, TodoSort } from "./db/todos.server";
 
 // Grid state (pagination, sorting, filtering) lives in the URL, see searchParams.ts for the serialization:
-// ?page=0&pageSize=25&sort=title:asc&sort=done:desc&filter=title:contains:milk&filter=done:is:false&filterLogic=or
+// ?page=0&pageSize=25&sort=title:asc&sort=done:desc&filter=title:contains:milk&filter=dueDate:before:2026-11-06&filterLogic=or
 export type TodoSearch = {
     page?: number;
     pageSize?: number;
@@ -15,6 +16,8 @@ const defaultPageSize = 25;
 
 export const filterOperators: { [Field in TodoFilter["field"]]: Extract<TodoFilter, { field: Field }>["operator"][] } = {
     title: ["contains", "equals", "startsWith", "endsWith"],
+    description: ["contains", "equals", "startsWith", "endsWith"],
+    dueDate: ["is", "after", "onOrAfter", "before", "onOrBefore"],
     done: ["is"],
     createdAt: ["after", "onOrAfter", "before", "onOrBefore"],
 };
@@ -68,7 +71,8 @@ export function parseTodoSearch(search: TodoSearch) {
         }
         filterItems.push({ field, operator, value: rawValue || undefined });
         const value = field === "done" ? rawValue === "true" : field === "createdAt" ? new Date(rawValue) : rawValue;
-        if (rawValue && !(value instanceof Date && Number.isNaN(value.getTime()))) {
+        const isValid = field === "dueDate" ? isDateString(value) : !(value instanceof Date && Number.isNaN(value.getTime()));
+        if (rawValue && isValid) {
             filter.items.push({ field, operator, value } as TodoFilter);
         }
     }

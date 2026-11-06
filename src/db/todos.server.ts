@@ -1,15 +1,20 @@
 import { env } from "cloudflare:workers";
-import { and, asc, desc, eq, gte, lt, or, type SQL, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, isNull, lt, lte, or, type SQL, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 
+import { getListRepository } from "./lists.server";
 import { todos } from "./schema";
 
 export type Todo = typeof todos.$inferSelect;
 
-export type TodoSort = { field: "title" | "done" | "createdAt"; direction: "asc" | "desc" };
+export type TodoSort = { field: "title" | "description" | "dueDate" | "done" | "createdAt"; direction: "asc" | "desc" };
+
+type TextOperator = "contains" | "equals" | "startsWith" | "endsWith";
 
 export type TodoFilter =
-    | { field: "title"; operator: "contains" | "equals" | "startsWith" | "endsWith"; value: string }
+    | { field: "title"; operator: TextOperator; value: string }
+    | { field: "description"; operator: TextOperator; value: string }
+    | { field: "dueDate"; operator: "is" | "after" | "onOrAfter" | "before" | "onOrBefore"; value: string /* YYYY-MM-DD */ }
     | { field: "done"; operator: "is"; value: boolean }
     | { field: "createdAt"; operator: "after" | "onOrAfter" | "before" | "onOrBefore"; value: Date };
 
@@ -17,24 +22,40 @@ export type TodoFilterModel = { items: TodoFilter[]; logicOperator: "and" | "or"
 
 type ListOptions = { offset: number; limit: number; sort: TodoSort[]; filter: TodoFilterModel };
 
+export type TodoValues = Pick<Todo, "title" | "description" | "dueDate">;
+
 type TodoRepository = {
-    list(userId: string, options: ListOptions): Promise<{ rows: Todo[]; totalCount: number }>;
-    create(userId: string, title: string): Promise<void>;
-    update(userId: string, id: string, values: Partial<Pick<Todo, "title" | "done">>): Promise<void>;
+    list(userId: string, listId: string, options: ListOptions): Promise<{ rows: Todo[]; totalCount: number }>;
+    // false if the list doesn't exist (or belongs to another user)
+    create(userId: string, listId: string, values: TodoValues): Promise<boolean>;
+    // false if the target list doesn't exist (or belongs to another user)
+    update(userId: string, id: string, values: Partial<TodoValues & Pick<Todo, "done" | "listId">>): Promise<boolean>;
     delete(userId: string, id: string): Promise<void>;
 };
 
 // Cheap to create: the D1 binding is just a handle, no connection pool to manage
 export function getTodoRepository(): TodoRepository {
     const db = drizzle(env.DB, { casing: "snake_case" });
+    const listExists = async (userId: string, listId: string) => (await getListRepository().get(userId, listId)) !== undefined;
     return {
-        list: async (userId, { offset, limit, sort, filter }) => {
+        list: async (userId, listId, { offset, limit, sort, filter }) => {
             const filterConditions = filter.items.map((item) => filterCondition(item));
-            const where = and(eq(todos.userId, userId), filter.logicOperator === "or" ? or(...filterConditions) : and(...filterConditions));
-            const orderBy = sort.map(({ field, direction }) => {
-                // case-insensitive (SQLite compares binary by default)
-                const column = field === "title" ? sql`lower(${todos.title})` : todos[field];
-                return direction === "asc" ? asc(column) : desc(column);
+            const where = and(
+                eq(todos.userId, userId),
+                eq(todos.listId, listId),
+                filter.logicOperator === "or" ? or(...filterConditions) : and(...filterConditions),
+            );
+            const orderBy = sort.flatMap(({ field, direction }) => {
+                const order = direction === "asc" ? asc : desc;
+                if (field === "title" || field === "description") {
+                    // case-insensitive (SQLite compares binary by default)
+                    return [order(sql`lower(${todos[field]})`)];
+                }
+                if (field === "dueDate") {
+                    // todos without due date last in both directions
+                    return [asc(isNull(todos.dueDate)), order(todos.dueDate)];
+                }
+                return [order(todos[field])];
             });
             const [rows, totalCount] = await Promise.all([
                 db
@@ -48,14 +69,22 @@ export function getTodoRepository(): TodoRepository {
             ]);
             return { rows, totalCount };
         },
-        create: async (userId, title) => {
-            await db.insert(todos).values({ userId, title });
+        create: async (userId, listId, values) => {
+            if (!(await listExists(userId, listId))) {
+                return false;
+            }
+            await db.insert(todos).values({ userId, listId, ...values });
+            return true;
         },
         update: async (userId, id, values) => {
+            if (values.listId !== undefined && !(await listExists(userId, values.listId))) {
+                return false;
+            }
             await db
                 .update(todos)
                 .set(values)
                 .where(and(eq(todos.id, id), eq(todos.userId, userId)));
+            return true;
         },
         delete: async (userId, id) => {
             await db.delete(todos).where(and(eq(todos.id, id), eq(todos.userId, userId)));
@@ -65,12 +94,22 @@ export function getTodoRepository(): TodoRepository {
 
 function filterCondition(filter: TodoFilter): SQL | undefined {
     switch (filter.field) {
-        case "title": {
+        case "title":
+        case "description": {
             // case-insensitive (no ILIKE in SQLite), wildcards in the value are matched literally
             const value = filter.value.toLowerCase().replace(/[\\%_]/g, "\\$&");
             const pattern = { contains: `%${value}%`, equals: value, startsWith: `${value}%`, endsWith: `%${value}` }[filter.operator];
-            return sql`lower(${todos.title}) like ${pattern} escape '\\'`;
+            return sql`lower(${todos[filter.field]}) like ${pattern} escape '\\'`;
         }
+        case "dueDate":
+            // YYYY-MM-DD strings compare like dates; todos without due date never match
+            return {
+                is: eq(todos.dueDate, filter.value),
+                after: gt(todos.dueDate, filter.value),
+                onOrAfter: gte(todos.dueDate, filter.value),
+                before: lt(todos.dueDate, filter.value),
+                onOrBefore: lte(todos.dueDate, filter.value),
+            }[filter.operator];
         case "done":
             return eq(todos.done, filter.value);
         case "createdAt": {
