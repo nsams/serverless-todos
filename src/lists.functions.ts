@@ -1,11 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
 
 import { getListRepository } from "./db/lists.server";
-import { maxListNameLength } from "./limits";
-
-// Empty names are reported to the user (see the handlers), invalid input otherwise throws
-const nameSchema = z.string().trim().max(maxListNameLength);
+import { createListSchema, deleteListSchema, renameListSchema } from "./schemas";
 
 export const listLists = createServerFn().handler(async ({ context: { user } }) => {
     return { user, lists: await getListRepository().list(user.id) };
@@ -18,7 +14,7 @@ export const getDefaultList = createServerFn({ method: "POST" }).handler(async (
 });
 
 export const createList = createServerFn({ method: "POST" })
-    .validator(z.object({ name: nameSchema }))
+    .validator(createListSchema)
     .handler(async ({ data: { name }, context: { user } }) => {
         if (!name) {
             return { error: "Name is required", id: null };
@@ -28,7 +24,7 @@ export const createList = createServerFn({ method: "POST" })
     });
 
 export const renameList = createServerFn({ method: "POST" })
-    .validator(z.object({ id: z.string(), name: nameSchema }))
+    .validator(renameListSchema)
     .handler(async ({ data: { id, name }, context: { user } }) => {
         if (!name) {
             return { error: "Name is required" };
@@ -38,7 +34,7 @@ export const renameList = createServerFn({ method: "POST" })
     });
 
 export const deleteList = createServerFn({ method: "POST" })
-    .validator(z.object({ id: z.string() }))
+    .validator(deleteListSchema)
     .handler(async ({ data: { id }, context: { user } }) => {
         await getListRepository().delete(user.id, id);
     });

@@ -33,7 +33,8 @@ npm run db:reset  # delete the local database and re-apply all migrations
 - `src/routes/index.tsx`: start page, redirects to the user's first list (creates a list "Todos" if the user has none)
 - `src/routes/_app.tsx`: layout (app bar, the user's lists in a sidebar)
 - `src/routes/_app.lists.$listId.tsx`: todos of a list; grid state (pagination, sorting, filtering) lives in the URL (`src/todoSearch.ts`, serialized as plain search params by `src/searchParams.ts`)
-- `src/todos.functions.ts`, `src/lists.functions.ts`: server functions (data loading and mutations, input validated with zod; length limits in `src/limits.ts`)
+- `src/todos.functions.ts`, `src/lists.functions.ts`: server functions (data loading and mutations)
+- `src/schemas.ts`: zod schemas of the operations' input, shared by the server functions and the MCP tools (length limits in `src/limits.ts`)
 - `src/mcp.server.ts`, `src/routes/mcp.ts`: MCP server at `/mcp` (see [MCP server](#mcp-server))
 - `src/dates.ts`: due dates are calendar dates (`YYYY-MM-DD`) without time zone; whether a todo is overdue is decided in the browser with the user's local date
 - `src/server.ts`: worker entry, passes `ctx.access` (Cloudflare Access) to the app as request context

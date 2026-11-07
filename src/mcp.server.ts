@@ -5,10 +5,10 @@ import type { User } from "./auth.server";
 import { dateStringSchema } from "./dates";
 import { getListRepository, type List } from "./db/lists.server";
 import { getTodoRepository, type Todo, type TodoFilter } from "./db/todos.server";
-import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "./limits";
+import { createListSchema, createTodoSchema, deleteListSchema, listIdSchema, renameListSchema, todoByIdSchema, updateTodoSchema } from "./schemas";
 
 // MCP server (Streamable HTTP, stateless) at /mcp, see src/routes/mcp.ts: lets MCP clients (Claude, ...) manage the authenticated user's lists and todos,
-// the same operations as the UI (src/lists.functions.ts, src/todos.functions.ts)
+// the same operations as the UI (src/lists.functions.ts, src/todos.functions.ts), with the same input schemas (src/schemas.ts)
 
 const listOutputSchema = z.object({ id: z.string(), name: z.string() });
 const listWithCountOutputSchema = listOutputSchema.extend({ openCount: z.number().describe("Number of todos not done") });
@@ -22,12 +22,6 @@ const todoOutputSchema = z.object({
     done: z.boolean(),
     createdAt: z.string().describe("ISO timestamp"),
 });
-
-const listIdSchema = z.string().describe("Id of the list (see list_lists)");
-const todoIdSchema = z.string().describe("Id of the todo (see list_todos)");
-const listNameSchema = z.string().trim().min(1).max(maxListNameLength).describe("Name of the list");
-const todoTitleSchema = z.string().trim().min(1).max(maxTodoTitleLength).describe("Title of the todo");
-const todoDescriptionSchema = z.string().trim().max(maxTodoDescriptionLength).describe("Longer description (plain text)");
 
 function toListOutput({ id, name }: List) {
     return { id, name };
@@ -72,10 +66,10 @@ function createMcpServer(user: User) {
         {
             title: "Create list",
             description: "Creates a todo list.",
-            inputSchema: z.object({ name: listNameSchema }),
+            inputSchema: createListSchema,
             outputSchema: listOutputSchema,
         },
-        async ({ name }) => success(toListOutput(await lists.create(user.id, name))),
+        async ({ name }) => (name ? success(toListOutput(await lists.create(user.id, name))) : failure("Name is required")),
     );
 
     server.registerTool(
@@ -83,11 +77,14 @@ function createMcpServer(user: User) {
         {
             title: "Rename list",
             description: "Renames a todo list.",
-            inputSchema: z.object({ id: listIdSchema, name: listNameSchema }),
+            inputSchema: renameListSchema,
             outputSchema: listOutputSchema,
             annotations: { idempotentHint: true },
         },
         async ({ id, name }) => {
+            if (!name) {
+                return failure("Name is required");
+            }
             const list = await lists.rename(user.id, id, name);
             return list ? success(toListOutput(list)) : failure(`List ${id} not found`);
         },
@@ -98,7 +95,7 @@ function createMcpServer(user: User) {
         {
             title: "Delete list",
             description: "Deletes a todo list including all its todos. Cannot be undone.",
-            inputSchema: z.object({ id: listIdSchema }),
+            inputSchema: deleteListSchema,
             outputSchema: z.object({ deleted: z.literal(true) }),
             annotations: { destructiveHint: true, idempotentHint: true },
         },
@@ -164,7 +161,7 @@ function createMcpServer(user: User) {
         {
             title: "Get todo",
             description: "Gets a single todo.",
-            inputSchema: z.object({ id: todoIdSchema }),
+            inputSchema: todoByIdSchema,
             outputSchema: todoOutputSchema,
             annotations: { readOnlyHint: true },
         },
@@ -179,15 +176,16 @@ function createMcpServer(user: User) {
         {
             title: "Create todo",
             description: "Creates a todo. Without listId it is added to the user's first list (created if the user has no list yet).",
-            inputSchema: z.object({
-                title: todoTitleSchema,
-                description: todoDescriptionSchema.optional(),
-                dueDate: dateStringSchema.optional().describe("Due date as calendar date YYYY-MM-DD"),
+            // unlike in the UI, the list is optional
+            inputSchema: createTodoSchema.extend({
                 listId: listIdSchema.optional().describe("Id of the list (see list_lists); defaults to the user's first list"),
             }),
             outputSchema: todoOutputSchema,
         },
-        async ({ title, description = "", dueDate = null, listId }) => {
+        async ({ listId, title, description, dueDate }) => {
+            if (!title) {
+                return failure("Title is required");
+            }
             const targetListId = listId ?? (await lists.getOrCreateDefault(user.id)).id;
             const todo = await todos.create(user.id, targetListId, { title, description, dueDate });
             return todo ? success(toTodoOutput(todo)) : failure(`List ${targetListId} not found`);
@@ -200,14 +198,7 @@ function createMcpServer(user: User) {
             title: "Update todo",
             description:
                 "Changes a todo: only the given fields are changed. Also used to mark a todo as done (done=true) or to move it to another list (listId).",
-            inputSchema: z.object({
-                id: todoIdSchema,
-                title: todoTitleSchema.optional(),
-                description: todoDescriptionSchema.optional(),
-                dueDate: dateStringSchema.nullable().optional().describe("Due date as calendar date YYYY-MM-DD, null removes the due date"),
-                done: z.boolean().optional(),
-                listId: listIdSchema.optional().describe("Moves the todo to this list (see list_lists)"),
-            }),
+            inputSchema: updateTodoSchema,
             outputSchema: todoOutputSchema,
             annotations: { idempotentHint: true },
         },
@@ -224,7 +215,7 @@ function createMcpServer(user: User) {
         {
             title: "Delete todo",
             description: "Deletes a todo. Cannot be undone (to complete a todo, use update_todo with done=true instead).",
-            inputSchema: z.object({ id: todoIdSchema }),
+            inputSchema: todoByIdSchema,
             outputSchema: z.object({ deleted: z.literal(true) }),
             annotations: { destructiveHint: true, idempotentHint: true },
         },
