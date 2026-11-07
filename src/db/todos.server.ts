@@ -46,7 +46,7 @@ export function getTodoRepository(): TodoRepository {
             const orderBy = sort.flatMap(({ field, direction }) => {
                 const order = direction === "asc" ? asc : desc;
                 if (field === "title" || field === "description") {
-                    // case-insensitive (SQLite compares binary by default)
+                    // case-insensitive for ASCII letters (SQLite compares binary by default, lower() only folds ASCII)
                     return [order(sql`lower(${todos[field]})`)];
                 }
                 if (field === "dueDate") {
@@ -94,10 +94,11 @@ function filterCondition(filter: TodoFilter): SQL | undefined {
     switch (filter.field) {
         case "title":
         case "description": {
-            // case-insensitive (no ILIKE in SQLite), wildcards in the value are matched literally
-            const value = filter.value.toLowerCase().replace(/[\\%_]/g, "\\$&");
+            // LIKE is case-insensitive for ASCII letters only (SQLite without ICU, also lower() only folds ASCII): "Äpfel" doesn't match "äpfel".
+            // Wildcards in the value are matched literally.
+            const value = filter.value.replace(/[\\%_]/g, "\\$&");
             const pattern = { contains: `%${value}%`, equals: value, startsWith: `${value}%`, endsWith: `%${value}` }[filter.operator];
-            return sql`lower(${todos[filter.field]}) like ${pattern} escape '\\'`;
+            return sql`${todos[filter.field]} like ${pattern} escape '\\'`;
         }
         case "dueDate":
             // YYYY-MM-DD strings compare like dates; todos without due date never match

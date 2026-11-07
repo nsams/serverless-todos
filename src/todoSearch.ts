@@ -37,7 +37,8 @@ export function validateTodoSearch(search: unknown): TodoSearch {
     const pageNumber = Number.parseInt(String(page), 10);
     const pageSizeNumber = Number(pageSize);
     return {
-        page: pageNumber > 0 ? pageNumber : undefined,
+        // safe integer: a huge page would make the OFFSET overflow (SQLite error instead of the redirect to the last page)
+        page: Number.isSafeInteger(pageNumber) && pageNumber > 0 ? pageNumber : undefined,
         pageSize: pageSizeOptions.includes(pageSizeNumber) && pageSizeNumber !== defaultPageSize ? pageSizeNumber : undefined,
         sort: toStringArray(sort),
         filter: toStringArray(filter),

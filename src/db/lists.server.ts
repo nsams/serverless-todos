@@ -44,8 +44,23 @@ export function getListRepository(): ListRepository {
                 .get();
         },
         getOrCreateDefault: async (userId) => {
-            const first = await db.select().from(lists).where(eq(lists.userId, userId)).orderBy(asc(lists.createdAt), asc(lists.id)).limit(1).get();
-            return first ?? repository.create(userId, "Todos");
+            const firstList = () => db.select().from(lists).where(eq(lists.userId, userId)).orderBy(asc(lists.createdAt), asc(lists.id)).limit(1);
+            const first = await firstList().get();
+            if (first) {
+                return first;
+            }
+            // Insert only if there is still no list: concurrent requests of a new user (e.g. two tabs) would create two lists otherwise.
+            // A single statement is atomic in D1.
+            await db.run(sql`
+                insert into ${lists} (id, user_id, name, created_at)
+                select ${crypto.randomUUID()}, ${userId}, 'Todos', ${Date.now()}
+                where not exists (select 1 from ${lists} where user_id = ${userId})
+            `);
+            const created = await firstList().get();
+            if (!created) {
+                throw new Error("Default list was not created");
+            }
+            return created;
         },
         create: async (userId, name) => {
             const [list] = await db.insert(lists).values({ userId, name }).returning();

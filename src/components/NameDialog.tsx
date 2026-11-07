@@ -35,9 +35,8 @@ export function NameDialog({ open, title, submitLabel, initialName = "", maxLeng
             <form onSubmit={(event) => void handleSubmit(event)}>
                 <DialogTitle>{title}</DialogTitle>
                 <DialogContent>
-                    {/* key: reset the uncontrolled field whenever the dialog is opened */}
+                    {/* uncontrolled: the dialog's content is unmounted when closed, so every opening starts with initialName */}
                     <TextField
-                        key={String(open)}
                         name="name"
                         label="Name"
                         defaultValue={initialName}

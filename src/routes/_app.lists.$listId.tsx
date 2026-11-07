@@ -24,14 +24,16 @@ import {
     getGridStringOperators,
     GridActionsCellItem,
     type GridColDef,
+    GridEditInputCell,
     type GridFilterModel,
     type GridFilterOperator,
     GridLogicOperator,
+    type GridPaginationModel,
     type GridSortModel,
 } from "@mui/x-data-grid-pro";
 import { createFileRoute, getRouteApi, redirect, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, startTransition, useCallback, useMemo, useOptimistic, useState } from "react";
 
 import { useShowError } from "~/components/ErrorSnackbar";
 import { NameDialog } from "~/components/NameDialog";
@@ -81,125 +83,181 @@ function serializeFilterValue(field: string, value: unknown) {
     return value == null ? "" : String(value);
 }
 
+// The filter part of the URL (see todoSearch.ts) for a grid filter model
+function toFilterSearch(model: GridFilterModel): Pick<TodoSearch, "filter" | "filterLogic"> {
+    const filter = model.items.map((item) => `${item.field}:${item.operator}:${serializeFilterValue(item.field, item.value)}`);
+    return { filter: filter.length > 0 ? filter : undefined, filterLogic: model.logicOperator === GridLogicOperator.Or ? "or" : undefined };
+}
+
+function isSameFilterSearch(a: TodoSearch, b: TodoSearch) {
+    return (a.filter ?? []).join("\n") === (b.filter ?? []).join("\n") && a.filterLogic === b.filterLogic;
+}
+
+// Too long values are rejected by the server; the cell stays in edit mode and the message is shown
+class ValidationError extends Error {}
+
+// Applied until the mutation and the reload are done (or failed)
+type OptimisticChange = { id: string; done: boolean } | { id: string; removed: true };
+
+function applyOptimisticChange(todos: Todo[], change: OptimisticChange) {
+    if ("removed" in change) {
+        return todos.filter((todo) => todo.id !== change.id);
+    }
+    return todos.map((todo) => (todo.id === change.id ? { ...todo, done: change.done } : todo));
+}
+
 function Todos() {
     const { list, todos, totalCount } = Route.useLoaderData();
-    const { lists } = appRoute.useLoaderData();
+    // Structural sharing keeps the same array as long as no list was added, renamed or removed (e.g. not when only the open counts change),
+    // so the columns aren't recreated (that would reset resized columns)
+    const moveTargets = appRoute.useLoaderData({
+        select: ({ lists }) => lists.filter((otherList) => otherList.id !== list.id).map(({ id, name }) => ({ id, name })),
+        structuralSharing: true,
+    });
     const navigate = Route.useNavigate();
     const router = useRouter();
     const updateTodoFn = useServerFn(updateTodo);
     const deleteTodoFn = useServerFn(deleteTodo);
     const showError = useShowError();
     const today = useToday();
+    const [optimisticTodos, addOptimisticChange] = useOptimistic(todos, applyOptimisticChange);
 
-    // Use the pending location while loading, otherwise the grid would show the old state until the loader is done (e.g. reset a filter value while typing)
-    const search = validateTodoSearch(useRouterState({ select: (state) => state.location.search }));
+    // Use the pending location while loading, otherwise the grid would show the old state until the loader is done (e.g. reset a filter value while typing).
+    // The models passed to the grid keep their identity while the URL doesn't change, a new model on every render makes the grid apply it again.
+    const rawSearch = useRouterState({ select: (state) => state.location.search, structuralSharing: true });
     const isLoading = useRouterState({ select: (state) => state.status === "pending" && state.location.href !== state.resolvedLocation?.href });
-    const { page, pageSize, sort, filter, filterItems } = parseTodoSearch(search);
-    const sortModel: GridSortModel = sort.map(({ field, direction }) => ({ field, sort: direction }));
-    const filterModel: GridFilterModel = {
-        items: filterItems.map((item, index) => ({ id: index, ...item })),
-        logicOperator: filter.logicOperator === "or" ? GridLogicOperator.Or : GridLogicOperator.And,
-    };
+    const search = useMemo(() => validateTodoSearch(rawSearch), [rawSearch]);
+    const { page, pageSize, sort, filter, filterItems } = useMemo(() => parseTodoSearch(search), [search]);
+    const paginationModel = useMemo<GridPaginationModel>(() => ({ page, pageSize }), [page, pageSize]);
+    const sortModel = useMemo<GridSortModel>(() => sort.map(({ field, direction }) => ({ field, sort: direction })), [sort]);
+    const urlFilterModel = useMemo<GridFilterModel>(
+        () => ({
+            items: filterItems.map((item, index) => ({ id: index, ...item })),
+            logicOperator: filter.logicOperator === "or" ? GridLogicOperator.Or : GridLogicOperator.And,
+        }),
+        [filter, filterItems],
+    );
+    // The grid's own model is passed back while it matches the URL: a model rebuilt from the URL (new item ids, value strings)
+    // would reset the filter input the user is typing in
+    const [gridFilterModel, setGridFilterModel] = useState<GridFilterModel | null>(null);
+    const filterModel = gridFilterModel && isSameFilterSearch(toFilterSearch(gridFilterModel), search) ? gridFilterModel : urlFilterModel;
 
     const updateSearch = (values: TodoSearch, { replace = false } = {}) => {
         void navigate({ search: { ...search, ...values }, replace, resetScroll: false });
     };
 
-    const mutate = async (mutation: Promise<unknown>) => {
-        try {
-            await mutation;
-        } catch (error) {
-            console.error(error);
-            showError("Saving failed, please try again.");
-        }
-        // also after an error: the grid shows the stored state again (e.g. the done checkbox)
-        await router.invalidate();
-    };
+    const mutate = useCallback(
+        (change: OptimisticChange, mutation: () => Promise<unknown>) => {
+            startTransition(async () => {
+                addOptimisticChange(change);
+                try {
+                    await mutation();
+                } catch (error) {
+                    console.error(error);
+                    showError("Saving failed, please try again.");
+                }
+                // also after an error: the stored state is shown again when the optimistic change ends with the transition
+                await router.invalidate();
+            });
+        },
+        [addOptimisticChange, router, showError],
+    );
 
-    const columns: GridColDef<Todo>[] = [
-        {
-            field: "done",
-            headerName: "Done",
-            type: "boolean",
-            width: 80,
-            filterOperators: supportedOperators("done", getGridBooleanOperators()),
-            renderCell: ({ row }) => (
-                <Checkbox
-                    checked={row.done}
-                    onChange={(event) => void mutate(updateTodoFn({ data: { id: row.id, done: event.target.checked } }))}
-                    slotProps={{ input: { "aria-label": `Mark “${row.title}” as ${row.done ? "open" : "done"}` } }}
-                />
-            ),
-        },
-        {
-            field: "title",
-            headerName: "Title",
-            flex: 1,
-            minWidth: 150,
-            editable: true,
-            filterOperators: supportedOperators("title", getGridStringOperators()),
-        },
-        {
-            field: "description",
-            headerName: "Description",
-            type: "longText",
-            flex: 1.5,
-            minWidth: 150,
-            editable: true,
-            filterOperators: supportedOperators("description", getGridStringOperators()),
-        },
-        {
-            field: "dueDate",
-            headerName: "Due",
-            type: "date",
-            width: 150,
-            editable: true,
-            filterOperators: supportedOperators("dueDate", getGridDateOperators()),
-            // the grid works with Date values (at local midnight), the todo has a YYYY-MM-DD string
-            valueGetter: (value: string | null) => (value ? fromDateString(value) : null),
-            valueSetter: (value: Date | null, row) => ({ ...row, dueDate: value && !Number.isNaN(value.getTime()) ? toDateString(value) : null }),
-            renderCell: ({ row, formattedValue }) =>
-                isOverdue(row, today) ? (
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, color: "error.main", fontWeight: "bold" }}>
-                        {/* titleAccess: accessible name and native tooltip */}
-                        <Warning fontSize="small" titleAccess="Overdue" />
-                        {formattedValue}
-                    </Box>
-                ) : (
-                    formattedValue
+    const columns = useMemo<GridColDef<Todo>[]>(
+        () => [
+            {
+                field: "done",
+                headerName: "Done",
+                type: "boolean",
+                width: 80,
+                filterOperators: supportedOperators("done", getGridBooleanOperators()),
+                renderCell: ({ row, tabIndex }) => (
+                    <Checkbox
+                        checked={row.done}
+                        // only the focused cell is a tab stop (grid keyboard navigation)
+                        tabIndex={tabIndex}
+                        onChange={(event) => {
+                            const done = event.target.checked;
+                            mutate({ id: row.id, done }, () => updateTodoFn({ data: { id: row.id, done } }));
+                        }}
+                        // Space toggles the checkbox instead of scrolling the grid by a page
+                        onKeyDown={(event) => event.key === " " && event.stopPropagation()}
+                        slotProps={{ input: { "aria-label": `Mark “${row.title}” as ${row.done ? "open" : "done"}` } }}
+                    />
                 ),
-        },
-        {
-            field: "createdAt",
-            headerName: "Created",
-            type: "dateTime",
-            width: 180,
-            filterOperators: supportedOperators("createdAt", getGridDateOperators(true)),
-        },
-        {
-            field: "actions",
-            type: "actions",
-            getActions: ({ row }) => [
-                <GridActionsCellItem
-                    key="delete"
-                    icon={<Delete />}
-                    label="Delete"
-                    onClick={() => void mutate(deleteTodoFn({ data: { id: row.id } }))}
-                />,
-                ...lists
-                    .filter((otherList) => otherList.id !== list.id)
-                    .map((otherList) => (
+            },
+            {
+                field: "title",
+                headerName: "Title",
+                flex: 1,
+                minWidth: 150,
+                editable: true,
+                filterOperators: supportedOperators("title", getGridStringOperators()),
+                renderEditCell: (params) => (
+                    <GridEditInputCell {...params} slotProps={{ root: { slotProps: { htmlInput: { maxLength: maxTodoTitleLength } } } }} />
+                ),
+            },
+            {
+                field: "description",
+                headerName: "Description",
+                type: "longText",
+                flex: 1.5,
+                minWidth: 150,
+                editable: true,
+                filterOperators: supportedOperators("description", getGridStringOperators()),
+            },
+            {
+                field: "dueDate",
+                headerName: "Due",
+                type: "date",
+                width: 150,
+                editable: true,
+                filterOperators: supportedOperators("dueDate", getGridDateOperators()),
+                // the grid works with Date values (at local midnight), the todo has a YYYY-MM-DD string
+                valueGetter: (value: string | null) => (value ? fromDateString(value) : null),
+                valueSetter: (value: Date | null, row) => ({ ...row, dueDate: value && !Number.isNaN(value.getTime()) ? toDateString(value) : null }),
+                renderCell: ({ row, formattedValue }) =>
+                    isOverdue(row, today) ? (
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, color: "error.main", fontWeight: "bold" }}>
+                            {/* titleAccess: accessible name and native tooltip */}
+                            <Warning fontSize="small" titleAccess="Overdue" />
+                            {formattedValue}
+                        </Box>
+                    ) : (
+                        formattedValue
+                    ),
+            },
+            {
+                field: "createdAt",
+                headerName: "Created",
+                type: "dateTime",
+                width: 180,
+                filterOperators: supportedOperators("createdAt", getGridDateOperators(true)),
+            },
+            {
+                field: "actions",
+                type: "actions",
+                getActions: ({ row }) => [
+                    <GridActionsCellItem
+                        key="delete"
+                        icon={<Delete />}
+                        label="Delete"
+                        onClick={() => mutate({ id: row.id, removed: true }, () => deleteTodoFn({ data: { id: row.id } }))}
+                    />,
+                    ...moveTargets.map((otherList) => (
                         <GridActionsCellItem
                             key={`move-${otherList.id}`}
                             icon={<Move />}
                             label={`Move to “${otherList.name}”`}
                             showInMenu
-                            onClick={() => void mutate(updateTodoFn({ data: { id: row.id, listId: otherList.id } }))}
+                            onClick={() => mutate({ id: row.id, removed: true }, () => updateTodoFn({ data: { id: row.id, listId: otherList.id } }))}
                         />
                     )),
-            ],
-        },
-    ];
+                ],
+            },
+        ],
+        [moveTargets, today, mutate, updateTodoFn, deleteTodoFn],
+    );
 
     return (
         <Container sx={{ py: 4 }}>
@@ -221,33 +279,26 @@ function Todos() {
                 </Box>
                 <Paper>
                     <DataGridPro
-                        rows={todos}
+                        rows={optimisticTodos}
                         columns={columns}
                         autoHeight
                         disableRowSelectionOnClick
                         paginationMode="server"
                         sortingMode="server"
                         filterMode="server"
-                        rowCount={totalCount}
-                        paginationModel={{ page, pageSize }}
+                        // minus the todos removed optimistically
+                        rowCount={totalCount - (todos.length - optimisticTodos.length)}
+                        paginationModel={paginationModel}
                         pageSizeOptions={pageSizeOptions}
                         onPaginationModelChange={(model) => updateSearch({ page: model.page, pageSize: model.pageSize })}
                         sortModel={sortModel}
                         onSortModelChange={(model) => updateSearch({ page: undefined, sort: model.map((item) => `${item.field}:${item.sort}`) })}
                         filterModel={filterModel}
-                        onFilterModelChange={(model) =>
-                            updateSearch(
-                                {
-                                    page: undefined,
-                                    filter: model.items.map(
-                                        (item) => `${item.field}:${item.operator}:${serializeFilterValue(item.field, item.value)}`,
-                                    ),
-                                    filterLogic: model.logicOperator === GridLogicOperator.Or ? "or" : undefined,
-                                },
-                                // no history entry per keystroke
-                                { replace: true },
-                            )
-                        }
+                        onFilterModelChange={(model) => {
+                            setGridFilterModel(model);
+                            // no history entry per keystroke
+                            updateSearch({ page: undefined, ...toFilterSearch(model) }, { replace: true });
+                        }}
                         loading={isLoading}
                         getRowClassName={({ row }) => (isOverdue(row, today) ? "overdue" : "")}
                         sx={{ "& .overdue": { bgcolor: (theme) => alpha(theme.palette.error.main, 0.06) } }}
@@ -257,6 +308,10 @@ function Todos() {
                             if (!title) {
                                 // a todo needs a title
                                 return oldRow;
+                            }
+                            // the title's edit input has a maxLength, the long text editor doesn't support it
+                            if (newRow.description.trim().length > maxTodoDescriptionLength) {
+                                throw new ValidationError(`The description can have at most ${maxTodoDescriptionLength} characters.`);
                             }
                             const changes = {
                                 ...(title !== oldRow.title && { title }),
@@ -270,6 +325,10 @@ function Todos() {
                             return { ...newRow, title };
                         }}
                         onProcessRowUpdateError={(error) => {
+                            if (error instanceof ValidationError) {
+                                showError(error.message);
+                                return;
+                            }
                             console.error(error);
                             showError("Saving failed, please try again.");
                         }}

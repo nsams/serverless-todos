@@ -1,6 +1,6 @@
 import { Add, Hamburger, Logout } from "@dextinity/admin-icons";
 import { AppBar, Box, Divider, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Toolbar, Typography } from "@mui/material";
-import { createFileRoute, createLink, Outlet, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, createLink, Outlet, useNavigate, useRouter } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 
@@ -18,9 +18,13 @@ const drawerWidth = 260;
 
 const ListItemLink = createLink(ListItemButton);
 
+// read by screen readers, not shown
+const visuallyHidden = { position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" } as const;
+
 function AppLayout() {
     const { user, lists } = Route.useLoaderData();
     const navigate = useNavigate();
+    const router = useRouter();
     const createListFn = useServerFn(createList);
     const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -31,6 +35,8 @@ function AppLayout() {
             setCreateDialogOpen(false);
             setMobileDrawerOpen(false);
             await navigate({ to: "/lists/$listId", params: { listId: result.id } });
+            // the sidebar's lists aren't reloaded by the navigation (the layout route's loader data is reused)
+            await router.invalidate({ filter: (match) => match.routeId === Route.id });
         }
         return result.error;
     };
@@ -50,8 +56,12 @@ function AppLayout() {
                     >
                         <ListItemText primary={list.name} slotProps={{ primary: { noWrap: true } }} />
                         {list.openCount > 0 && (
-                            <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }} aria-label={`${list.openCount} open`}>
+                            <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 1 }}>
                                 {list.openCount}
+                                <Box component="span" sx={visuallyHidden}>
+                                    {" "}
+                                    open
+                                </Box>
                             </Typography>
                         )}
                     </ListItemLink>
@@ -82,7 +92,8 @@ function AppLayout() {
                     >
                         <Hamburger />
                     </IconButton>
-                    <Typography variant="h6" sx={{ flexGrow: 1 }}>
+                    {/* not a heading: the page's h1 is the list name */}
+                    <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
                         Todos
                     </Typography>
                     <Typography sx={{ mr: 1, display: { xs: "none", sm: "block" } }}>{user.email}</Typography>

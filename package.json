@@ -8,7 +8,7 @@
         "db:migrate": "wrangler d1 migrations apply DB --local",
         "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
         "db:reset": "rm -rf .wrangler/state/v3/d1 && npm run db:migrate",
-        "deploy": "npm run build && wrangler d1 migrations apply DB --remote && wrangler deploy",
+        "deploy": "npm run build && npm run db:migrate:remote && wrangler deploy",
         "dev": "dev-pm start @dev",
         "dev:app": "dotenv -e .env.local -e .env -- vite dev",
         "lint": "run-p lint:prettier lint:eslint lint:tsc",
@@ -18,7 +18,6 @@
         "lint:fix:prettier": "npm run lint:prettier -- --write",
         "lint:prettier": "prettier --check '**/*.{ts,mts,tsx,js,mjs,json,jsonc,md,yml,yaml}'",
         "lint:tsc": "npm run typegen && tsc -b",
-        "preview": "npm run build && dotenv -e .env.local -e .env -- vite preview",
         "typegen": "wrangler types"
     },
     "engines": {

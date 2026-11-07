@@ -20,7 +20,7 @@ Processes are managed by [dev-process-manager](https://www.npmjs.com/package/dev
 
 Cloudflare Access is simulated locally by the Workers runtime (`access.dev`, configured in `vite.config.ts`): every request is authenticated as `DEV_USER_EMAIL` (`.env`). To work as another user, set `DEV_USER_EMAIL` in `.env.local` and restart `npm run dev`. There is no login/logout locally (the logout button leads to a 404).
 
-The local D1 database can be browsed and queried in the Cloudflare Local Explorer at http://localhost:5180/cdn-cgi/explorer (while `npm run dev` is running), or from the command line:
+The local D1 database can be browsed and queried in the Cloudflare Local Explorer at http://localhost:5180/cdn-cgi/local/explorer (while `npm run dev` is running), or from the command line:
 
 ```bash
 npx wrangler d1 execute DB --local --command "SELECT * FROM todos"
