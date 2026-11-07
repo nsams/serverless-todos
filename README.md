@@ -1,6 +1,6 @@
 # serverless-todos
 
-Minimal todo app (multiple lists, todos with description and due date, overdue todos are highlighted): TanStack Start on Cloudflare Workers, MUI + DataGrid, Drizzle, login via Cloudflare Access (Entra ID).
+Minimal todo app (multiple lists, todos with description and due date, overdue todos are highlighted, AI chat assistant that manages the todos): TanStack Start on Cloudflare Workers, MUI + DataGrid, Drizzle, login via Cloudflare Access (Entra ID), Cloudflare Agents SDK + AI Gateway + MUI X Chat.
 
 The app runs only on Cloudflare (Workers + D1). Locally it runs in the real Workers runtime (workerd) via `@cloudflare/vite-plugin`, D1 is emulated by Miniflare as a local SQLite database in `.wrangler/state/` (no Docker or external database needed).
 
@@ -20,6 +20,8 @@ Processes are managed by [dev-process-manager](https://www.npmjs.com/package/dev
 
 Cloudflare Access is simulated locally by the Workers runtime (`access.dev`, configured in `vite.config.ts`): every request is authenticated as `DEV_USER_EMAIL` (`.env`). To work as another user, set `DEV_USER_EMAIL` in `.env.local` and restart `npm run dev`. There is no login/logout locally (the logout button leads to a 404).
 
+The chat assistant uses the AI binding, which always runs remotely (also in local development, with costs): `npm run dev` needs a Cloudflare login (`npx wrangler login`, an account with access to the AI Gateway, see [Chat assistant](#chat-assistant)). To run the app without one, set `REMOTE_BINDINGS=false` in `.env.local`; the assistant then answers with an error.
+
 The local D1 database can be browsed and queried in the Cloudflare Local Explorer at http://localhost:5180/cdn-cgi/explorer (while `npm run dev` is running), or from the command line:
 
 ```bash
@@ -35,7 +37,8 @@ npm run db:reset  # delete the local database and re-apply all migrations
 - `src/routes/_app.lists.$listId.tsx`: todos of a list; grid state (pagination, sorting, filtering) lives in the URL (`src/todoSearch.ts`, serialized as plain search params by `src/searchParams.ts`)
 - `src/todos.functions.ts`, `src/lists.functions.ts`: server functions (data loading and mutations, input validated with zod; length limits in `src/limits.ts`)
 - `src/dates.ts`: due dates are calendar dates (`YYYY-MM-DD`) without time zone; whether a todo is overdue is decided in the browser with the user's local date
-- `src/server.ts`: worker entry, passes `ctx.access` (Cloudflare Access) to the app as request context
+- `src/server.ts`: worker entry, passes `ctx.access` (Cloudflare Access) to the app as request context, routes chat requests to the user's chat agent
+- `src/chat/`: chat assistant (see [Chat assistant](#chat-assistant)), `src/components/ChatPanel.tsx`: its UI
 - `src/start.ts`: global request middleware that rejects every request not authenticated by Cloudflare Access (`src/auth.server.ts`) and passes the user (identified by email) to the server functions as context
 
 ## Authentication
@@ -46,6 +49,18 @@ There is no login logic in the app: Cloudflare Access sits in front of the worke
 - Locally it uses `ctx.access`, simulated by the Workers runtime (`access.dev`).
 
 Denied requests are logged with the reason (Workers Logs).
+
+## Chat assistant
+
+The assistant (chat panel, robot button in the app bar) manages the user's lists and todos in natural language, e.g. "Lege ein Todo mit dem Titel „Milch holen“ an".
+
+- **Agent** (`src/chat/agent.server.ts`): an `AIChatAgent` ([Cloudflare Agents SDK](https://developers.cloudflare.com/agents/)), a Durable Object per user (instance name = user id). It keeps the chat history in its SQLite storage, streams the answers over a WebSocket (resumed after reconnects, in sync across tabs) and calls the model with the [AI SDK](https://ai-sdk.dev) (`streamText`).
+- **Tools** (`src/chat/tools.server.ts`): list/create/rename/delete lists, find/create/update/delete todos, directly on the repositories (no MCP server needed, the agent runs in the same worker). The user id comes from the authentication, never from the model. Deleting needs the user's confirmation in the chat (`needsApproval`). The client sends its local date and the current list with every message (`src/chat/chat.ts`), for relative due dates and as the default list.
+- **Routing/auth** (`src/server.ts`): the client connects to `/chat-agent`; the worker authenticates the request like any other (Cloudflare Access), rejects foreign origins (WebSockets aren't protected by CORS) and forwards it to the agent of the authenticated user. The Agents SDK's default routes (`/agents/...`) are not exposed.
+- **Model** (`AI_MODEL` in `wrangler.jsonc`, default `anthropic/claude-haiku-5.5`): any model of the [AI Gateway catalog](https://developers.cloudflare.com/ai/models/), via the AI binding (`createAI` from `agents/models/ai-sdk`). No provider API key: third-party models are paid with Cloudflare credits ([Unified Billing](https://developers.cloudflare.com/ai-gateway/features/unified-billing/), 5% fee on credits), Workers AI models (`@cf/...`, e.g. `@cf/zai-org/glm-4.7-flash`) are billed by Workers AI. Requests go through the AI Gateway `AI_GATEWAY_ID` (default `default`, created on first use): logs, spend limits, rate limits.
+- **UI** (`src/components/ChatPanel.tsx`): [MUI X Chat](https://mui.com/x/react-chat/) (`ChatBox`, alpha) renders the conversation of `useAgentChat`: its messages are controlled by `useAgentChat`, its adapter forwards sending, stopping and tool approvals. After a tool changed data the page data is reloaded (`router.invalidate()`).
+
+Setup (once per Cloudflare account): AI Gateway (dashboard → AI → AI Gateway): load credits for Unified Billing (or set Workers AI billing to Unified billing), turn on authentication for the gateway (needed for Unified Billing) and set a spend limit.
 
 ## Database
 

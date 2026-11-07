@@ -1,8 +1,22 @@
-import { Add, Hamburger, Logout } from "@dextinity/admin-icons";
-import { AppBar, Box, Divider, Drawer, IconButton, List, ListItemButton, ListItemIcon, ListItemText, Toolbar, Typography } from "@mui/material";
+import { Add, Chatbot, Hamburger, Logout } from "@dextinity/admin-icons";
+import {
+    AppBar,
+    Box,
+    CircularProgress,
+    Divider,
+    Drawer,
+    IconButton,
+    List,
+    ListItemButton,
+    ListItemIcon,
+    ListItemText,
+    Toolbar,
+    Tooltip,
+    Typography,
+} from "@mui/material";
 import { createFileRoute, createLink, Outlet, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 
 import { NameDialog } from "~/components/NameDialog";
 import { maxListNameLength } from "~/limits";
@@ -15,6 +29,10 @@ export const Route = createFileRoute("/_app")({
 });
 
 const drawerWidth = 260;
+const chatWidth = 420;
+
+// loaded on first open: the chat (MUI X Chat, Agents SDK client) is only needed in the browser
+const ChatPanel = lazy(() => import("~/components/ChatPanel"));
 
 const ListItemLink = createLink(ListItemButton);
 
@@ -24,6 +42,14 @@ function AppLayout() {
     const createListFn = useServerFn(createList);
     const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
+    const [chatOpen, setChatOpen] = useState(false);
+    // stays mounted once opened, so the conversation (and a running answer) survives closing the panel
+    const [chatMounted, setChatMounted] = useState(false);
+
+    const toggleChat = () => {
+        setChatMounted(true);
+        setChatOpen((open) => !open);
+    };
 
     const handleCreateList = async (name: string) => {
         const result = await createListFn({ data: { name } });
@@ -86,6 +112,11 @@ function AppLayout() {
                         Todos
                     </Typography>
                     <Typography sx={{ mr: 1, display: { xs: "none", sm: "block" } }}>{user.email}</Typography>
+                    <Tooltip title="Assistant">
+                        <IconButton color="inherit" aria-label="Assistant" aria-pressed={chatOpen} onClick={toggleChat}>
+                            <Chatbot />
+                        </IconButton>
+                    </Tooltip>
                     {/* handled by Cloudflare Access, so a full page load */}
                     <IconButton href="/cdn-cgi/access/logout" color="inherit" aria-label="Logout">
                         <Logout />
@@ -105,10 +136,26 @@ function AppLayout() {
                     {drawerContent}
                 </Drawer>
             </Box>
-            <Box component="main" sx={{ flexGrow: 1, minWidth: 0 }}>
+            {/* on wide screens the open chat takes space from the page instead of covering it */}
+            <Box component="main" sx={{ flexGrow: 1, minWidth: 0, mr: { lg: chatOpen ? `${chatWidth}px` : 0 } }}>
                 <Toolbar />
                 <Outlet />
             </Box>
+            <Drawer anchor="right" variant="persistent" open={chatOpen} sx={{ "& .MuiDrawer-paper": { width: { xs: "100%", sm: chatWidth } } }}>
+                {/* space for the app bar */}
+                <Toolbar />
+                {chatMounted && (
+                    <Suspense
+                        fallback={
+                            <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
+                                <CircularProgress />
+                            </Box>
+                        }
+                    >
+                        <ChatPanel onClose={() => setChatOpen(false)} />
+                    </Suspense>
+                )}
+            </Drawer>
             <NameDialog
                 open={createDialogOpen}
                 title="New list"

@@ -17,7 +17,21 @@
         "ACCESS_TEAM_DOMAIN": "https://vivid-planet-sandbox.cloudflareaccess.com",
         // Application Audience (AUD) Tag of the Access application (public, part of every Access JWT)
         "ACCESS_AUD": "dcacc8dc414027c9cafbca4e91f53dcacd16c652f18fee944fd50b646850a67d",
+        // Model of the chat assistant: an id from the AI Gateway catalog (https://developers.cloudflare.com/ai/models/),
+        // e.g. "anthropic/claude-haiku-5.5" (Unified Billing) or a Workers AI model like "@cf/zai-org/glm-4.7-flash"
+        "AI_MODEL": "anthropic/claude-haiku-5.5",
+        // AI Gateway the model requests go through (logs, spend limits); "default" is created on first use
+        "AI_GATEWAY_ID": "default",
     },
+    // Workers AI / AI Gateway (no provider API keys: billed through the Cloudflare account). Always remote, also in local development.
+    "ai": {
+        "binding": "AI",
+    },
+    // The chat assistant: one TodoChatAgent (Durable Object with SQLite storage for the chat history) per user, see src/chat/
+    "durable_objects": {
+        "bindings": [{ "name": "TodoChatAgent", "class_name": "TodoChatAgent" }],
+    },
+    "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TodoChatAgent"] }],
     "d1_databases": [
         {
             "binding": "DB",

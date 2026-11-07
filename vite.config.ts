@@ -12,6 +12,9 @@ export default defineConfig({
                 process.env.DEV_USER_EMAIL && process.env.ACCESS_AUD
                     ? { access: { dev: { aud: process.env.ACCESS_AUD, identity: { email: process.env.DEV_USER_EMAIL } } } }
                     : {},
+            // The AI binding (chat assistant) always runs remotely, which needs a Cloudflare login (`npx wrangler login`).
+            // REMOTE_BINDINGS=false (.env.local) runs the app without one; the assistant then answers with an error.
+            remoteBindings: process.env.REMOTE_BINDINGS !== "false",
         }),
         tanstackStart(),
         viteReact(),

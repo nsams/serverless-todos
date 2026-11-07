@@ -23,8 +23,14 @@ type ListOptions = { offset: number; limit: number; sort: TodoSort[]; filter: To
 
 export type TodoValues = Pick<Todo, "title" | "description" | "dueDate">;
 
+// Search across the user's lists (used by the chat assistant)
+type SearchOptions = { listId?: string; done?: boolean; query?: string; limit: number };
+
 type TodoRepository = {
     list(userId: string, listId: string, options: ListOptions): Promise<{ rows: Todo[]; totalCount: number }>;
+    // open todos first, then by due date (todos without due date last), newest first
+    search(userId: string, options: SearchOptions): Promise<Todo[]>;
+    get(userId: string, id: string): Promise<Todo | undefined>;
     // false if the list doesn't exist (or belongs to another user)
     create(userId: string, listId: string, values: TodoValues): Promise<boolean>;
     // false if the target list doesn't exist (or belongs to another user)
@@ -66,6 +72,33 @@ export function getTodoRepository(): TodoRepository {
                 db.$count(todos, where),
             ]);
             return { rows, totalCount };
+        },
+        search: async (userId, { listId, done, query, limit }) => {
+            return db
+                .select()
+                .from(todos)
+                .where(
+                    and(
+                        eq(todos.userId, userId),
+                        listId !== undefined ? eq(todos.listId, listId) : undefined,
+                        done !== undefined ? eq(todos.done, done) : undefined,
+                        query
+                            ? or(
+                                  filterCondition({ field: "title", operator: "contains", value: query }),
+                                  filterCondition({ field: "description", operator: "contains", value: query }),
+                              )
+                            : undefined,
+                    ),
+                )
+                .orderBy(asc(todos.done), asc(isNull(todos.dueDate)), asc(todos.dueDate), desc(todos.createdAt), desc(todos.id))
+                .limit(limit);
+        },
+        get: async (userId, id) => {
+            return db
+                .select()
+                .from(todos)
+                .where(and(eq(todos.id, id), eq(todos.userId, userId)))
+                .get();
         },
         create: async (userId, listId, values) => {
             if (!(await listExists(userId, listId))) {
