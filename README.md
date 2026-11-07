@@ -50,10 +50,10 @@ Denied requests are logged with the reason (Workers Logs).
 
 ## MCP server
 
-The app is also an [MCP](https://modelcontextprotocol.io) server at `/mcp` (Streamable HTTP, stateless, [`@modelcontextprotocol/server`](https://www.npmjs.com/package/@modelcontextprotocol/server)), so AI clients like Claude can create todos for the signed-in user:
+The app is also an [MCP](https://modelcontextprotocol.io) server at `/mcp` (Streamable HTTP, stateless, [`@modelcontextprotocol/server`](https://www.npmjs.com/package/@modelcontextprotocol/server)), so AI clients like Claude can manage the signed-in user's lists and todos, with the same operations as the UI:
 
-- `list_lists`: the user's lists (id, name, number of open todos)
-- `create_todo`: creates a todo (`title`, optional `description`, `dueDate` as `YYYY-MM-DD` and `listId`; without `listId` it goes to the user's first list)
+- lists: `list_lists` (with number of open todos), `create_list`, `rename_list`, `delete_list` (including its todos)
+- todos: `list_todos` (filter by done/title/description/due date range, sorting, pagination; defaults to the user's first list), `get_todo`, `create_todo` (defaults to the user's first list), `update_todo` (only the given fields; also to complete a todo or move it to another list), `delete_todo`
 
 It's authenticated like every other request (`src/start.ts`): MCP clients sign in via Cloudflare Access [managed OAuth](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/), which turns Access into an OAuth authorization server. The client opens the browser for the Entra ID login and gets an (opaque) access token, Access resolves it and passes the usual `Cf-Access-Jwt-Assertion` header to the worker, so the app needs no OAuth code of its own. Requests with an `Origin` header of another site are rejected.
 

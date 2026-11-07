@@ -25,17 +25,19 @@ export type TodoValues = Pick<Todo, "title" | "description" | "dueDate">;
 
 type TodoRepository = {
     list(userId: string, listId: string, options: ListOptions): Promise<{ rows: Todo[]; totalCount: number }>;
+    get(userId: string, id: string): Promise<Todo | undefined>;
     // undefined if the list doesn't exist (or belongs to another user)
     create(userId: string, listId: string, values: TodoValues): Promise<Todo | undefined>;
-    // false if the target list doesn't exist (or belongs to another user)
-    update(userId: string, id: string, values: Partial<TodoValues & Pick<Todo, "done" | "listId">>): Promise<boolean>;
-    delete(userId: string, id: string): Promise<void>;
+    // undefined if the todo or the target list doesn't exist (or belongs to another user)
+    update(userId: string, id: string, values: Partial<TodoValues & Pick<Todo, "done" | "listId">>): Promise<Todo | undefined>;
+    // false if the todo doesn't exist (or belongs to another user)
+    delete(userId: string, id: string): Promise<boolean>;
 };
 
 export function getTodoRepository(): TodoRepository {
     const db = getDb();
     const listExists = async (userId: string, listId: string) => (await getListRepository().get(userId, listId)) !== undefined;
-    return {
+    const repository: TodoRepository = {
         list: async (userId, listId, { offset, limit, sort, filter }) => {
             const filterConditions = filter.items.map((item) => filterCondition(item));
             const where = and(
@@ -67,6 +69,13 @@ export function getTodoRepository(): TodoRepository {
             ]);
             return { rows, totalCount };
         },
+        get: async (userId, id) => {
+            return db
+                .select()
+                .from(todos)
+                .where(and(eq(todos.id, id), eq(todos.userId, userId)))
+                .get();
+        },
         create: async (userId, listId, values) => {
             if (!(await listExists(userId, listId))) {
                 return undefined;
@@ -79,18 +88,28 @@ export function getTodoRepository(): TodoRepository {
         },
         update: async (userId, id, values) => {
             if (values.listId !== undefined && !(await listExists(userId, values.listId))) {
-                return false;
+                return undefined;
             }
-            await db
+            if (Object.values(values).every((value) => value === undefined)) {
+                // nothing to update (an empty SET is invalid SQL)
+                return repository.get(userId, id);
+            }
+            return db
                 .update(todos)
                 .set(values)
-                .where(and(eq(todos.id, id), eq(todos.userId, userId)));
-            return true;
+                .where(and(eq(todos.id, id), eq(todos.userId, userId)))
+                .returning()
+                .get();
         },
         delete: async (userId, id) => {
-            await db.delete(todos).where(and(eq(todos.id, id), eq(todos.userId, userId)));
+            const deleted = await db
+                .delete(todos)
+                .where(and(eq(todos.id, id), eq(todos.userId, userId)))
+                .returning({ id: todos.id });
+            return deleted.length > 0;
         },
     };
+    return repository;
 }
 
 function filterCondition(filter: TodoFilter): SQL | undefined {
