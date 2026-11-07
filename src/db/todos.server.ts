@@ -25,8 +25,8 @@ export type TodoValues = Pick<Todo, "title" | "description" | "dueDate">;
 
 type TodoRepository = {
     list(userId: string, listId: string, options: ListOptions): Promise<{ rows: Todo[]; totalCount: number }>;
-    // false if the list doesn't exist (or belongs to another user)
-    create(userId: string, listId: string, values: TodoValues): Promise<boolean>;
+    // undefined if the list doesn't exist (or belongs to another user)
+    create(userId: string, listId: string, values: TodoValues): Promise<Todo | undefined>;
     // false if the target list doesn't exist (or belongs to another user)
     update(userId: string, id: string, values: Partial<TodoValues & Pick<Todo, "done" | "listId">>): Promise<boolean>;
     delete(userId: string, id: string): Promise<void>;
@@ -69,10 +69,13 @@ export function getTodoRepository(): TodoRepository {
         },
         create: async (userId, listId, values) => {
             if (!(await listExists(userId, listId))) {
-                return false;
+                return undefined;
             }
-            await db.insert(todos).values({ userId, listId, ...values });
-            return true;
+            const [todo] = await db
+                .insert(todos)
+                .values({ userId, listId, ...values })
+                .returning();
+            return todo;
         },
         update: async (userId, id, values) => {
             if (values.listId !== undefined && !(await listExists(userId, values.listId))) {

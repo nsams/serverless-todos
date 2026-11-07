@@ -34,6 +34,7 @@ npm run db:reset  # delete the local database and re-apply all migrations
 - `src/routes/_app.tsx`: layout (app bar, the user's lists in a sidebar)
 - `src/routes/_app.lists.$listId.tsx`: todos of a list; grid state (pagination, sorting, filtering) lives in the URL (`src/todoSearch.ts`, serialized as plain search params by `src/searchParams.ts`)
 - `src/todos.functions.ts`, `src/lists.functions.ts`: server functions (data loading and mutations, input validated with zod; length limits in `src/limits.ts`)
+- `src/mcp.server.ts`, `src/routes/mcp.ts`: MCP server at `/mcp` (see [MCP server](#mcp-server))
 - `src/dates.ts`: due dates are calendar dates (`YYYY-MM-DD`) without time zone; whether a todo is overdue is decided in the browser with the user's local date
 - `src/server.ts`: worker entry, passes `ctx.access` (Cloudflare Access) to the app as request context
 - `src/start.ts`: global request middleware that rejects every request not authenticated by Cloudflare Access (`src/auth.server.ts`) and passes the user (identified by email) to the server functions as context
@@ -46,6 +47,23 @@ There is no login logic in the app: Cloudflare Access sits in front of the worke
 - Locally it uses `ctx.access`, simulated by the Workers runtime (`access.dev`).
 
 Denied requests are logged with the reason (Workers Logs).
+
+## MCP server
+
+The app is also an [MCP](https://modelcontextprotocol.io) server at `/mcp` (Streamable HTTP, stateless, [`@modelcontextprotocol/server`](https://www.npmjs.com/package/@modelcontextprotocol/server)), so AI clients like Claude can create todos for the signed-in user:
+
+- `list_lists`: the user's lists (id, name, number of open todos)
+- `create_todo`: creates a todo (`title`, optional `description`, `dueDate` as `YYYY-MM-DD` and `listId`; without `listId` it goes to the user's first list)
+
+It's authenticated like every other request (`src/start.ts`): MCP clients sign in via Cloudflare Access [managed OAuth](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/), which turns Access into an OAuth authorization server. The client opens the browser for the Entra ID login and gets an (opaque) access token, Access resolves it and passes the usual `Cf-Access-Jwt-Assertion` header to the worker, so the app needs no OAuth code of its own. Requests with an `Origin` header of another site are rejected.
+
+Connect e.g. Claude Code:
+
+```bash
+claude mcp add --transport http todos https://serverless-todos.<subdomain>.workers.dev/mcp
+```
+
+Locally use `http://localhost:5180/mcp` (no login, authenticated as `DEV_USER_EMAIL` like the UI).
 
 ## Database
 
@@ -69,5 +87,6 @@ Deploy with `npm run deploy` (build, apply pending D1 migrations, deploy), eithe
     1. Add Microsoft Entra ID as identity provider (Settings → Authentication → Login methods), see the [Cloudflare docs](https://developers.cloudflare.com/cloudflare-one/identity/idp-integration/entra-id/).
     2. Protect the `workers.dev` URL: Workers & Pages → serverless-todos → Settings → Domains & Routes → `workers.dev` → Enable Cloudflare Access. This creates an Access application for the URL (preview URLs are disabled in `wrangler.jsonc`).
     3. Edit that Access application (Zero Trust → Access → Applications): use Entra ID as the only login method and a policy that allows the intended users (e.g. an Entra group or email domain).
-    4. Set `ACCESS_TEAM_DOMAIN` (`https://<team-name>.cloudflareaccess.com`, see Zero Trust → Settings → Team name and domain) and `ACCESS_AUD` (the Application Audience (AUD) Tag on the application's overview) in `wrangler.jsonc`.
+    4. For the MCP server: enable **Managed OAuth** under Advanced settings of that Access application (only non-browser clients get the OAuth `401` instead of the login redirect, browser logins are unaffected).
+    5. Set `ACCESS_TEAM_DOMAIN` (`https://<team-name>.cloudflareaccess.com`, see Zero Trust → Settings → Team name and domain) and `ACCESS_AUD` (the Application Audience (AUD) Tag on the application's overview) in `wrangler.jsonc`.
 3. Deploy: `npm run deploy`
