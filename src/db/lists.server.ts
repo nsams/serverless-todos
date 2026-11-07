@@ -1,7 +1,6 @@
-import { env } from "cloudflare:workers";
 import { and, asc, eq, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/d1";
 
+import { getDb } from "./db.server";
 import { lists, todos } from "./schema";
 
 export type List = typeof lists.$inferSelect;
@@ -19,9 +18,8 @@ type ListRepository = {
     delete(userId: string, id: string): Promise<void>;
 };
 
-// Cheap to create: the D1 binding is just a handle, no connection pool to manage
 export function getListRepository(): ListRepository {
-    const db = drizzle(env.DB, { casing: "snake_case" });
+    const db = getDb();
     const repository: ListRepository = {
         list: async (userId) => {
             return db

@@ -1,34 +1,24 @@
 import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
 
 import { getListRepository } from "./db/lists.server";
+import { maxListNameLength } from "./limits";
 
-function parseInput<Keys extends string>(input: unknown, keys: Keys[]): Record<Keys, string> {
-    if (typeof input !== "object" || input === null) {
-        throw new Error("Invalid input");
-    }
-    const record = input as Record<string, unknown>;
-    return Object.fromEntries(
-        keys.map((key) => {
-            if (typeof record[key] !== "string") {
-                throw new Error("Invalid input");
-            }
-            return [key, key === "name" ? record[key].trim() : record[key]];
-        }),
-    ) as Record<Keys, string>;
-}
+// Empty names are reported to the user (see the handlers), invalid input otherwise throws
+const nameSchema = z.string().trim().max(maxListNameLength);
 
 export const listLists = createServerFn().handler(async ({ context: { user } }) => {
     return { user, lists: await getListRepository().list(user.id) };
 });
 
-// The list shown on the start page, created if the user has none yet
-export const getDefaultList = createServerFn().handler(async ({ context: { user } }) => {
+// The list shown on the start page, created if the user has none yet (POST: it may create a list)
+export const getDefaultList = createServerFn({ method: "POST" }).handler(async ({ context: { user } }) => {
     const { id } = await getListRepository().getOrCreateDefault(user.id);
     return { id };
 });
 
 export const createList = createServerFn({ method: "POST" })
-    .validator((input: { name: string }) => parseInput(input, ["name"]))
+    .validator(z.object({ name: nameSchema }))
     .handler(async ({ data: { name }, context: { user } }) => {
         if (!name) {
             return { error: "Name is required", id: null };
@@ -38,7 +28,7 @@ export const createList = createServerFn({ method: "POST" })
     });
 
 export const renameList = createServerFn({ method: "POST" })
-    .validator((input: { id: string; name: string }) => parseInput(input, ["id", "name"]))
+    .validator(z.object({ id: z.string(), name: nameSchema }))
     .handler(async ({ data: { id, name }, context: { user } }) => {
         if (!name) {
             return { error: "Name is required" };
@@ -48,7 +38,7 @@ export const renameList = createServerFn({ method: "POST" })
     });
 
 export const deleteList = createServerFn({ method: "POST" })
-    .validator((input: { id: string }) => parseInput(input, ["id"]))
+    .validator(z.object({ id: z.string() }))
     .handler(async ({ data: { id }, context: { user } }) => {
         await getListRepository().delete(user.id, id);
     });

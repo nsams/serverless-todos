@@ -4,6 +4,7 @@ import { ThemeProvider } from "@mui/material/styles";
 import { createRootRoute, type ErrorComponentProps, HeadContent, Scripts } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
+import { ErrorSnackbarProvider } from "~/components/ErrorSnackbar";
 import { theme } from "~/theme";
 
 export const Route = createRootRoute({
@@ -25,7 +26,7 @@ function RootDocument({ children }: { children: ReactNode }) {
             <body>
                 <ThemeProvider theme={theme}>
                     <CssBaseline />
-                    {children}
+                    <ErrorSnackbarProvider>{children}</ErrorSnackbarProvider>
                 </ThemeProvider>
                 <Scripts />
             </body>

@@ -8,7 +8,7 @@
         "db:migrate": "wrangler d1 migrations apply DB --local",
         "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
         "db:reset": "rm -rf .wrangler/state/v3/d1 && npm run db:migrate",
-        "deploy": "npm run build && wrangler deploy && wrangler d1 migrations apply DB --remote",
+        "deploy": "npm run build && wrangler d1 migrations apply DB --remote && wrangler deploy",
         "dev": "dev-pm start @dev",
         "dev:app": "dotenv -e .env.local -e .env -- vite dev",
         "lint": "run-p lint:prettier lint:eslint lint:tsc",
@@ -36,7 +36,8 @@
         "drizzle-orm": "^0.45.4",
         "jose": "^6.2.15",
         "react": "^19.3.1",
-        "react-dom": "^19.3.1"
+        "react-dom": "^19.3.1",
+        "zod": "^4.6.7"
     },
     "devDependencies": {
         "@cloudflare/vite-plugin": "^1.66.0",

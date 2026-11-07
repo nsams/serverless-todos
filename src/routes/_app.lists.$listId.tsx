@@ -33,9 +33,11 @@ import { createFileRoute, getRouteApi, redirect, useNavigate, useRouter, useRout
 import { useServerFn } from "@tanstack/react-start";
 import { type FormEvent, useState } from "react";
 
+import { useShowError } from "~/components/ErrorSnackbar";
 import { NameDialog } from "~/components/NameDialog";
 import { fromDateString, isOverdue, toDateString, useToday } from "~/dates";
 import type { Todo, TodoFilter } from "~/db/todos.server";
+import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "~/limits";
 import { deleteList, renameList } from "~/lists.functions";
 import { createTodo, deleteTodo, listTodos, updateTodo } from "~/todos.functions";
 import { filterOperators, pageSizeOptions, parseTodoSearch, type TodoSearch, validateTodoSearch } from "~/todoSearch";
@@ -86,6 +88,7 @@ function Todos() {
     const router = useRouter();
     const updateTodoFn = useServerFn(updateTodo);
     const deleteTodoFn = useServerFn(deleteTodo);
+    const showError = useShowError();
     const today = useToday();
 
     // Use the pending location while loading, otherwise the grid would show the old state until the loader is done (e.g. reset a filter value while typing)
@@ -103,7 +106,13 @@ function Todos() {
     };
 
     const mutate = async (mutation: Promise<unknown>) => {
-        await mutation;
+        try {
+            await mutation;
+        } catch (error) {
+            console.error(error);
+            showError("Saving failed, please try again.");
+        }
+        // also after an error: the grid shows the stored state again (e.g. the done checkbox)
         await router.invalidate();
     };
 
@@ -115,7 +124,11 @@ function Todos() {
             width: 80,
             filterOperators: supportedOperators("done", getGridBooleanOperators()),
             renderCell: ({ row }) => (
-                <Checkbox checked={row.done} onChange={(event) => void mutate(updateTodoFn({ data: { id: row.id, done: event.target.checked } }))} />
+                <Checkbox
+                    checked={row.done}
+                    onChange={(event) => void mutate(updateTodoFn({ data: { id: row.id, done: event.target.checked } }))}
+                    slotProps={{ input: { "aria-label": `Mark “${row.title}” as ${row.done ? "open" : "done"}` } }}
+                />
             ),
         },
         {
@@ -238,7 +251,8 @@ function Todos() {
                         loading={isLoading}
                         getRowClassName={({ row }) => (isOverdue(row, today) ? "overdue" : "")}
                         sx={{ "& .overdue": { bgcolor: (theme) => alpha(theme.palette.error.main, 0.06) } }}
-                        processRowUpdate={(newRow, oldRow) => {
+                        // the grid keeps the old row if saving fails (onProcessRowUpdateError)
+                        processRowUpdate={async (newRow, oldRow) => {
                             const title = newRow.title.trim();
                             if (!title) {
                                 // a todo needs a title
@@ -250,9 +264,14 @@ function Todos() {
                                 ...(newRow.dueDate !== oldRow.dueDate && { dueDate: newRow.dueDate }),
                             };
                             if (Object.keys(changes).length > 0) {
-                                void mutate(updateTodoFn({ data: { id: newRow.id, ...changes } }));
+                                await updateTodoFn({ data: { id: newRow.id, ...changes } });
+                                void router.invalidate();
                             }
                             return { ...newRow, title };
+                        }}
+                        onProcessRowUpdateError={(error) => {
+                            console.error(error);
+                            showError("Saving failed, please try again.");
                         }}
                     />
                 </Paper>
@@ -266,6 +285,7 @@ function ListHeader({ list }: { list: { id: string; name: string } }) {
     const navigate = useNavigate();
     const renameListFn = useServerFn(renameList);
     const deleteListFn = useServerFn(deleteList);
+    const showError = useShowError();
     const [renameDialogOpen, setRenameDialogOpen] = useState(false);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [deleting, setDeleting] = useState(false);
@@ -288,6 +308,9 @@ function ListHeader({ list }: { list: { id: string; name: string } }) {
             await navigate({ to: "/", replace: true });
             // the sidebar's lists aren't reloaded by the navigation (the layout route's loader data is reused)
             await router.invalidate();
+        } catch (error) {
+            console.error(error);
+            showError("Deleting the list failed, please try again.");
         } finally {
             setDeleting(false);
         }
@@ -313,6 +336,7 @@ function ListHeader({ list }: { list: { id: string; name: string } }) {
                 title="Rename list"
                 submitLabel="Rename"
                 initialName={list.name}
+                maxLength={maxListNameLength}
                 onClose={() => setRenameDialogOpen(false)}
                 onSubmit={handleRename}
             />
@@ -356,6 +380,9 @@ function CreateTodoForm({ listId, onCreated }: { listId: string; onCreated: () =
                 form.reset();
                 onCreated();
             }
+        } catch (error) {
+            console.error(error);
+            setError("Saving failed, please try again.");
         } finally {
             setPending(false);
         }
@@ -365,7 +392,15 @@ function CreateTodoForm({ listId, onCreated }: { listId: string; onCreated: () =
         <Paper component="form" onSubmit={(event: FormEvent<HTMLFormElement>) => void handleSubmit(event)} sx={{ p: 2 }}>
             <Stack spacing={2}>
                 <Box sx={{ display: "flex", gap: 1, flexWrap: { xs: "wrap", sm: "nowrap" } }}>
-                    <TextField name="title" label="New todo" size="small" fullWidth error={!!error} helperText={error} />
+                    <TextField
+                        name="title"
+                        label="New todo"
+                        size="small"
+                        fullWidth
+                        error={!!error}
+                        helperText={error}
+                        slotProps={{ htmlInput: { maxLength: maxTodoTitleLength } }}
+                    />
                     <TextField
                         name="dueDate"
                         label="Due"
@@ -378,7 +413,15 @@ function CreateTodoForm({ listId, onCreated }: { listId: string; onCreated: () =
                         Add
                     </Button>
                 </Box>
-                <TextField name="description" label="Description (optional)" size="small" multiline minRows={1} fullWidth />
+                <TextField
+                    name="description"
+                    label="Description (optional)"
+                    size="small"
+                    multiline
+                    minRows={1}
+                    fullWidth
+                    slotProps={{ htmlInput: { maxLength: maxTodoDescriptionLength } }}
+                />
             </Stack>
         </Paper>
     );

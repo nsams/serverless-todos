@@ -1,7 +1,6 @@
-import { env } from "cloudflare:workers";
 import { and, asc, desc, eq, gt, gte, isNull, lt, lte, or, type SQL, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/d1";
 
+import { getDb } from "./db.server";
 import { getListRepository } from "./lists.server";
 import { todos } from "./schema";
 
@@ -33,9 +32,8 @@ type TodoRepository = {
     delete(userId: string, id: string): Promise<void>;
 };
 
-// Cheap to create: the D1 binding is just a handle, no connection pool to manage
 export function getTodoRepository(): TodoRepository {
-    const db = drizzle(env.DB, { casing: "snake_case" });
+    const db = getDb();
     const listExists = async (userId: string, listId: string) => (await getListRepository().get(userId, listId)) !== undefined;
     return {
         list: async (userId, listId, { offset, limit, sort, filter }) => {
