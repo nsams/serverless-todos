@@ -33,7 +33,7 @@ npm run db:reset  # delete the local database and re-apply all migrations
 - `src/routes/index.tsx`: start page, redirects to the user's first list (creates a list "Todos" if the user has none)
 - `src/routes/_app.tsx`: layout (app bar, the user's lists in a sidebar)
 - `src/routes/_app.lists.$listId.tsx`: todos of a list; grid state (pagination, sorting, filtering) lives in the URL (`src/todoSearch.ts`, serialized as plain search params by `src/searchParams.ts`)
-- `src/todos.functions.ts`, `src/lists.functions.ts`: server functions (data loading and mutations)
+- `src/todos.functions.ts`, `src/lists.functions.ts`: server functions (data loading and mutations, input validated with zod; length limits in `src/limits.ts`)
 - `src/dates.ts`: due dates are calendar dates (`YYYY-MM-DD`) without time zone; whether a todo is overdue is decided in the browser with the user's local date
 - `src/server.ts`: worker entry, passes `ctx.access` (Cloudflare Access) to the app as request context
 - `src/start.ts`: global request middleware that rejects every request not authenticated by Cloudflare Access (`src/auth.server.ts`) and passes the user (identified by email) to the server functions as context
@@ -58,11 +58,13 @@ npm run db:generate  # generates a migration into drizzle/
 npm run db:migrate   # applies it to the local D1 (also done on `npm run dev`)
 ```
 
+Migrations are applied before the new code is deployed (`npm run deploy`), so the currently running code must keep working with the new schema: e.g. add a column (with a default) in one deployment, remove one only after the code no longer uses it.
+
 ## Deployment (Cloudflare)
 
-Deploy with `npm run deploy` (build, deploy, apply pending D1 migrations), either locally or with [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/) (Git integration): leave the build command empty and set the deploy command to `npm run deploy`.
+Deploy with `npm run deploy` (build, apply pending D1 migrations, deploy), either locally or with [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/) (Git integration): leave the build command empty and set the deploy command to `npm run deploy`.
 
-1. The D1 database doesn't need to be created manually: `wrangler.jsonc` has no `database_id`, so the first `wrangler deploy` creates a database named `serverless-todos` (or connects to an existing one with that name).
+1. The D1 database doesn't need to be created manually: `wrangler.jsonc` has no `database_id`, so the first `wrangler deploy` creates a database named `serverless-todos` (or connects to an existing one with that name). As `npm run deploy` applies the migrations before deploying, the very first deployment (no database yet) is done with `npm run build && npx wrangler deploy`, followed by `npm run deploy`.
 2. Set up Cloudflare Access (Zero Trust dashboard):
     1. Add Microsoft Entra ID as identity provider (Settings → Authentication → Login methods), see the [Cloudflare docs](https://developers.cloudflare.com/cloudflare-one/identity/idp-integration/entra-id/).
     2. Protect the `workers.dev` URL: Workers & Pages → serverless-todos → Settings → Domains & Routes → `workers.dev` → Enable Cloudflare Access. This creates an Access application for the URL (preview URLs are disabled in `wrangler.jsonc`).

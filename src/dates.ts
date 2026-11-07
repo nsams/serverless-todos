@@ -1,13 +1,13 @@
 import { useSyncExternalStore } from "react";
+import { z } from "zod";
 
 // Due dates are calendar dates without time zone, stored as YYYY-MM-DD
 
+// Valid calendar date (rejects e.g. 2026-02-30)
+export const dateStringSchema = z.iso.date();
+
 export function isDateString(value: unknown): value is string {
-    if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-        return false;
-    }
-    const date = new Date(`${value}T00:00:00Z`);
-    return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value);
+    return dateStringSchema.safeParse(value).success;
 }
 
 // Local date of a Date as YYYY-MM-DD

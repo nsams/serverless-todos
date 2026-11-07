@@ -5,6 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 
 import { NameDialog } from "~/components/NameDialog";
+import { maxListNameLength } from "~/limits";
 import { createList, listLists } from "~/lists.functions";
 
 // Layout of the app pages: app bar and the user's lists in a sidebar
@@ -112,6 +113,7 @@ function AppLayout() {
                 open={createDialogOpen}
                 title="New list"
                 submitLabel="Create"
+                maxLength={maxListNameLength}
                 onClose={() => setCreateDialogOpen(false)}
                 onSubmit={handleCreateList}
             />

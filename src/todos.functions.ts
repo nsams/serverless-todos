@@ -1,29 +1,20 @@
 import { notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
 
-import { isDateString } from "./dates";
+import { dateStringSchema } from "./dates";
 import { getListRepository } from "./db/lists.server";
 import { getTodoRepository } from "./db/todos.server";
-import { parseTodoSearch, type TodoSearch, validateTodoSearch } from "./todoSearch";
+import { maxTodoDescriptionLength, maxTodoTitleLength } from "./limits";
+import { parseTodoSearch, validateTodoSearch } from "./todoSearch";
 
-function isObject(input: unknown): input is Record<string, unknown> {
-    return typeof input === "object" && input !== null;
-}
-
-function requireId(input: unknown, key: string) {
-    if (!isObject(input) || typeof input[key] !== "string") {
-        throw new Error("Invalid input");
-    }
-    return input[key];
-}
-
-// Empty string (cleared date input) and null remove the due date, invalid dates too
-function parseDueDate(value: unknown) {
-    return isDateString(value) ? value : null;
-}
+const descriptionSchema = z.string().trim().max(maxTodoDescriptionLength);
+// null: no due date
+const dueDateSchema = dateStringSchema.nullable();
 
 export const listTodos = createServerFn()
-    .validator((input: TodoSearch & { listId: string }) => ({ listId: requireId(input, "listId"), ...validateTodoSearch(input) }))
+    // the search params are normalized leniently (invalid values are dropped), like in the route's validateSearch
+    .validator(z.looseObject({ listId: z.string() }).transform(({ listId, ...search }) => ({ listId, ...validateTodoSearch(search) })))
     .handler(async ({ data: { listId, ...search }, context: { user } }) => {
         const list = await getListRepository().get(user.id, listId);
         if (!list) {
@@ -35,12 +26,15 @@ export const listTodos = createServerFn()
     });
 
 export const createTodo = createServerFn({ method: "POST" })
-    .validator((input: { listId: string; title: string; description?: string; dueDate?: string | null }) => ({
-        listId: requireId(input, "listId"),
-        title: String(input.title ?? "").trim(),
-        description: String(input.description ?? "").trim(),
-        dueDate: parseDueDate(input.dueDate),
-    }))
+    .validator(
+        z.object({
+            listId: z.string(),
+            // an empty title is reported to the user (see the handler)
+            title: z.string().trim().max(maxTodoTitleLength),
+            description: descriptionSchema,
+            dueDate: dueDateSchema,
+        }),
+    )
     .handler(async ({ data: { listId, ...values }, context: { user } }) => {
         if (!values.title) {
             return { error: "Title is required" };
@@ -52,17 +46,16 @@ export const createTodo = createServerFn({ method: "POST" })
     });
 
 export const updateTodo = createServerFn({ method: "POST" })
-    .validator((input: { id: string; title?: string; description?: string; dueDate?: string | null; done?: boolean; listId?: string }) => {
-        const id = requireId(input, "id");
-        return {
-            id,
-            ...(typeof input.title === "string" && input.title.trim() && { title: input.title.trim() }),
-            ...(typeof input.description === "string" && { description: input.description.trim() }),
-            ...("dueDate" in input && { dueDate: parseDueDate(input.dueDate) }),
-            ...(typeof input.done === "boolean" && { done: input.done }),
-            ...(typeof input.listId === "string" && { listId: input.listId }),
-        };
-    })
+    .validator(
+        z.object({
+            id: z.string(),
+            title: z.string().trim().min(1).max(maxTodoTitleLength).optional(),
+            description: descriptionSchema.optional(),
+            dueDate: dueDateSchema.optional(),
+            done: z.boolean().optional(),
+            listId: z.string().optional(),
+        }),
+    )
     .handler(async ({ data: { id, ...values }, context: { user } }) => {
         if (!(await getTodoRepository().update(user.id, id, values))) {
             throw notFound();
@@ -70,7 +63,7 @@ export const updateTodo = createServerFn({ method: "POST" })
     });
 
 export const deleteTodo = createServerFn({ method: "POST" })
-    .validator((input: { id: string }) => ({ id: requireId(input, "id") }))
+    .validator(z.object({ id: z.string() }))
     .handler(async ({ data: { id }, context: { user } }) => {
         await getTodoRepository().delete(user.id, id);
     });

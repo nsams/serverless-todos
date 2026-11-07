@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
+set -e
+
 . ~/.nvm/nvm.sh
 
 # jump into project dir
-cd $(dirname $0)
+cd "$(dirname "$0")"
 
 # create .env.local
 if [[ ! -f .env.local ]]; then
