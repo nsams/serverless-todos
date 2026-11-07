@@ -4,6 +4,9 @@ import { dirname, join } from "node:path";
 
 // Helpers to run Wrangler from the scripts in this directory
 
+// `name` in wrangler.jsonc
+export const workerName = "serverless-todos";
+
 // Runs Wrangler with output shown in the log, throws if it fails
 export function wrangler(args: string[], env?: NodeJS.ProcessEnv) {
     execFileSync("npx", ["wrangler", ...args], { stdio: "inherit", env: { ...process.env, ...env } });
@@ -33,7 +36,7 @@ export function writeD1Config(database: { name: string; uuid: string } | undefin
     const path = join(".wrangler", "preview", `${database?.name ?? "empty"}.json`);
     mkdirSync(dirname(path), { recursive: true });
     const config = {
-        name: "serverless-todos",
+        name: workerName,
         d1_databases: database
             ? [
                   {
