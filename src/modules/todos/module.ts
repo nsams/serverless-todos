@@ -8,6 +8,7 @@ import { todosModuleId } from "./navigation";
 export const todosModule: AppModule = {
     id: todosModuleId,
     navigation: {
+        title: "Todo lists",
         loader: () => listLists(),
         Component: ListsNavigation,
     },

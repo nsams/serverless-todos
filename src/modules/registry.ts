@@ -1,8 +1,9 @@
+import { notesModule } from "./notes/module";
 import { todosModule } from "./todos/module";
 import type { AppModule } from "./types";
 
 // The modules of the app (app shell part). Server part: registry.server.ts; routes: src/routes.ts.
-export const appModules: AppModule[] = [todosModule];
+export const appModules: AppModule[] = [todosModule, notesModule];
 
 // The start page ("/") redirects here
 export const startPath = "/lists";

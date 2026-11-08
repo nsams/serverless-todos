@@ -14,6 +14,8 @@ export type AppModule = {
     id: string;
     // shown in the app's sidebar
     navigation?: {
+        // heading of the module's section in the sidebar
+        title: string;
         // loaded by the app layout (src/routes/_app.tsx) for every page; the module reads it with useNavigationData
         loader: () => Promise<unknown>;
         // onNavigate: closes the sidebar on small screens

@@ -1,10 +1,11 @@
 import type { ChatPage } from "~/chat/chat";
 
+import { notesServerModule } from "./notes/module.server";
 import { todosServerModule } from "./todos/module.server";
 import type { AppTool, ServerModule } from "./types";
 
 // The modules of the app (server part). App shell part: registry.ts.
-const serverModules: ServerModule[] = [todosServerModule];
+const serverModules: ServerModule[] = [todosServerModule, notesServerModule];
 
 // The tools of all modules for the AI assistants, scoped to the user
 export function createTools(userId: string): Record<string, AppTool> {
