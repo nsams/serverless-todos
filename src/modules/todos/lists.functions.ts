@@ -7,11 +7,12 @@ import { maxListNameLength } from "./limits";
 // Empty names are reported to the user (see the handlers), invalid input otherwise throws
 const nameSchema = z.string().trim().max(maxListNameLength);
 
+// The user's lists with their number of open todos: the module's navigation data (sidebar), see navigation.ts
 export const listLists = createServerFn().handler(async ({ context: { user } }) => {
-    return { user, lists: await getListRepository().list(user.id) };
+    return getListRepository().list(user.id);
 });
 
-// The list shown on the start page, created if the user has none yet (POST: it may create a list)
+// The list shown on /lists, created if the user has none yet (POST: it may create a list)
 export const getDefaultList = createServerFn({ method: "POST" }).handler(async ({ context: { user } }) => {
     const { id } = await getListRepository().getOrCreateDefault(user.id);
     return { id };

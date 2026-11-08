@@ -20,7 +20,8 @@ export default defineConfig({
             // calls the model through cloudflareAiDevProxy instead (see src/chat/model.server.ts)
             remoteBindings: false,
         }),
-        tanstackStart(),
+        // the routes of the modules live in their module folders, see src/routes.ts
+        tanstackStart({ router: { virtualRouteConfig: "./src/routes.ts" } }),
         viteReact(),
     ],
     server: {

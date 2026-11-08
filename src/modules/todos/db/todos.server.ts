@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gt, gte, isNull, lt, lte, or, type SQL, sql } from "drizzle-orm";
 
-import { getDb } from "./db.server";
+import { getDb } from "~/db/db.server";
+
 import { getListRepository } from "./lists.server";
 import { todos } from "./schema";
 

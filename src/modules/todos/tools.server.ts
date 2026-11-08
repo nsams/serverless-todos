@@ -1,29 +1,14 @@
 import { z } from "zod";
 
 import { dateStringSchema } from "~/dates";
-import { getListRepository } from "~/db/lists.server";
-import { getTodoRepository, type Todo } from "~/db/todos.server";
-import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "~/limits";
+import { type AppTool, defineTool } from "~/modules/types";
 
-// Tools that manage the user's lists and todos, independent of the AI framework. Used by the chat assistant (src/chat/agent.server.ts, AI SDK)
-// and the MCP server for external AI clients (src/mcp/mcp.server.ts).
+import { getListRepository } from "./db/lists.server";
+import { getTodoRepository, type Todo } from "./db/todos.server";
+import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "./limits";
+
+// Tools that manage the user's lists and todos, for the chat assistant and the MCP server (see AppTool in src/modules/types.ts).
 // Every tool is scoped to the authenticated user (userId is never chosen by the model).
-// Tools that throw report the error message to the model, which then tells the user.
-
-export type TodoTool<Input extends z.ZodType = z.ZodType> = {
-    // short human-readable name (shown by MCP clients)
-    title: string;
-    description: string;
-    inputSchema: Input;
-    // read: doesn't change data; write: creates or changes data; delete: deletes data, the user is asked to confirm
-    effect: "read" | "write" | "delete";
-    // a method (not a function property), so specific tools are assignable to TodoTool<z.ZodType>
-    execute(input: z.output<Input>): Promise<unknown>;
-};
-
-function todoTool<Input extends z.ZodType>(definition: TodoTool<Input>) {
-    return definition;
-}
 
 const maxSearchResults = 50;
 
@@ -57,14 +42,14 @@ export function createTodoTools(userId: string) {
     };
 
     return {
-        listLists: todoTool({
+        listLists: defineTool({
             title: "List todo lists",
             description: "Lists all todo lists of the user with their number of open todos.",
             inputSchema: z.object({}),
             effect: "read",
             execute: async () => (await lists.list(userId)).map(({ id, name, openCount }) => ({ id, name, openCount })),
         }),
-        createList: todoTool({
+        createList: defineTool({
             title: "Create todo list",
             description: "Creates a new todo list.",
             inputSchema: z.object({ name: listNameSchema }),
@@ -74,7 +59,7 @@ export function createTodoTools(userId: string) {
                 return { id, name };
             },
         }),
-        renameList: todoTool({
+        renameList: defineTool({
             title: "Rename todo list",
             description: "Renames a todo list.",
             inputSchema: z.object({ listId: z.string(), name: listNameSchema }),
@@ -85,7 +70,7 @@ export function createTodoTools(userId: string) {
                 return { id: listId, name };
             },
         }),
-        deleteList: todoTool({
+        deleteList: defineTool({
             title: "Delete todo list",
             description: "Deletes a todo list including all its todos. The user is asked to confirm.",
             inputSchema: z.object({ listId: z.string() }),
@@ -96,7 +81,7 @@ export function createTodoTools(userId: string) {
                 return { deleted: { id: list.id, name: list.name } };
             },
         }),
-        findTodos: todoTool({
+        findTodos: defineTool({
             title: "Find todos",
             description: `Finds todos, in all lists or in one list. Returns at most ${maxSearchResults} todos: open ones first, then by due date.`,
             inputSchema: z.object({
@@ -115,7 +100,7 @@ export function createTodoTools(userId: string) {
                 return rows.map(toolTodo);
             },
         }),
-        createTodo: todoTool({
+        createTodo: defineTool({
             title: "Create todo",
             description: "Creates a todo in a list.",
             inputSchema: z.object({
@@ -131,7 +116,7 @@ export function createTodoTools(userId: string) {
                 return { created: { listId, ...values } };
             },
         }),
-        updateTodo: todoTool({
+        updateTodo: defineTool({
             title: "Update todo",
             description:
                 "Updates a todo: change title, description or due date, mark it as done or open again, or move it to another list. Omitted fields stay unchanged.",
@@ -153,7 +138,7 @@ export function createTodoTools(userId: string) {
                 return { updated: toolTodo(await getTodo(id)) };
             },
         }),
-        deleteTodo: todoTool({
+        deleteTodo: defineTool({
             title: "Delete todo",
             description: "Deletes a todo. The user is asked to confirm.",
             inputSchema: z.object({ id: z.string() }),
@@ -164,11 +149,12 @@ export function createTodoTools(userId: string) {
                 return { deleted: toolTodo(todo) };
             },
         }),
-    } satisfies Record<string, TodoTool>;
+    } satisfies Record<string, AppTool>;
 }
 
 // Guidance for the model on how to use the tools (system prompt of the chat assistant, instructions of the MCP server)
 export const todoToolsInstructions = [
+    "Todo lists and todos: the tools manage the user's todo lists and todos.",
     'Due dates are calendar dates (YYYY-MM-DD). Resolve relative dates like "tomorrow" or "next Friday" from the user\'s current date.',
     "To change or delete a todo, find it first. If several todos match, ask which one is meant.",
     "Don't show ids to the user.",

@@ -3,33 +3,33 @@ import { Close, Delete } from "@dextinity/admin-icons";
 import { Alert, Box, IconButton, Toolbar, Tooltip, Typography } from "@mui/material";
 import { ChatBox } from "@mui/x-chat";
 import type { ChatAdapter, ChatMessage, ChatMessagePart } from "@mui/x-chat/headless";
-import { useParams, useRouter } from "@tanstack/react-router";
+import { useRouter } from "@tanstack/react-router";
 import { useAgent } from "agents/react";
 import { getToolName, isToolUIPart, type UIMessage } from "ai";
 import { useEffect, useMemo, useRef } from "react";
 
-import { chatAgentPath, type ChatRequestBody, mutatingToolNames } from "~/chat/chat";
+import { chatAgentPath, type ChatRequestBody } from "~/chat/chat";
 import { toDateString } from "~/dates";
+import { appModules } from "~/modules/registry";
+
+const suggestions = appModules.flatMap((module) => module.chat?.suggestions ?? []);
+// tools that change data: the page data is reloaded after they ran
+const mutatingToolNames: ReadonlySet<string> = new Set(appModules.flatMap((module) => module.chat?.mutatingToolNames ?? []));
 
 // The chat with the assistant (src/chat/agent.server.ts).
 //
-// useAgentChat (WebSocket to the user's TodoChatAgent) owns the conversation: history (persisted by the agent), streaming, resuming
+// useAgentChat (WebSocket to the user's ChatAgent) owns the conversation: history (persisted by the agent), streaming, resuming
 // after reconnects, tool approvals. MUI X Chat only renders it: its messages are controlled by useAgentChat's messages and its adapter
 // forwards sending, stopping and approvals to useAgentChat.
 export default function ChatPanel({ onClose }: { onClose: () => void }) {
     const router = useRouter();
-    const { listId } = useParams({ strict: false });
-    const listIdRef = useRef(listId);
-    useEffect(() => {
-        listIdRef.current = listId;
-    }, [listId]);
 
     // the server picks the agent instance of the authenticated user (src/server.ts)
-    const agent = useAgent({ agent: "TodoChatAgent", basePath: chatAgentPath });
+    const agent = useAgent({ agent: "ChatAgent", basePath: chatAgentPath });
     const { messages, sendMessage, stop, addToolApprovalResponse, clearHistory, error } = useAgentChat({
         agent,
         // read on every request
-        body: (): ChatRequestBody => ({ today: toDateString(new Date()), currentListId: listIdRef.current }),
+        body: (): ChatRequestBody => ({ today: toDateString(new Date()), page: currentPage(router) }),
     });
 
     const adapter = useMemo(
@@ -107,12 +107,18 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
                 features={{ conversationList: false, conversationHeader: false, attachments: false }}
                 variant="compact"
                 slots={{ messageAvatar: null }}
-                suggestions={messages.length === 0 ? ["Add a todo “Buy milk”", "What is due this week?", "Which lists do I have?"] : undefined}
+                suggestions={messages.length === 0 && suggestions.length > 0 ? suggestions : undefined}
                 suggestionsAutoSubmit
                 sx={{ flexGrow: 1, minHeight: 0, border: 0, borderRadius: 0 }}
             />
         </Box>
     );
+}
+
+// The page shown in the app (the deepest route match)
+function currentPage(router: ReturnType<typeof useRouter>): ChatRequestBody["page"] {
+    const match = router.state.matches.at(-1);
+    return match ? { routeId: match.routeId, params: match.params as Record<string, string> } : undefined;
 }
 
 // AI SDK UI message → MUI X Chat message (the part types mostly match, tool parts are nested differently)
