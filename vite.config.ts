@@ -3,8 +3,12 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+import { cloudflareAiDevProxy } from "./cloudflareAiDevProxy";
+
 export default defineConfig({
     plugins: [
+        // before the Cloudflare plugin, which handles all other requests
+        cloudflareAiDevProxy(),
         cloudflare({
             viteEnvironment: { name: "ssr" },
             // Local simulation of Cloudflare Access (sets `ctx.access` on every request), configured in .env/.env.local; not set in production builds
@@ -12,9 +16,9 @@ export default defineConfig({
                 process.env.DEV_USER_EMAIL && process.env.ACCESS_AUD
                     ? { access: { dev: { aud: process.env.ACCESS_AUD, identity: { email: process.env.DEV_USER_EMAIL } } } }
                     : {},
-            // The AI binding (chat assistant) always runs remotely, which needs a Cloudflare login (`npx wrangler login`).
-            // REMOTE_BINDINGS=false (.env.local) runs the app without one; the assistant then answers with an error.
-            remoteBindings: process.env.REMOTE_BINDINGS !== "false",
+            // No remote bindings (they'd need `wrangler login`): the AI binding (remote-only) isn't used in development, the chat assistant
+            // calls the model through cloudflareAiDevProxy instead (see src/chat/model.server.ts)
+            remoteBindings: false,
         }),
         tanstackStart(),
         viteReact(),

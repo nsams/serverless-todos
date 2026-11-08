@@ -1,10 +1,10 @@
 import { AIChatAgent, type OnChatMessageOptions } from "@cloudflare/ai-chat";
-import { createAI } from "agents/models/ai-sdk";
 import { convertToModelMessages, isStepCount, pruneMessages, streamText } from "ai";
 
 import { getListRepository } from "~/db/lists.server";
 
 import { chatRequestBodySchema } from "./chat";
+import { getChatModel } from "./model.server";
 import { createTodoTools } from "./tools.server";
 
 // The chat assistant: a Durable Object per user (instance name = user id, chosen by src/server.ts from the authenticated user, never by the client).
@@ -19,11 +19,8 @@ export class TodoChatAgent extends AIChatAgent<Env> {
         const body = chatRequestBodySchema.catch({}).parse(options?.body ?? {});
         const currentList = body.currentListId ? await getListRepository().get(userId, body.currentListId) : undefined;
 
-        // keyless: Workers AI or a third-party model via AI Gateway (Unified Billing), billed through the Cloudflare account
-        const ai = createAI({ binding: this.env.AI, id: this.env.AI_GATEWAY_ID });
-
         const result = streamText({
-            model: ai(this.env.AI_MODEL),
+            model: getChatModel(this.env),
             system: systemPrompt({ today: body.today ?? new Date().toISOString().slice(0, 10), currentList }),
             messages: pruneMessages({
                 messages: await convertToModelMessages(this.messages),
@@ -34,7 +31,13 @@ export class TodoChatAgent extends AIChatAgent<Env> {
             stopWhen: isStepCount(10),
             abortSignal: options?.abortSignal,
         });
-        return result.toUIMessageStreamResponse();
+        return result.toUIMessageStreamResponse({
+            onError: (error) => {
+                console.error("Chat assistant error", error);
+                // details only in development (they may contain internals)
+                return import.meta.env.DEV ? errorDetails(error) : "The assistant is not available.";
+            },
+        });
     }
 }
 
@@ -49,4 +52,15 @@ function systemPrompt({ today, currentList }: { today: string; currentList: { id
         "To change or delete a todo, find it first. If several todos match, ask which one is meant.",
         "Deleting asks the user for confirmation in the chat; just call the tool.",
     ].join("\n");
+}
+
+// The error of the model request (retries wrap it) with the response body (e.g. the AI Gateway's reason)
+function errorDetails(error: unknown): string {
+    if (error instanceof Error && "lastError" in error) {
+        return errorDetails(error.lastError);
+    }
+    if (error instanceof Error && "responseBody" in error && error.responseBody) {
+        return `${error.message}: ${String(error.responseBody)}`;
+    }
+    return String(error);
 }

@@ -11,7 +11,6 @@ import {
     ListItemIcon,
     ListItemText,
     Toolbar,
-    Tooltip,
     Typography,
 } from "@mui/material";
 import { createFileRoute, createLink, Outlet, useNavigate } from "@tanstack/react-router";
@@ -112,11 +111,9 @@ function AppLayout() {
                         Todos
                     </Typography>
                     <Typography sx={{ mr: 1, display: { xs: "none", sm: "block" } }}>{user.email}</Typography>
-                    <Tooltip title="Assistant">
-                        <IconButton color="inherit" aria-label="Assistant" aria-pressed={chatOpen} onClick={toggleChat}>
-                            <Chatbot />
-                        </IconButton>
-                    </Tooltip>
+                    <IconButton color="inherit" aria-label="Assistant" aria-pressed={chatOpen} onClick={toggleChat}>
+                        <Chatbot />
+                    </IconButton>
                     {/* handled by Cloudflare Access, so a full page load */}
                     <IconButton href="/cdn-cgi/access/logout" color="inherit" aria-label="Logout">
                         <Logout />

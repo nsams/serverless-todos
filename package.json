@@ -25,6 +25,7 @@
         "node": "24"
     },
     "dependencies": {
+        "@ai-sdk/openai-compatible": "^3.0.87",
         "@ai-sdk/provider": "^4.0.37",
         "@ai-sdk/react": "^4.0.169",
         "@cloudflare/ai-chat": "^0.12.2",
