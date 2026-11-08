@@ -18,8 +18,8 @@
         // Application Audience (AUD) Tag of the Access application (public, part of every Access JWT)
         "ACCESS_AUD": "dcacc8dc414027c9cafbca4e91f53dcacd16c652f18fee944fd50b646850a67d",
         // Model of the chat assistant: a Workers AI model with function calling (https://developers.cloudflare.com/ai/models/),
-        // e.g. "@cf/moonshotai/kimi-k2.6" or the faster, smaller "@cf/zai-org/glm-4.7-flash"
-        "AI_MODEL": "@cf/moonshotai/kimi-k2.6",
+        // e.g. "@cf/zai-org/glm-4.7-flash" or the larger "@cf/moonshotai/kimi-k2.6"
+        "AI_MODEL": "@cf/zai-org/glm-4.7-flash",
         // AI Gateway the model requests go through (logs, spend limits); "default" is created on first use
         "AI_GATEWAY_ID": "default",
     },
