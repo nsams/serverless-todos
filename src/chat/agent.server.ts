@@ -33,7 +33,8 @@ export class TodoChatAgent extends AIChatAgent<Env> {
         });
         return result.toUIMessageStreamResponse({
             onError: (error) => {
-                console.error("Chat assistant error", error);
+                // Workers Logs show only the stack of an Error: log the fields that say what went wrong
+                console.error("Chat assistant error", errorLogFields(error));
                 // details only in development (they may contain internals)
                 return import.meta.env.DEV ? errorDetails(error) : "The assistant is not available.";
             },
@@ -54,11 +55,33 @@ function systemPrompt({ today, currentList }: { today: string; currentList: { id
     ].join("\n");
 }
 
-// The error of the model request (retries wrap it) with the response body (e.g. the AI Gateway's reason)
-function errorDetails(error: unknown): string {
-    if (error instanceof Error && "lastError" in error) {
-        return errorDetails(error.lastError);
+// The error of the model request: retries wrap it
+function unwrapError(error: unknown): unknown {
+    return error instanceof Error && "lastError" in error ? unwrapError(error.lastError) : error;
+}
+
+// Model request errors (AI SDK APICallError, CloudflareAIError) carry the HTTP status, the response body (e.g. the AI Gateway's reason)
+// and Cloudflare's error code and AI Gateway log id
+function errorLogFields(error: unknown) {
+    const cause = unwrapError(error);
+    if (!(cause instanceof Error)) {
+        return { error: String(cause) };
     }
+    const fields: Record<string, unknown> = { name: cause.name, message: cause.message };
+    for (const key of ["statusCode", "code", "model", "url", "logId", "responseBody"]) {
+        if (key in cause) {
+            fields[key] = (cause as unknown as Record<string, unknown>)[key];
+        }
+    }
+    if (error !== cause) {
+        fields.wrappedIn = String(error);
+    }
+    return fields;
+}
+
+// For the chat in development
+function errorDetails(error: unknown): string {
+    error = unwrapError(error);
     if (error instanceof Error && "responseBody" in error && error.responseBody) {
         return `${error.message}: ${String(error.responseBody)}`;
     }
