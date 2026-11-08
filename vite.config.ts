@@ -3,8 +3,12 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+import { cloudflareAiDevProxy } from "./cloudflareAiDevProxy";
+
 export default defineConfig({
     plugins: [
+        // before the Cloudflare plugin, which handles all other requests
+        cloudflareAiDevProxy(),
         cloudflare({
             viteEnvironment: { name: "ssr" },
             config: () => ({
@@ -27,6 +31,9 @@ export default defineConfig({
                       }
                     : {}),
             }),
+            // No remote bindings (they'd need `wrangler login`): the AI binding (remote-only) isn't used in development, the chat assistant
+            // calls the model through cloudflareAiDevProxy instead (see src/chat/model.server.ts)
+            remoteBindings: false,
         }),
         tanstackStart(),
         viteReact(),
