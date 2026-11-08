@@ -9,50 +9,59 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as AppRouteImport } from './routes/_app'
-import { Route as AppListsListIdRouteImport } from './routes/_app.lists.$listId'
+import { Route as indexRouteImport } from './routes/index'
+import { Route as appRouteImport } from './routes/_app'
+import { Route as ListsDotindexRouteImport } from './modules/todos/routes/lists.index'
+import { Route as ListsDotlistIdRouteImport } from './modules/todos/routes/lists.$listId'
 
-const IndexRoute = IndexRouteImport.update({
+const indexRoute = indexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppRoute = AppRouteImport.update({
+const appRoute = appRouteImport.update({
   id: '/_app',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppListsListIdRoute = AppListsListIdRouteImport.update({
+const ListsDotindexRoute = ListsDotindexRouteImport.update({
+  id: '/lists/',
+  path: '/lists/',
+  getParentRoute: () => appRoute,
+} as any)
+const ListsDotlistIdRoute = ListsDotlistIdRouteImport.update({
   id: '/lists/$listId',
   path: '/lists/$listId',
-  getParentRoute: () => AppRoute,
+  getParentRoute: () => appRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/lists/$listId': typeof AppListsListIdRoute
+  '/': typeof indexRoute
+  '/lists/$listId': typeof ListsDotlistIdRoute
+  '/lists/': typeof ListsDotindexRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/lists/$listId': typeof AppListsListIdRoute
+  '/': typeof indexRoute
+  '/lists/$listId': typeof ListsDotlistIdRoute
+  '/lists': typeof ListsDotindexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/_app': typeof AppRouteWithChildren
-  '/_app/lists/$listId': typeof AppListsListIdRoute
+  '/': typeof indexRoute
+  '/_app': typeof appRouteWithChildren
+  '/_app/lists/$listId': typeof ListsDotlistIdRoute
+  '/_app/lists/': typeof ListsDotindexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/lists/$listId'
+  fullPaths: '/' | '/lists/$listId' | '/lists/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/lists/$listId'
-  id: '__root__' | '/' | '/_app' | '/_app/lists/$listId'
+  to: '/' | '/lists/$listId' | '/lists'
+  id: '__root__' | '/' | '/_app' | '/_app/lists/$listId' | '/_app/lists/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  AppRoute: typeof AppRouteWithChildren
+  indexRoute: typeof indexRoute
+  appRoute: typeof appRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -61,39 +70,48 @@ declare module '@tanstack/react-router' {
       id: '/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+      preLoaderRoute: typeof indexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app': {
       id: '/_app'
       path: ''
       fullPath: '/'
-      preLoaderRoute: typeof AppRouteImport
+      preLoaderRoute: typeof appRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_app/lists/': {
+      id: '/_app/lists/'
+      path: '/lists'
+      fullPath: '/lists/'
+      preLoaderRoute: typeof ListsDotindexRouteImport
+      parentRoute: typeof appRoute
     }
     '/_app/lists/$listId': {
       id: '/_app/lists/$listId'
       path: '/lists/$listId'
       fullPath: '/lists/$listId'
-      preLoaderRoute: typeof AppListsListIdRouteImport
-      parentRoute: typeof AppRoute
+      preLoaderRoute: typeof ListsDotlistIdRouteImport
+      parentRoute: typeof appRoute
     }
   }
 }
 
-interface AppRouteChildren {
-  AppListsListIdRoute: typeof AppListsListIdRoute
+interface appRouteChildren {
+  ListsDotlistIdRoute: typeof ListsDotlistIdRoute
+  ListsDotindexRoute: typeof ListsDotindexRoute
 }
 
-const AppRouteChildren: AppRouteChildren = {
-  AppListsListIdRoute: AppListsListIdRoute,
+const appRouteChildren: appRouteChildren = {
+  ListsDotlistIdRoute: ListsDotlistIdRoute,
+  ListsDotindexRoute: ListsDotindexRoute,
 }
 
-const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+const appRouteWithChildren = appRoute._addFileChildren(appRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
-  AppRoute: AppRouteWithChildren,
+  indexRoute: indexRoute,
+  appRoute: appRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

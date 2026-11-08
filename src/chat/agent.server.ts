@@ -1,8 +1,8 @@
 import { AIChatAgent, type OnChatMessageOptions } from "@cloudflare/ai-chat";
 import { convertToModelMessages, isStepCount, pruneMessages, streamText } from "ai";
 
-import { getListRepository } from "~/db/lists.server";
-import { todoToolsInstructions } from "~/todoTools.server";
+import { appName } from "~/app";
+import { getChatContext, toolsInstructions } from "~/modules/registry.server";
 
 import { chatRequestBodySchema } from "./chat";
 import { getChatModel } from "./model.server";
@@ -10,7 +10,7 @@ import { createChatTools } from "./tools.server";
 
 // The chat assistant: a Durable Object per user (instance name = user id, chosen by src/server.ts from the authenticated user, never by the client).
 // AIChatAgent persists the chat history in the Durable Object's SQLite storage and streams the answers over a WebSocket (resumable).
-export class TodoChatAgent extends AIChatAgent<Env> {
+export class ChatAgent extends AIChatAgent<Env> {
     // the instance name (the user's email) is sent to the user's own clients only
     static options = { sendIdentityOnConnect: true };
     maxPersistedMessages = 200;
@@ -18,11 +18,11 @@ export class TodoChatAgent extends AIChatAgent<Env> {
     async onChatMessage(_onFinish: unknown, options?: OnChatMessageOptions) {
         const userId = this.name;
         const body = chatRequestBodySchema.catch({}).parse(options?.body ?? {});
-        const currentList = body.currentListId ? await getListRepository().get(userId, body.currentListId) : undefined;
+        const context = await getChatContext(userId, body.page);
 
         const result = streamText({
             model: getChatModel(this.env),
-            system: systemPrompt({ today: body.today ?? new Date().toISOString().slice(0, 10), currentList }),
+            system: systemPrompt({ today: body.today ?? new Date().toISOString().slice(0, 10), context }),
             messages: pruneMessages({
                 messages: await convertToModelMessages(this.messages),
                 reasoning: "before-last-message",
@@ -43,15 +43,14 @@ export class TodoChatAgent extends AIChatAgent<Env> {
     }
 }
 
-function systemPrompt({ today, currentList }: { today: string; currentList: { id: string; name: string } | undefined }) {
+// context: what the user is looking at, from the modules
+function systemPrompt({ today, context }: { today: string; context: string[] }) {
     return [
-        "You are the assistant of a todo app. You manage the user's todo lists and todos with the provided tools.",
+        `You are the assistant of the app "${appName}". You help the user with the provided tools.`,
         "Reply in the language the user writes in. Keep replies short.",
         `Today is ${today} (${new Date(`${today}T00:00:00Z`).toLocaleDateString("en", { weekday: "long", timeZone: "UTC" })}).`,
-        currentList
-            ? `The user is currently looking at the list "${currentList.name}" (id ${currentList.id}). Add new todos to this list unless the user names another one.`
-            : "The user isn't looking at a list right now. If it's unclear which list is meant, look up the lists and ask.",
-        ...todoToolsInstructions,
+        ...context,
+        ...toolsInstructions,
         "Deleting asks the user for confirmation in the chat; just call the tool.",
     ].join("\n");
 }

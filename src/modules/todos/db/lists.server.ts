@@ -1,6 +1,7 @@
 import { and, asc, eq, sql } from "drizzle-orm";
 
-import { getDb } from "./db.server";
+import { getDb } from "~/db/db.server";
+
 import { lists, todos } from "./schema";
 
 export type List = typeof lists.$inferSelect;

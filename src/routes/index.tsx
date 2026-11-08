@@ -1,11 +1,10 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
-import { getDefaultList } from "~/lists.functions";
+import { startPath } from "~/modules/registry";
 
-// Start page: the user's first list (created if the user has none yet)
+// Start page: redirects to the start page of a module
 export const Route = createFileRoute("/")({
-    loader: async () => {
-        const { id } = await getDefaultList();
-        throw redirect({ to: "/lists/$listId", params: { listId: id }, replace: true });
+    beforeLoad: () => {
+        throw redirect({ to: startPath, replace: true });
     },
 });

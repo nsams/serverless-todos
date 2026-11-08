@@ -1,7 +1,8 @@
-import { isDateString } from "./dates";
+import { isDateString } from "~/dates";
+
 import type { TodoFilter, TodoFilterModel, TodoSort } from "./db/todos.server";
 
-// Grid state (pagination, sorting, filtering) lives in the URL, see searchParams.ts for the serialization:
+// Grid state (pagination, sorting, filtering) lives in the URL, see src/searchParams.ts for the serialization:
 // ?page=0&pageSize=25&sort=title:asc&sort=done:desc&filter=title:contains:milk&filter=dueDate:before:2026-11-06&filterLogic=or
 export type TodoSearch = {
     page?: number;

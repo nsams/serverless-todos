@@ -29,18 +29,22 @@ import {
     GridLogicOperator,
     type GridSortModel,
 } from "@mui/x-data-grid-pro";
-import { createFileRoute, getRouteApi, redirect, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { type FormEvent, useState } from "react";
 
+import { appName } from "~/app";
 import { useShowError } from "~/components/ErrorSnackbar";
 import { NameDialog } from "~/components/NameDialog";
-import { fromDateString, isOverdue, toDateString, useToday } from "~/dates";
-import type { Todo, TodoFilter } from "~/db/todos.server";
-import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "~/limits";
-import { deleteList, renameList } from "~/lists.functions";
-import { createTodo, deleteTodo, listTodos, updateTodo } from "~/todos.functions";
-import { filterOperators, pageSizeOptions, parseTodoSearch, type TodoSearch, validateTodoSearch } from "~/todoSearch";
+import { fromDateString, toDateString, useToday } from "~/dates";
+
+import type { Todo, TodoFilter } from "../db/todos.server";
+import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "../limits";
+import { deleteList, renameList } from "../lists.functions";
+import { useLists } from "../navigation";
+import { isOverdue } from "../overdue";
+import { createTodo, deleteTodo, listTodos, updateTodo } from "../todos.functions";
+import { filterOperators, pageSizeOptions, parseTodoSearch, type TodoSearch, validateTodoSearch } from "../todoSearch";
 
 export const Route = createFileRoute("/_app/lists/$listId")({
     validateSearch: validateTodoSearch,
@@ -60,11 +64,9 @@ export const Route = createFileRoute("/_app/lists/$listId")({
 
         return result;
     },
-    head: ({ loaderData }) => ({ meta: [{ title: loaderData ? `${loaderData.list.name} – Todos` : "Todos" }] }),
+    head: ({ loaderData }) => ({ meta: [{ title: loaderData ? `${loaderData.list.name} – ${appName}` : appName }] }),
     component: Todos,
 });
-
-const appRoute = getRouteApi("/_app");
 
 function supportedOperators(field: TodoFilter["field"], operators: GridFilterOperator[]) {
     return operators.filter((operator) => (filterOperators[field] as string[]).includes(operator.value));
@@ -83,7 +85,7 @@ function serializeFilterValue(field: string, value: unknown) {
 
 function Todos() {
     const { list, todos, totalCount } = Route.useLoaderData();
-    const { lists } = appRoute.useLoaderData();
+    const lists = useLists();
     const navigate = Route.useNavigate();
     const router = useRouter();
     const updateTodoFn = useServerFn(updateTodo);
@@ -304,8 +306,8 @@ function ListHeader({ list }: { list: { id: string; name: string } }) {
         try {
             await deleteListFn({ data: { id: list.id } });
             setDeleteDialogOpen(false);
-            // the start page redirects to the first remaining list (or creates a new one)
-            await navigate({ to: "/", replace: true });
+            // redirects to the first remaining list (or creates a new one)
+            await navigate({ to: "/lists", replace: true });
             // the sidebar's lists aren't reloaded by the navigation (the layout route's loader data is reused)
             await router.invalidate();
         } catch (error) {

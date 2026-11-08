@@ -4,12 +4,13 @@ import { ThemeProvider } from "@mui/material/styles";
 import { createRootRoute, type ErrorComponentProps, HeadContent, Scripts } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
+import { appName } from "~/app";
 import { ErrorSnackbarProvider } from "~/components/ErrorSnackbar";
 import { theme } from "~/theme";
 
 export const Route = createRootRoute({
     head: () => ({
-        meta: [{ charSet: "utf-8" }, { name: "viewport", content: "width=device-width, initial-scale=1" }, { title: "Todos" }],
+        meta: [{ charSet: "utf-8" }, { name: "viewport", content: "width=device-width, initial-scale=1" }, { title: appName }],
         links: [{ rel: "stylesheet", href: robotoFlexCss }],
     }),
     shellComponent: RootDocument,

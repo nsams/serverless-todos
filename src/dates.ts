@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { z } from "zod";
 
-// Due dates are calendar dates without time zone, stored as YYYY-MM-DD
+// Calendar dates without time zone (e.g. due dates), stored as YYYY-MM-DD
 
 // Valid calendar date (rejects e.g. 2026-02-30)
 export const dateStringSchema = z.iso.date();
@@ -21,12 +21,8 @@ export function fromDateString(value: string) {
     return new Date(year, month - 1, day);
 }
 
-export function isOverdue(todo: { dueDate: string | null; done: boolean }, today: string | null) {
-    return today !== null && !todo.done && todo.dueDate !== null && todo.dueDate < today;
-}
-
 function subscribeToDateChange(onChange: () => void) {
-    // checked every minute, so the overdue marking updates after midnight
+    // checked every minute, so e.g. the overdue marking updates after midnight
     const interval = setInterval(onChange, 60_000);
     return () => clearInterval(interval);
 }

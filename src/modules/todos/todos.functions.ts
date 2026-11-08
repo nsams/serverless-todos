@@ -2,7 +2,8 @@ import { notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-import { dateStringSchema } from "./dates";
+import { dateStringSchema } from "~/dates";
+
 import { getListRepository } from "./db/lists.server";
 import { getTodoRepository } from "./db/todos.server";
 import { maxTodoDescriptionLength, maxTodoTitleLength } from "./limits";

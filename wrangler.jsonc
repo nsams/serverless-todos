@@ -27,11 +27,15 @@
     "ai": {
         "binding": "AI",
     },
-    // The chat assistant: one TodoChatAgent (Durable Object with SQLite storage for the chat history) per user, see src/chat/
+    // The chat assistant: one ChatAgent (Durable Object with SQLite storage for the chat history) per user, see src/chat/
     "durable_objects": {
-        "bindings": [{ "name": "TodoChatAgent", "class_name": "TodoChatAgent" }],
+        "bindings": [{ "name": "ChatAgent", "class_name": "ChatAgent" }],
     },
-    "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TodoChatAgent"] }],
+    "migrations": [
+        { "tag": "v1", "new_sqlite_classes": ["TodoChatAgent"] },
+        // the assistant serves all modules; keeps the existing chat histories
+        { "tag": "v2", "renamed_classes": [{ "from": "TodoChatAgent", "to": "ChatAgent" }] },
+    ],
     "d1_databases": [
         {
             "binding": "DB",
