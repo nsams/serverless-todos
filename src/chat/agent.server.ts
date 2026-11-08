@@ -2,10 +2,11 @@ import { AIChatAgent, type OnChatMessageOptions } from "@cloudflare/ai-chat";
 import { convertToModelMessages, isStepCount, pruneMessages, streamText } from "ai";
 
 import { getListRepository } from "~/db/lists.server";
+import { todoToolsInstructions } from "~/todoTools.server";
 
 import { chatRequestBodySchema } from "./chat";
 import { getChatModel } from "./model.server";
-import { createTodoTools } from "./tools.server";
+import { createChatTools } from "./tools.server";
 
 // The chat assistant: a Durable Object per user (instance name = user id, chosen by src/server.ts from the authenticated user, never by the client).
 // AIChatAgent persists the chat history in the Durable Object's SQLite storage and streams the answers over a WebSocket (resumable).
@@ -27,7 +28,7 @@ export class TodoChatAgent extends AIChatAgent<Env> {
                 reasoning: "before-last-message",
                 toolCalls: "before-last-2-messages",
             }),
-            tools: createTodoTools(userId),
+            tools: createChatTools(userId),
             stopWhen: isStepCount(10),
             abortSignal: options?.abortSignal,
         });
@@ -45,12 +46,12 @@ export class TodoChatAgent extends AIChatAgent<Env> {
 function systemPrompt({ today, currentList }: { today: string; currentList: { id: string; name: string } | undefined }) {
     return [
         "You are the assistant of a todo app. You manage the user's todo lists and todos with the provided tools.",
-        "Reply in the language the user writes in. Keep replies short; don't show ids to the user.",
-        `Today is ${today} (${new Date(`${today}T00:00:00Z`).toLocaleDateString("en", { weekday: "long", timeZone: "UTC" })}). Resolve relative dates like "tomorrow" or "next Friday" from it. Due dates are calendar dates (YYYY-MM-DD).`,
+        "Reply in the language the user writes in. Keep replies short.",
+        `Today is ${today} (${new Date(`${today}T00:00:00Z`).toLocaleDateString("en", { weekday: "long", timeZone: "UTC" })}).`,
         currentList
             ? `The user is currently looking at the list "${currentList.name}" (id ${currentList.id}). Add new todos to this list unless the user names another one.`
             : "The user isn't looking at a list right now. If it's unclear which list is meant, look up the lists and ask.",
-        "To change or delete a todo, find it first. If several todos match, ask which one is meant.",
+        ...todoToolsInstructions,
         "Deleting asks the user for confirmation in the chat; just call the tool.",
     ].join("\n");
 }

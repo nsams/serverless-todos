@@ -1,6 +1,6 @@
 # serverless-todos
 
-Minimal todo app (multiple lists, todos with description and due date, overdue todos are highlighted, AI chat assistant that manages the todos): TanStack Start on Cloudflare Workers, MUI + DataGrid, Drizzle, login via Cloudflare Access (Entra ID), Cloudflare Agents SDK + AI Gateway + MUI X Chat.
+Minimal todo app (multiple lists, todos with description and due date, overdue todos are highlighted, AI chat assistant that manages the todos, MCP server for external AI clients like Claude Desktop): TanStack Start on Cloudflare Workers, MUI + DataGrid, Drizzle, login via Cloudflare Access (Entra ID), Cloudflare Agents SDK + AI Gateway + MUI X Chat, MCP TypeScript SDK.
 
 The app runs only on Cloudflare (Workers + D1). Locally it runs in the real Workers runtime (workerd) via `@cloudflare/vite-plugin`, D1 is emulated by Miniflare as a local SQLite database in `.wrangler/state/` (no Docker or external database needed).
 
@@ -45,8 +45,10 @@ npm run db:reset  # delete the local database and re-apply all migrations
 - `src/routes/_app.lists.$listId.tsx`: todos of a list; grid state (pagination, sorting, filtering) lives in the URL (`src/todoSearch.ts`, serialized as plain search params by `src/searchParams.ts`)
 - `src/todos.functions.ts`, `src/lists.functions.ts`: server functions (data loading and mutations, input validated with zod; length limits in `src/limits.ts`)
 - `src/dates.ts`: due dates are calendar dates (`YYYY-MM-DD`) without time zone; whether a todo is overdue is decided in the browser with the user's local date
-- `src/server.ts`: worker entry, passes `ctx.access` (Cloudflare Access) to the app as request context, routes chat requests to the user's chat agent
+- `src/server.ts`: worker entry, passes `ctx.access` (Cloudflare Access) to the app as request context, routes chat requests to the user's chat agent and MCP requests to the MCP server
+- `src/todoTools.server.ts`: the tools that manage lists and todos, shared by the chat assistant and the MCP server
 - `src/chat/`: chat assistant (see [Chat assistant](#chat-assistant)), `src/components/ChatPanel.tsx`: its UI
+- `src/mcp/`: MCP server (see [MCP server](#mcp-server-external-ai-clients))
 - `src/start.ts`: global request middleware that rejects every request not authenticated by Cloudflare Access (`src/auth.server.ts`) and passes the user (identified by email) to the server functions as context
 
 ## Authentication
@@ -63,12 +65,39 @@ Denied requests are logged with the reason (Workers Logs).
 The assistant (chat panel, robot button in the app bar) manages the user's lists and todos in natural language, e.g. "Lege ein Todo mit dem Titel „Milch holen“ an".
 
 - **Agent** (`src/chat/agent.server.ts`): an `AIChatAgent` ([Cloudflare Agents SDK](https://developers.cloudflare.com/agents/)), a Durable Object per user (instance name = user id). It keeps the chat history in its SQLite storage, streams the answers over a WebSocket (resumed after reconnects, in sync across tabs) and calls the model with the [AI SDK](https://ai-sdk.dev) (`streamText`).
-- **Tools** (`src/chat/tools.server.ts`): list/create/rename/delete lists, find/create/update/delete todos, directly on the repositories (no MCP server needed, the agent runs in the same worker). The user id comes from the authentication, never from the model. Deleting needs the user's confirmation in the chat (`needsApproval`). The client sends its local date and the current list with every message (`src/chat/chat.ts`), for relative due dates and as the default list.
+- **Tools** (`src/todoTools.server.ts`, as AI SDK tools in `src/chat/tools.server.ts`): list/create/rename/delete lists, find/create/update/delete todos, directly on the repositories (the agent runs in the same worker, it doesn't go through the MCP server). The user id comes from the authentication, never from the model. Deleting needs the user's confirmation in the chat (`needsApproval`). The client sends its local date and the current list with every message (`src/chat/chat.ts`), for relative due dates and as the default list.
 - **Routing/auth** (`src/server.ts`): the client connects to `/chat-agent`; the worker authenticates the request like any other (Cloudflare Access), rejects foreign origins (WebSockets aren't protected by CORS) and forwards it to the agent of the authenticated user. The Agents SDK's default routes (`/agents/...`) are not exposed.
 - **Model** (`src/chat/model.server.ts`, `AI_MODEL` in `wrangler.jsonc`, default `@cf/zai-org/glm-4.7-flash`): a [Workers AI](https://developers.cloudflare.com/workers-ai/) model with function calling ([catalog](https://developers.cloudflare.com/ai/models/), e.g. also `@cf/moonshotai/kimi-k2.6`): run by Cloudflare, billed through the Cloudflare account (Workers AI pricing), no provider API key. Via the AI binding (`createAI` from `agents/models/ai-sdk`); in development via the AI Gateway REST API (see [Development](#development)). Requests go through the AI Gateway `AI_GATEWAY_ID` (default `default`, created on first use): logs, spend limits, rate limits.
 - **UI** (`src/components/ChatPanel.tsx`): [MUI X Chat](https://mui.com/x/react-chat/) (`ChatBox`, alpha) renders the conversation of `useAgentChat`: its messages are controlled by `useAgentChat`, its adapter forwards sending, stopping and tool approvals. After a tool changed data the page data is reloaded (`router.invalidate()`).
 
 Setup (once per Cloudflare account): set a spend limit on the AI Gateway (dashboard → AI → AI Gateway). Some Workers AI models need the Workers Paid plan.
+
+## MCP server (external AI clients)
+
+The same tools as the chat assistant are available to external AI clients (Claude Desktop, claude.ai, Claude Code, ...) as [MCP](https://modelcontextprotocol.io) server at `https://<worker>.workers.dev/mcp`. The AI client brings its own model: no Workers AI costs.
+
+- **Server** (`src/mcp/mcp.server.ts`): an `McpServer` of the [MCP TypeScript SDK](https://ts.sdk.modelcontextprotocol.io/v2/) (v2) with the tools of `src/todoTools.server.ts`, served stateless over Streamable HTTP with `createMcpHandler` of the Agents SDK (no Durable Object, no MCP session; current and 2025 protocol versions). Read-only tools are annotated as such, deleting tools as destructive: MCP clients ask the user for confirmation depending on their settings.
+- **Login**: with Cloudflare Access [managed OAuth](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/), Access is the OAuth authorization server for MCP clients (discovery, dynamic client registration, tokens): the client opens the browser, the user signs in with Entra ID like in the app (same Access policies), the client gets an OAuth token. Access verifies the token on every request and forwards it with the Access JWT of the user, like a browser session. So the app has no OAuth code of its own: `src/server.ts` authenticates `/mcp` requests like all others (`src/auth.server.ts`), rejects foreign origins and passes the user to the MCP server; every tool is scoped to that user.
+
+Setup (once, Zero Trust dashboard → Access controls → Applications → the application of the worker → Edit → Advanced settings):
+
+1. Turn on **Managed OAuth**.
+2. **Allowed redirect URIs**: `https://claude.ai/api/mcp/auth_callback` and `https://claude.com/api/mcp/auth_callback` (Claude Desktop and claude.ai connect through Anthropic's servers), plus the redirect URIs of other web-based MCP clients.
+3. **Allow localhost clients** and **Allow loopback clients** for local clients like Claude Code or the MCP Inspector.
+4. Recommended: **Access token lifetime** 15 minutes, **Grant session duration** e.g. 2 weeks (the client refreshes the token in the background, Access re-evaluates its policies on each refresh; afterwards the user signs in again).
+
+Browser users aren't affected: Access only answers non-browser clients with `401` and OAuth discovery instead of the redirect to the login page.
+
+Connect:
+
+- Claude Desktop / claude.ai: Settings → Connectors → Add custom connector, URL `https://<worker>.workers.dev/mcp` → Connect (opens the Access login).
+- Claude Code:
+
+```bash
+claude mcp add --transport http todos https://<worker>.workers.dev/mcp
+```
+
+Locally the MCP server is at http://localhost:5180/mcp, without login (authenticated as `DEV_USER_EMAIL` by the simulated Access), e.g. `claude mcp add --transport http todos-dev http://localhost:5180/mcp`. MCP clients that run in a browser page of another origin are rejected (foreign origin).
 
 ## Database
 
@@ -92,5 +121,6 @@ Deploy with `npm run deploy` (build, apply pending D1 migrations, deploy), eithe
     1. Add Microsoft Entra ID as identity provider (Settings → Authentication → Login methods), see the [Cloudflare docs](https://developers.cloudflare.com/cloudflare-one/identity/idp-integration/entra-id/).
     2. Protect the `workers.dev` URL: Workers & Pages → serverless-todos → Settings → Domains & Routes → `workers.dev` → Enable Cloudflare Access. This creates an Access application for the URL (preview URLs are disabled in `wrangler.jsonc`).
     3. Edit that Access application (Zero Trust → Access → Applications): use Entra ID as the only login method and a policy that allows the intended users (e.g. an Entra group or email domain).
-    4. Set `ACCESS_TEAM_DOMAIN` (`https://<team-name>.cloudflareaccess.com`, see Zero Trust → Settings → Team name and domain) and `ACCESS_AUD` (the Application Audience (AUD) Tag on the application's overview) in `wrangler.jsonc`.
+    4. For the MCP server: turn on managed OAuth on that Access application, see [MCP server](#mcp-server-external-ai-clients).
+    5. Set `ACCESS_TEAM_DOMAIN` (`https://<team-name>.cloudflareaccess.com`, see Zero Trust → Settings → Team name and domain) and `ACCESS_AUD` (the Application Audience (AUD) Tag on the application's overview) in `wrangler.jsonc`.
 3. Deploy: `npm run deploy`
