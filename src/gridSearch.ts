@@ -36,7 +36,7 @@ function toStringArray(value: unknown) {
     return items.length > 0 ? items : undefined;
 }
 
-// Used as route validateSearch and as server function validator: accepts untrusted input
+// Used as route validateSearch and as API input validator: accepts untrusted input
 export function validateGridSearch(search: unknown): GridSearch {
     const { page, pageSize, sort, filter, filterLogic } = (typeof search === "object" && search !== null ? search : {}) as Record<string, unknown>;
     const pageNumber = Number.parseInt(String(page), 10);
@@ -50,7 +50,7 @@ export function validateGridSearch(search: unknown): GridSearch {
     };
 }
 
-// Validator of a server function that loads the rows of a grid: the given params (e.g. the list id) plus the search params,
+// Input validator of an API procedure that loads the rows of a grid: the given params (e.g. the list id) plus the search params,
 // normalized leniently (invalid values are dropped) with the route's validateSearch, like in the route
 export function gridInputSchema<Shape extends z.ZodRawShape, Search>(shape: Shape, validateSearch: (search: unknown) => Search) {
     return z.looseObject(shape).transform((data) => {
