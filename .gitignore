@@ -2,8 +2,7 @@ node_modules
 *.tsbuildinfo
 .env.local
 
-# TanStack Start
-/.tanstack/
+# Vite build
 /dist/
 
 # Cloudflare
