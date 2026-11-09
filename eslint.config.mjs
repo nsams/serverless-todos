@@ -2,17 +2,7 @@ import eslintConfigReact, { restrictedImportPaths } from "@dextinity/eslint-conf
 import { defineConfig, globalIgnores } from "eslint/config";
 
 export default defineConfig([
-    globalIgnores([
-        ".tanstack/**",
-        ".wrangler/**",
-        "dist/**",
-        "src/routeTree.gen.ts",
-        "drizzle/**",
-        "worker-configuration.d.ts",
-        "eslint.config.mjs",
-        "wrangler.jsonc",
-        "package-lock.json",
-    ]),
+    globalIgnores([".wrangler/**", "dist/**", "drizzle/**", "worker-configuration.d.ts", "eslint.config.mjs", "wrangler.jsonc", "package-lock.json"]),
     ...eslintConfigReact,
     {
         rules: {
