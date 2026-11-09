@@ -1,14 +1,15 @@
 import { type DataGridProProps, type GridFilterModel, GridLogicOperator, type GridSortModel } from "@mui/x-data-grid-pro";
-import { useRouterState } from "@tanstack/react-router";
+import { useLocation, useNavigation } from "react-router";
 
 import { type GridFieldConfig, type GridSearch, pageSizeOptions, parseGridSearch, serializeFilterValue } from "~/gridSearch";
+import { parseSearch } from "~/searchParams";
 
 type Options<Search extends GridSearch> = {
-    // the route's validateSearch
+    // reads the search params (parsed with parseSearch), e.g. validateGridSearch
     validateSearch: (search: unknown) => Search;
     // the sortable and filterable fields
     fields: Record<string, GridFieldConfig>;
-    // changes the route's search params, e.g. with the route's useNavigate
+    // changes the page's search params (e.g. with useNavigate and stringifySearch)
     navigate: (search: Search, options: { replace: boolean }) => void;
     // the number of rows on the server (with the filters applied)
     rowCount: number;
@@ -19,9 +20,13 @@ type Options<Search extends GridSearch> = {
 // A DataGrid with server-side pagination, sorting and filtering whose state lives in the URL (see src/gridSearch.ts):
 // gridProps connect the grid to the URL, the route's loader loads the rows for it (parseGridSearch on the server).
 export function useServerGrid<Search extends GridSearch>({ validateSearch, fields, navigate, rowCount, dateOnlyFields = [] }: Options<Search>) {
-    // Use the pending location while loading, otherwise the grid would show the old state until the loader is done (e.g. reset a filter value while typing)
-    const search = validateSearch(useRouterState({ select: (state) => state.location.search }));
-    const loading = useRouterState({ select: (state) => state.status === "pending" && state.location.href !== state.resolvedLocation?.href });
+    // Use the pending location while loading (a change of the search params), otherwise the grid would show the old state until the loader
+    // is done (e.g. reset a filter value while typing)
+    const location = useLocation();
+    const navigation = useNavigation();
+    const pendingLocation = navigation.state === "loading" && navigation.location.pathname === location.pathname ? navigation.location : undefined;
+    const search = validateSearch(parseSearch((pendingLocation ?? location).search));
+    const loading = pendingLocation !== undefined;
     const { page, pageSize, sort, filter, filterItems } = parseGridSearch(search, fields);
 
     const sortModel: GridSortModel = sort.map(({ field, direction }) => ({ field, sort: direction }));

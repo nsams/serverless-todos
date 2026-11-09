@@ -4,8 +4,8 @@ import type { z } from "zod";
 import type { ChatPage } from "~/chat/chat";
 
 // The app consists of a core (app shell, authentication, chat assistant, MCP server, database connection) and feature modules.
-// Everything that belongs to a module lives in its folder src/modules/<module>/: database schema, repositories, server functions,
-// routes, components, AI tools. The core only knows the modules through the registries (src/modules/registry.ts, registry.server.ts)
+// Everything that belongs to a module lives in its folder src/modules/<module>/: database schema, repositories, routes (with their loaders
+// and actions), components, AI tools. The core only knows the modules through the registries (src/modules/registry.ts, registry.server.ts)
 // and the interfaces below.
 
 // The part of a module the app shell uses (browser and server rendering)
@@ -16,8 +16,7 @@ export type AppModule = {
     navigation?: {
         // heading of the module's section in the sidebar
         title: string;
-        // loaded by the app layout (src/routes/_app.tsx) for every page; the module reads it with useNavigationData
-        loader: () => Promise<unknown>;
+        // its data: ServerModule.loadNavigation
         // onNavigate: closes the sidebar on small screens
         Component: ComponentType<{ onNavigate: () => void }>;
     };
@@ -29,8 +28,10 @@ export type AppModule = {
     };
 };
 
-// The part of a module the server uses (chat assistant, MCP server)
+// The part of a module the server uses (loaders, chat assistant, MCP server)
 export type ServerModule = {
+    // the data of the module's navigation (AppModule.navigation), loaded by the app layout (src/routes/_app.tsx); the module reads it with useNavigationData
+    loadNavigation?(userId: string): Promise<unknown>;
     // the module's tools for the AI assistants, scoped to the authenticated user (userId is never chosen by the model)
     createTools(userId: string): Record<string, AppTool>;
     // guidance for the model: what the tools manage and how to use them (system prompt of the chat assistant, instructions of the MCP server)

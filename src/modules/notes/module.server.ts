@@ -1,15 +1,14 @@
 import type { ServerModule } from "~/modules/types";
-import type { FileRoutesById } from "~/routeTree.gen";
 
 import { getNotebookRepository } from "./db/notebooks.server";
 import { getNoteRepository } from "./db/notes.server";
+import { notebookRouteId, noteRouteId } from "./routeIds";
 import { createNoteTools, noteToolsInstructions } from "./tools.server";
-
-const notebookRouteId: keyof FileRoutesById = "/_app/notes/$notebookId/";
-const noteRouteId: keyof FileRoutesById = "/_app/notes/$notebookId/$noteId";
 
 // The notes module (notebooks and Markdown notes), server part. App shell part: module.ts.
 export const notesServerModule: ServerModule = {
+    // the user's notebooks with their number of notes (sidebar), see navigation.ts
+    loadNavigation: (userId) => getNotebookRepository().list(userId),
     createTools: createNoteTools,
     instructions: noteToolsInstructions,
     chatContext: async (userId, page) => {

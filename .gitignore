@@ -2,9 +2,9 @@ node_modules
 *.tsbuildinfo
 .env.local
 
-# TanStack Start
-/.tanstack/
-/dist/
+# React Router
+/.react-router/
+/build/
 
 # Cloudflare
 .wrangler

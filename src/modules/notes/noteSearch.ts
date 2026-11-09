@@ -14,7 +14,7 @@ import type { NoteFilter, NoteFilterModel } from "./db/notes.server";
 // The open note keeps them, so its back link returns to the same view of the grid.
 export type NoteSearch = GridSearch & { q?: string };
 
-// Used as route validateSearch and as server function validator: accepts untrusted input
+// Reads the search params (parsed with parseSearch) in the loaders and in the components: accepts untrusted input
 export function validateNoteSearch(search: unknown): NoteSearch {
     const { q } = (typeof search === "object" && search !== null ? search : {}) as Record<string, unknown>;
     return { ...validateGridSearch(search), q: typeof q === "string" && q.trim() ? q : undefined };

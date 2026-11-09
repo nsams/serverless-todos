@@ -1,8 +1,9 @@
-import { getRouteApi } from "@tanstack/react-router";
+import { useRouteLoaderData } from "react-router";
 
-const appRoute = getRouteApi("/_app");
+import type { loader } from "~/routes/_app";
 
-// The navigation data of a module (the result of its navigation loader, see AppModule), available on every page of the app layout
+// The navigation data of a module (the result of its ServerModule.loadNavigation), available on every page of the app layout
 export function useNavigationData(moduleId: string): unknown {
-    return appRoute.useLoaderData({ select: ({ navigation }) => navigation[moduleId] });
+    // the app layout's route id (src/routes.ts)
+    return useRouteLoaderData<typeof loader>("app")?.navigation[moduleId];
 }

@@ -1,9 +1,8 @@
 import { cloudflare } from "@cloudflare/vite-plugin";
-import { tanstackStart } from "@tanstack/react-start/plugin/vite";
-import viteReact from "@vitejs/plugin-react";
+import { reactRouter } from "@react-router/dev/vite";
 import { defineConfig } from "vite";
 
-import { cloudflareAiDevProxy } from "./cloudflareAiDevProxy";
+import { cloudflareAiDevProxy } from "./cloudflareAiDevProxy.ts";
 
 export default defineConfig({
     plugins: [
@@ -20,9 +19,8 @@ export default defineConfig({
             // calls the model through cloudflareAiDevProxy instead (see src/chat/model.server.ts)
             remoteBindings: false,
         }),
-        // the routes of the modules live in their module folders, see src/routes.ts
-        tanstackStart({ router: { virtualRouteConfig: "./src/routes.ts" } }),
-        viteReact(),
+        // React Router framework mode (react-router.config.ts, routes in src/routes.ts); includes React Fast Refresh
+        reactRouter(),
     ],
     server: {
         port: Number(process.env.APP_PORT ?? 5173),

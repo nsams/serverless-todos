@@ -3,10 +3,10 @@ import { Close, Delete } from "@dextinity/admin-icons";
 import { Alert, Box, IconButton, Toolbar, Tooltip, Typography } from "@mui/material";
 import { ChatBox } from "@mui/x-chat";
 import type { ChatAdapter, ChatMessage, ChatMessagePart } from "@mui/x-chat/headless";
-import { useRouter } from "@tanstack/react-router";
 import { useAgent } from "agents/react";
 import { getToolName, isToolUIPart, type UIMessage } from "ai";
 import { useEffect, useMemo, useRef } from "react";
+import { type UIMatch, useMatches, useRevalidator } from "react-router";
 
 import { chatAgentPath, type ChatRequestBody } from "~/chat/chat";
 import { toDateString } from "~/dates";
@@ -22,14 +22,17 @@ const mutatingToolNames: ReadonlySet<string> = new Set(appModules.flatMap((modul
 // after reconnects, tool approvals. MUI X Chat only renders it: its messages are controlled by useAgentChat's messages and its adapter
 // forwards sending, stopping and approvals to useAgentChat.
 export default function ChatPanel({ onClose }: { onClose: () => void }) {
-    const router = useRouter();
+    const { revalidate } = useRevalidator();
+    // the page shown in the app, read when a message is sent
+    const page = useRef<ChatRequestBody["page"]>(undefined);
+    page.current = currentPage(useMatches());
 
     // the server picks the agent instance of the authenticated user (src/server.ts)
     const agent = useAgent({ agent: "ChatAgent", basePath: chatAgentPath });
     const { messages, sendMessage, stop, addToolApprovalResponse, clearHistory, error } = useAgentChat({
         agent,
         // read on every request
-        body: (): ChatRequestBody => ({ today: toDateString(new Date()), page: currentPage(router) }),
+        body: (): ChatRequestBody => ({ today: toDateString(new Date()), page: page.current }),
     });
 
     const adapter = useMemo(
@@ -55,7 +58,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
         [sendMessage, stop, addToolApprovalResponse],
     );
 
-    // Reload the page data (lists, todos) after the assistant changed something
+    // Reload the page data (lists, todos; all loaders) after the assistant changed something
     const handledToolCallIds = useRef(new Set<string>());
     useEffect(() => {
         let changed = false;
@@ -73,9 +76,9 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
             }
         }
         if (changed) {
-            void router.invalidate();
+            void revalidate();
         }
-    }, [messages, router]);
+    }, [messages, revalidate]);
 
     const chatMessages = useMemo(() => messages.map(toChatMessage), [messages]);
 
@@ -116,9 +119,14 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
 }
 
 // The page shown in the app (the deepest route match)
-function currentPage(router: ReturnType<typeof useRouter>): ChatRequestBody["page"] {
-    const match = router.state.matches.at(-1);
-    return match ? { routeId: match.routeId, params: match.params as Record<string, string> } : undefined;
+function currentPage(matches: UIMatch[]): ChatRequestBody["page"] {
+    const match = matches.at(-1);
+    return match
+        ? {
+              routeId: match.id,
+              params: Object.fromEntries(Object.entries(match.params).filter((entry) => entry[1] !== undefined)) as Record<string, string>,
+          }
+        : undefined;
 }
 
 // AI SDK UI message → MUI X Chat message (the part types mostly match, tool parts are nested differently)

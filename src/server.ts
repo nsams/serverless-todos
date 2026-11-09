@@ -1,11 +1,15 @@
-import handler from "@tanstack/react-start/server-entry";
 import { getAgentByName } from "agents";
+import { createRequestHandler, RouterContextProvider } from "react-router";
 
 import { getUser } from "./auth.server";
 import { chatAgentPath } from "./chat/chat";
+import { accessContext } from "./context";
 import { handleMcpRequest, mcpPath } from "./mcp/mcp.server";
 
 export { ChatAgent } from "./chat/agent.server";
+
+// The React Router app (src/routes.ts)
+const handleAppRequest = createRequestHandler(() => import("virtual:react-router/server-build"), import.meta.env.MODE);
 
 // Custom worker entry:
 // - passes Cloudflare Access (`ctx.access`, set by the runtime on requests that matched an Access application) to the app
@@ -20,7 +24,9 @@ export default {
         if (pathname === mcpPath) {
             return handleMcp(request, ctx.access);
         }
-        return handler.fetch(request, { context: { access: ctx.access } });
+        const context = new RouterContextProvider();
+        context.set(accessContext, ctx.access);
+        return handleAppRequest(request, context);
     },
 } satisfies ExportedHandler<Env>;
 
@@ -34,7 +40,7 @@ function isForeignOrigin(request: Request) {
     return false;
 }
 
-// Chat requests bypass the app's request middleware (src/start.ts), so they are authenticated here
+// Chat requests bypass the app's middleware (src/root.tsx), so they are authenticated here
 async function handleChatRequest(request: Request, env: Env, access: CloudflareAccessContext | undefined) {
     // WebSockets aren't protected by CORS
     if (isForeignOrigin(request)) {
@@ -60,12 +66,4 @@ async function handleMcp(request: Request, access: CloudflareAccessContext | und
         return new Response("Forbidden", { status: 403 });
     }
     return handleMcpRequest(request, user.id);
-}
-
-export type RequestContext = { access: CloudflareAccessContext | undefined };
-
-declare module "@tanstack/react-router" {
-    interface Register {
-        server: { requestContext: RequestContext };
-    }
 }

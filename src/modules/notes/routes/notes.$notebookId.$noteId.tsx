@@ -1,47 +1,44 @@
 import { ArrowLeft, Delete, Move } from "@dextinity/admin-icons";
 import { Box, Container, IconButton, Menu, MenuItem, Paper, Stack, Tab, Tabs, TextField, Tooltip, Typography } from "@mui/material";
-import { createFileRoute, createLink, redirect, useNavigate, useRouter } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { data, href, isRouteErrorResponse, Link, replace, useLocation, useParams } from "react-router";
 
 import { appName } from "~/app";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { useShowError } from "~/components/ErrorSnackbar";
+import { useIntents } from "~/components/useIntents";
+import { userContext } from "~/context";
+import { clientIntentAction, intentAction } from "~/intents";
+import { parseSearch, stringifySearch } from "~/searchParams";
 
 import { MarkdownPreview } from "../components/MarkdownPreview";
-import type { Note } from "../db/notes.server";
+import { getNoteRepository, type Note } from "../db/notes.server";
+import { type NoteIntents, noteIntents } from "../intents.server";
 import { maxNoteBodyLength, maxNoteTitleLength } from "../limits";
 import { useNotebooks } from "../navigation";
-import { deleteNote, getNote, updateNote } from "../notes.functions";
 import { validateNoteSearch } from "../noteSearch";
+import type { Route } from "./+types/notes.$notebookId.$noteId";
 
 // A note in the editor. The search params are the state of the notebook's grid (notes.$notebookId.index.tsx), kept for the back link.
-export const Route = createFileRoute("/_app/notes/$notebookId/$noteId")({
-    validateSearch: validateNoteSearch,
-    loader: async ({ params: { notebookId, noteId } }) => {
-        const note = await getNote({ data: { id: noteId } });
-        // e.g. moved to another notebook by the assistant
-        if (note.notebookId !== notebookId) {
-            throw redirect({ to: "/notes/$notebookId/$noteId", params: { notebookId: note.notebookId, noteId }, replace: true });
-        }
-        return note;
-    },
-    head: ({ loaderData }) => ({ meta: [{ title: loaderData ? `${loaderData.title} – ${appName}` : appName }] }),
-    component: NotePage,
-    // e.g. deleted by the assistant while open
-    notFoundComponent: () => (
-        <NotePageLayout>
-            <Paper sx={{ p: 4, textAlign: "center" }}>
-                <Typography color="text.secondary">This note doesn't exist (anymore).</Typography>
-            </Paper>
-        </NotePageLayout>
-    ),
-});
+export async function loader({ params: { notebookId, noteId }, url, context }: Route.LoaderArgs) {
+    const note = await getNoteRepository().get(context.get(userContext).id, noteId);
+    if (!note) {
+        throw data("Note not found", { status: 404 });
+    }
+    // e.g. moved to another notebook (by the user or the assistant)
+    if (note.notebookId !== notebookId) {
+        throw replace(href("/notes/:notebookId/:noteId", { notebookId: note.notebookId, noteId }) + url.search);
+    }
+    return note;
+}
 
-const IconButtonLink = createLink(IconButton);
+// saves and deletes the note
+export const action = intentAction(noteIntents);
+export const clientAction = clientIntentAction;
 
-function NotePage() {
-    const note = Route.useLoaderData();
+export const meta: Route.MetaFunction = ({ loaderData }) => [{ title: loaderData ? `${loaderData.title} – ${appName}` : appName }];
+
+export default function NotePage({ loaderData: note }: Route.ComponentProps) {
     return (
         <NotePageLayout>
             {/* a fresh editor (draft, save state) per note */}
@@ -50,25 +47,44 @@ function NotePage() {
     );
 }
 
+// e.g. deleted by the assistant while open
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+    if (!isRouteErrorResponse(error) || error.status !== 404) {
+        throw error;
+    }
+    return (
+        <NotePageLayout>
+            <Paper sx={{ p: 4, textAlign: "center" }}>
+                <Typography color="text.secondary">This note doesn't exist (anymore).</Typography>
+            </Paper>
+        </NotePageLayout>
+    );
+}
+
+// The URL of the action: the note's URL with the grid state, the action goes back to it when the note is deleted
+function useActionUrl() {
+    const { pathname, search } = useLocation();
+    return pathname + search;
+}
+
 // The back link to the notebook's grid (in the state it was left) above the editor
 function NotePageLayout({ children }: { children: ReactNode }) {
-    const { notebookId } = Route.useParams();
-    const search = Route.useSearch();
+    const { notebookId = "" } = useParams();
+    const search = validateNoteSearch(parseSearch(useLocation().search));
     const notebook = useNotebooks().find((item) => item.id === notebookId);
     return (
         <Container sx={{ py: 4 }}>
             <Stack spacing={2}>
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                     <Tooltip title="Back to the notebook">
-                        <IconButtonLink
-                            to="/notes/$notebookId"
-                            params={{ notebookId }}
-                            search={search}
+                        <IconButton
+                            component={Link}
+                            to={href("/notes/:notebookId", { notebookId }) + stringifySearch(search)}
                             edge="start"
                             aria-label="Back to the notebook"
                         >
                             <ArrowLeft />
-                        </IconButtonLink>
+                        </IconButton>
                     </Tooltip>
                     <Typography color="text.secondary" noWrap>
                         {notebook?.name}
@@ -86,12 +102,8 @@ const autosaveDelay = 1000;
 type Values = { title: string; body: string };
 
 function NoteEditor({ note }: { note: Note }) {
-    const router = useRouter();
-    const navigate = useNavigate();
-    const updateNoteFn = useServerFn(updateNote);
-    const deleteNoteFn = useServerFn(deleteNote);
+    const { submit, send } = useIntents<NoteIntents>(useActionUrl());
     const showError = useShowError();
-    const search = Route.useSearch();
 
     const [draft, setDraft] = useState<Values>({ title: note.title, body: note.body });
     // the stored state the draft is based on; updatedAt tells newer changes made elsewhere from outdated or own ones
@@ -122,11 +134,12 @@ function NoteEditor({ note }: { note: Note }) {
         saveQueue.current = saveQueue.current.then(async () => {
             setStatus("saving");
             try {
-                const { updatedAt } = await updateNoteFn({ data: { id: note.id, ...values } });
-                setSaved({ ...values, updatedAt: updatedAt.getTime() });
+                // (the page data is reloaded afterwards, e.g. the note's title in the sidebar's notebook)
+                const result = await submit("updateNote", values);
+                if (result) {
+                    setSaved({ ...values, updatedAt: result.updatedAt.getTime() });
+                }
                 setStatus("saved");
-                // the title and excerpt in the notes list
-                void router.invalidate();
             } catch (error) {
                 console.error(error);
                 setStatus("error");
@@ -159,7 +172,8 @@ function NoteEditor({ note }: { note: Note }) {
     useEffect(() => {
         return () => {
             if (unsaved.current && !deleting.current) {
-                void save(unsaved.current);
+                // also when the page is left: not with the editor's fetcher, which is gone with the editor
+                send("updateNote", unsaved.current);
             }
         };
         // only on unmount
@@ -176,19 +190,18 @@ function NoteEditor({ note }: { note: Note }) {
         return () => window.removeEventListener("beforeunload", handleBeforeUnload);
     }, [dirty, status]);
 
+    // goes back to the notebook's grid
     const handleDelete = async () => {
         deleting.current = true;
         try {
-            await deleteNoteFn({ data: { id: note.id } });
+            await submit("deleteNote", {});
         } catch (error) {
             deleting.current = false;
             throw error;
         }
-        await navigate({ to: "/notes/$notebookId", params: { notebookId: note.notebookId }, search, replace: true });
-        // the sidebar's note counts aren't reloaded by the navigation (the layout route's loader data is reused)
-        await router.invalidate();
     };
 
+    // the reloaded page goes to the note's new URL (see the loader)
     const handleMove = async (notebookId: string) => {
         // the move would be treated as a change made elsewhere: save first
         if (unsaved.current) {
@@ -197,14 +210,11 @@ function NoteEditor({ note }: { note: Note }) {
             await save(values);
         }
         try {
-            await updateNoteFn({ data: { id: note.id, notebookId } });
+            await submit("updateNote", { notebookId });
         } catch (error) {
             console.error(error);
             showError("Moving the note failed, please try again.");
-            return;
         }
-        await navigate({ to: "/notes/$notebookId/$noteId", params: { notebookId, noteId: note.id }, search });
-        await router.invalidate();
     };
 
     return (

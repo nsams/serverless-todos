@@ -1,11 +1,18 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { href, replace } from "react-router";
 
-import { getDefaultNotebook } from "../notebooks.functions";
+import { userContext } from "~/context";
+import { clientIntentAction, intentAction } from "~/intents";
+
+import { getNotebookRepository } from "../db/notebooks.server";
+import { notebooksIntents } from "../intents.server";
+import type { Route } from "./+types/notes.index";
 
 // The user's first notebook (created if the user has none yet)
-export const Route = createFileRoute("/_app/notes/")({
-    loader: async () => {
-        const { id } = await getDefaultNotebook();
-        throw redirect({ to: "/notes/$notebookId", params: { notebookId: id }, replace: true });
-    },
-});
+export async function loader({ context }: Route.LoaderArgs) {
+    const { id } = await getNotebookRepository().getOrCreateDefault(context.get(userContext).id);
+    throw replace(href("/notes/:notebookId", { notebookId: id }));
+}
+
+// creates a notebook (the sidebar, components/NotebooksNavigation.tsx)
+export const action = intentAction(notebooksIntents);
+export const clientAction = clientIntentAction;

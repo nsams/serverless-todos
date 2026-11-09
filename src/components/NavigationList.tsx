@@ -1,17 +1,15 @@
 import { Add } from "@dextinity/admin-icons";
 import { Divider, List, ListItemButton, ListItemIcon, ListItemText, Typography } from "@mui/material";
-import { createLink, type LinkOptions, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
+import { Link, matchPath, useLocation } from "react-router";
 
 import { NameDialog } from "./NameDialog";
-
-const ListItemLink = createLink(ListItemButton);
 
 export type NavigationItem = {
     id: string;
     name: string;
-    // e.g. linkOptions({ to: "/lists/$listId", params: { listId } })
-    link: LinkOptions;
+    // e.g. href("/lists/:listId", { listId })
+    to: string;
     // shown next to the name if > 0, e.g. the number of open todos
     count?: number;
     // accessible name of the count, e.g. "3 open"
@@ -23,7 +21,7 @@ type Props = {
     // e.g. "New list": button and dialog title
     createLabel: string;
     maxNameLength: number;
-    // creates an item and navigates to it; returns an error message, or null on success
+    // creates an item and goes to it; returns an error message, or null on success
     onCreate: (name: string) => Promise<string | null>;
     // closes the sidebar on small screens
     onNavigate: () => void;
@@ -31,7 +29,7 @@ type Props = {
 
 // A module's items in the app's sidebar (e.g. the todo lists, the notebooks) with a button to create one
 export function NavigationList({ items, createLabel, maxNameLength, onCreate, onNavigate }: Props) {
-    const router = useRouter();
+    const { pathname } = useLocation();
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
     const handleCreate = async (name: string) => {
@@ -39,8 +37,6 @@ export function NavigationList({ items, createLabel, maxNameLength, onCreate, on
         if (error === null) {
             setCreateDialogOpen(false);
             onNavigate();
-            // the new item: the sidebar's data isn't reloaded by the navigation (the layout route's loader data is reused)
-            await router.invalidate();
         }
         return error;
     };
@@ -49,12 +45,12 @@ export function NavigationList({ items, createLabel, maxNameLength, onCreate, on
         <>
             <List>
                 {items.map((item) => (
-                    <ListItemLink
+                    <ListItemButton
                         key={item.id}
-                        {...item.link}
+                        component={Link}
+                        to={item.to}
                         // also active on the item's sub pages and with search params (e.g. a grid's filters)
-                        activeOptions={{ includeSearch: false }}
-                        activeProps={{ selected: true }}
+                        selected={matchPath({ path: item.to, end: false }, pathname) !== null}
                         onClick={onNavigate}
                     >
                         <ListItemText primary={item.name} slotProps={{ primary: { noWrap: true } }} />
@@ -63,7 +59,7 @@ export function NavigationList({ items, createLabel, maxNameLength, onCreate, on
                                 {item.count}
                             </Typography>
                         )}
-                    </ListItemLink>
+                    </ListItemButton>
                 ))}
             </List>
             <Divider />

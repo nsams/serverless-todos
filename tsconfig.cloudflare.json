@@ -9,9 +9,10 @@
             "~/*": ["./src/*"]
         },
         "resolveJsonModule": true,
+        "rootDirs": [".", "./.react-router/types"],
         "target": "ES2024",
         "types": ["vite/client"]
     },
     "extends": "./tsconfig.json",
-    "include": ["src/**/*", "worker-configuration.d.ts"]
+    "include": ["src/**/*", "worker-configuration.d.ts", ".react-router/types/**/*"]
 }

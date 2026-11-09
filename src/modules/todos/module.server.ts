@@ -1,13 +1,13 @@
 import type { ServerModule } from "~/modules/types";
-import type { FileRoutesById } from "~/routeTree.gen";
 
 import { getListRepository } from "./db/lists.server";
+import { listRouteId } from "./routeIds";
 import { createTodoTools, todoToolsInstructions } from "./tools.server";
-
-const listRouteId: keyof FileRoutesById = "/_app/lists/$listId";
 
 // The todos module (todo lists and todos), server part. App shell part: module.ts.
 export const todosServerModule: ServerModule = {
+    // the user's lists with their number of open todos (sidebar), see navigation.ts
+    loadNavigation: (userId) => getListRepository().list(userId),
     createTools: createTodoTools,
     instructions: todoToolsInstructions,
     chatContext: async (userId, page) => {
