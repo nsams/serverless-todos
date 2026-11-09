@@ -1,7 +1,7 @@
-import { and, asc, desc, eq, or, sql } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 
 import { getDb } from "~/db/db.server";
-import { dateTimeCondition, textCondition } from "~/db/filters.server";
+import { dateTimeCondition, filterModelCondition, sortOrder, textCondition } from "~/db/filters.server";
 import type { DateTimeOperator, TextOperator } from "~/gridSearch";
 
 import { getNotebookRepository } from "./notebooks.server";
@@ -51,18 +51,15 @@ export function getNoteRepository(): NoteRepository {
     const notebookExists = async (userId: string, notebookId: string) => (await getNotebookRepository().get(userId, notebookId)) !== undefined;
     return {
         list: async (userId, notebookId, { offset, limit, sort, filter, query }) => {
-            const filterConditions = filter.items.map((item) => filterCondition(item));
             const where = and(
                 eq(notes.userId, userId),
                 eq(notes.notebookId, notebookId),
-                filter.logicOperator === "or" ? or(...filterConditions) : and(...filterConditions),
+                filterModelCondition(filter, filterCondition),
                 queryCondition(query),
             );
-            const orderBy = sort.map(({ field, direction }) => {
-                const order = direction === "asc" ? asc : desc;
-                // text case-insensitive (SQLite compares binary by default)
-                return field === "title" || field === "body" ? order(sql`lower(${notes[field]})`) : order(notes[field]);
-            });
+            const orderBy = sort.map(({ field, direction }) =>
+                sortOrder(notes[field], direction, { caseInsensitive: field === "title" || field === "body" }),
+            );
             const [rows, totalCount] = await Promise.all([
                 db
                     .select(summaryColumns)

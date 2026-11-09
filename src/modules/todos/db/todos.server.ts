@@ -1,7 +1,7 @@
-import { and, asc, desc, eq, gt, gte, isNull, lt, lte, or, type SQL, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, isNull, lt, lte, or, type SQL } from "drizzle-orm";
 
 import { getDb } from "~/db/db.server";
-import { dateTimeCondition, textCondition } from "~/db/filters.server";
+import { dateTimeCondition, filterModelCondition, sortOrder, textCondition } from "~/db/filters.server";
 import type { DateTimeOperator, TextOperator } from "~/gridSearch";
 
 import { getListRepository } from "./lists.server";
@@ -44,23 +44,13 @@ export function getTodoRepository(): TodoRepository {
     const listExists = async (userId: string, listId: string) => (await getListRepository().get(userId, listId)) !== undefined;
     return {
         list: async (userId, listId, { offset, limit, sort, filter }) => {
-            const filterConditions = filter.items.map((item) => filterCondition(item));
-            const where = and(
-                eq(todos.userId, userId),
-                eq(todos.listId, listId),
-                filter.logicOperator === "or" ? or(...filterConditions) : and(...filterConditions),
-            );
+            const where = and(eq(todos.userId, userId), eq(todos.listId, listId), filterModelCondition(filter, filterCondition));
             const orderBy = sort.flatMap(({ field, direction }) => {
-                const order = direction === "asc" ? asc : desc;
-                if (field === "title" || field === "description") {
-                    // case-insensitive (SQLite compares binary by default)
-                    return [order(sql`lower(${todos[field]})`)];
-                }
                 if (field === "dueDate") {
                     // todos without due date last in both directions
-                    return [asc(isNull(todos.dueDate)), order(todos.dueDate)];
+                    return [asc(isNull(todos.dueDate)), sortOrder(todos.dueDate, direction)];
                 }
-                return [order(todos[field])];
+                return [sortOrder(todos[field], direction, { caseInsensitive: field === "title" || field === "description" })];
             });
             const [rows, totalCount] = await Promise.all([
                 db

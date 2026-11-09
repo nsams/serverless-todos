@@ -52,7 +52,7 @@ Core:
 - `src/modules/registry.ts`, `src/modules/registry.server.ts`: the modules of the app
 - `src/chat/`: chat assistant (see [Chat assistant](#chat-assistant)), `src/components/ChatPanel.tsx`: its UI
 - `src/mcp/`: MCP server (see [MCP server](#mcp-server-external-ai-clients))
-- `src/db/db.server.ts`: database connection; `src/dates.ts`: calendar dates (`YYYY-MM-DD`) without time zone, the user's local date; `src/searchParams.ts`: search params serialization; `src/gridSearch.ts`, `src/db/filters.server.ts`: the state of DataGrids with server-side pagination, sorting and filtering in the URL and its SQL conditions (used by the modules' grids); `src/components/`: shared components
+- `src/db/db.server.ts`: database connection; `src/dates.ts`: calendar dates (`YYYY-MM-DD`) without time zone, the user's local date; `src/searchParams.ts`: search params serialization; `src/gridSearch.ts`, `src/db/filters.server.ts`, `src/components/useServerGrid.ts`: DataGrids with server-side pagination, sorting and filtering, their state in the URL (search params parsing, server function input, the grid's props, the SQL for sorting and filtering); `src/components/`: shared components and hooks used by the modules (e.g. `NavigationList` for the sidebar, `CollectionHeader` (heading with rename and delete), `ConfirmDeleteDialog`, `NameDialog`, `useMutate`)
 
 Todos module (`src/modules/todos/`):
 

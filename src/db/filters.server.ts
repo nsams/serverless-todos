@@ -1,9 +1,21 @@
-import { gte, lt, type SQL, sql } from "drizzle-orm";
+import { and, asc, desc, gte, lt, or, type SQL, sql } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 
 import type { DateTimeOperator, TextOperator } from "~/gridSearch";
 
-// SQL conditions for the filters of the grids (src/gridSearch.ts)
+// SQL for the sorting and filtering of the grids (src/gridSearch.ts)
+
+// The conditions of a grid's filter items, combined with its logic operator
+export function filterModelCondition<Filter>(filter: { items: Filter[]; logicOperator: "and" | "or" }, condition: (item: Filter) => SQL | undefined) {
+    const conditions = filter.items.map(condition);
+    return filter.logicOperator === "or" ? or(...conditions) : and(...conditions);
+}
+
+// The order of a sorted column; text columns case-insensitive (SQLite compares binary by default)
+export function sortOrder(column: SQLiteColumn, direction: "asc" | "desc", { caseInsensitive = false } = {}): SQL {
+    const order = direction === "asc" ? asc : desc;
+    return order(caseInsensitive ? sql`lower(${column})` : column);
+}
 
 // Case-insensitive (no ILIKE in SQLite), wildcards in the value are matched literally
 export function textCondition(column: SQLiteColumn, operator: TextOperator, value: string): SQL {

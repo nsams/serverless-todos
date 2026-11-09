@@ -5,9 +5,9 @@ import { useServerFn } from "@tanstack/react-start";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { appName } from "~/app";
+import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { useShowError } from "~/components/ErrorSnackbar";
 
-import { DeleteNoteDialog } from "../components/DeleteNoteDialog";
 import { MarkdownPreview } from "../components/MarkdownPreview";
 import type { Note } from "../db/notes.server";
 import { maxNoteBodyLength, maxNoteTitleLength } from "../limits";
@@ -302,7 +302,14 @@ function DeleteNoteButton({ title, onDelete }: { title: string; onDelete: () => 
                     <Delete />
                 </IconButton>
             </Tooltip>
-            <DeleteNoteDialog note={dialogOpen ? { title } : null} onClose={() => setDialogOpen(false)} onDelete={onDelete} />
+            <ConfirmDeleteDialog
+                open={dialogOpen}
+                title="Delete note?"
+                text={`“${title}” will be deleted.`}
+                errorMessage="Deleting the note failed, please try again."
+                onClose={() => setDialogOpen(false)}
+                onDelete={onDelete}
+            />
         </>
     );
 }

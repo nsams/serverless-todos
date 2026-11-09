@@ -1,24 +1,29 @@
 import { Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle } from "@mui/material";
 import { useState } from "react";
 
-import { useShowError } from "~/components/ErrorSnackbar";
+import { useShowError } from "./ErrorSnackbar";
 
 type Props = {
-    // the note to delete, null: closed
-    note: { title: string } | null;
+    open: boolean;
+    // e.g. "Delete list?"
+    title: string;
+    // what will be deleted, e.g. "“Work” and all its todos will be deleted."
+    text: string;
+    // shown if deleting fails
+    errorMessage: string;
     onClose: () => void;
-    // deletes the note; the dialog is closed afterwards
+    // deletes (and e.g. leaves the page); the dialog is closed afterwards
     onDelete: () => Promise<void>;
 };
 
-// Confirmation before a note is deleted (from the grid or the editor)
-export function DeleteNoteDialog({ note, onClose, onDelete }: Props) {
+// Confirmation before something is deleted
+export function ConfirmDeleteDialog({ open, title, text, errorMessage, onClose, onDelete }: Props) {
     const showError = useShowError();
     const [deleting, setDeleting] = useState(false);
-    // kept while the dialog is closing
-    const [title, setTitle] = useState("");
-    if (note && note.title !== title) {
-        setTitle(note.title);
+    // kept while the dialog is closing (the caller may clear what it deletes on close)
+    const [shownText, setShownText] = useState(text);
+    if (open && text !== shownText) {
+        setShownText(text);
     }
 
     const handleDelete = async () => {
@@ -28,17 +33,17 @@ export function DeleteNoteDialog({ note, onClose, onDelete }: Props) {
             onClose();
         } catch (error) {
             console.error(error);
-            showError("Deleting the note failed, please try again.");
+            showError(errorMessage);
         } finally {
             setDeleting(false);
         }
     };
 
     return (
-        <Dialog open={note !== null} onClose={onClose}>
-            <DialogTitle>Delete note?</DialogTitle>
+        <Dialog open={open} onClose={onClose}>
+            <DialogTitle>{title}</DialogTitle>
             <DialogContent>
-                <DialogContentText>“{title}” will be deleted.</DialogContentText>
+                <DialogContentText>{shownText}</DialogContentText>
             </DialogContent>
             <DialogActions>
                 <Button onClick={onClose}>Cancel</Button>

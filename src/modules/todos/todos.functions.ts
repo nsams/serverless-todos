@@ -3,7 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import { dateStringSchema } from "~/dates";
-import { validateGridSearch } from "~/gridSearch";
+import { gridInputSchema, validateGridSearch } from "~/gridSearch";
 
 import { getListRepository } from "./db/lists.server";
 import { getTodoRepository } from "./db/todos.server";
@@ -15,8 +15,7 @@ const descriptionSchema = z.string().trim().max(maxTodoDescriptionLength);
 const dueDateSchema = dateStringSchema.nullable();
 
 export const listTodos = createServerFn()
-    // the search params are normalized leniently (invalid values are dropped), like in the route's validateSearch
-    .validator(z.looseObject({ listId: z.string() }).transform(({ listId, ...search }) => ({ listId, ...validateGridSearch(search) })))
+    .validator(gridInputSchema({ listId: z.string() }, validateGridSearch))
     .handler(async ({ data: { listId, ...search }, context: { user } }) => {
         const list = await getListRepository().get(user.id, listId);
         if (!list) {

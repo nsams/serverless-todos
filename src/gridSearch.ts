@@ -1,4 +1,5 @@
 import type { GridFilterOperator } from "@mui/x-data-grid-pro";
+import { z } from "zod";
 
 // The state (pagination, sorting, filtering) of a DataGrid with server-side data lives in the URL, see src/searchParams.ts for the serialization:
 // ?page=0&pageSize=25&sort=title:asc&sort=done:desc&filter=title:contains:milk&filter=dueDate:before:2026-11-06&filterLogic=or
@@ -47,6 +48,24 @@ export function validateGridSearch(search: unknown): GridSearch {
         filter: toStringArray(filter),
         filterLogic: filterLogic === "or" ? "or" : undefined,
     };
+}
+
+// Validator of a server function that loads the rows of a grid: the given params (e.g. the list id) plus the search params,
+// normalized leniently (invalid values are dropped) with the route's validateSearch, like in the route
+export function gridInputSchema<Shape extends z.ZodRawShape, Search>(shape: Shape, validateSearch: (search: unknown) => Search) {
+    return z.looseObject(shape).transform((data) => {
+        const params = Object.fromEntries(Object.keys(shape).map((key) => [key, data[key]])) as z.output<z.ZodObject<Shape>>;
+        return { ...validateSearch(data), ...params };
+    });
+}
+
+// The page to redirect a grid's loader to when the requested page is empty, but there are rows on earlier pages
+// (e.g. after deleting the last row of the last page); undefined if the page is fine
+export function lastPageWithRows({ page, pageSize }: { page: number; pageSize: number }, rowsOnPage: number, totalCount: number) {
+    if (rowsOnPage > 0 || page === 0) {
+        return undefined;
+    }
+    return Math.max(0, Math.ceil(totalCount / pageSize) - 1);
 }
 
 export type GridSort<Field extends string> = { field: Field; direction: "asc" | "desc" };

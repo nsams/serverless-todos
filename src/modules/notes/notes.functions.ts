@@ -2,6 +2,8 @@ import { notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
+import { gridInputSchema } from "~/gridSearch";
+
 import { getNotebookRepository } from "./db/notebooks.server";
 import { getNoteRepository } from "./db/notes.server";
 import { maxNoteBodyLength, maxNoteTitleLength } from "./limits";
@@ -11,8 +13,7 @@ const bodySchema = z.string().max(maxNoteBodyLength);
 
 // The notes of a notebook for its grid (one page, sorted and filtered as in the URL)
 export const listNotes = createServerFn()
-    // the search params are normalized leniently (invalid values are dropped), like in the route's validateSearch
-    .validator(z.looseObject({ notebookId: z.string() }).transform(({ notebookId, ...search }) => ({ notebookId, ...validateNoteSearch(search) })))
+    .validator(gridInputSchema({ notebookId: z.string() }, validateNoteSearch))
     .handler(async ({ data: { notebookId, ...search }, context: { user } }) => {
         const notebook = await getNotebookRepository().get(user.id, notebookId);
         if (!notebook) {
