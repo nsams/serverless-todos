@@ -1,66 +1,60 @@
 import { Add, Delete, Move, Search } from "@dextinity/admin-icons";
 import { Box, Button, Container, InputAdornment, Link as MuiLink, Paper, Stack, TextField, Typography } from "@mui/material";
 import { DataGridPro, getGridDateOperators, getGridStringOperators, GridActionsCellItem, type GridColDef } from "@mui/x-data-grid-pro";
-import { createFileRoute, createLink, redirect, useNavigate, useRouter } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
+import { Link, type LoaderFunctionArgs, replace, useNavigate, useRevalidator } from "react-router";
 
-import { appName } from "~/app";
+import { api } from "~/api/client";
 import { CollectionHeader } from "~/components/CollectionHeader";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { NameDialog } from "~/components/NameDialog";
 import { useMutate } from "~/components/useMutate";
 import { useServerGrid } from "~/components/useServerGrid";
 import { lastPageWithRows, supportedOperators } from "~/gridSearch";
+import { loadOrNotFound, requestSearch, useLoaderResult, usePageTitle } from "~/routing";
+import { stringifySearch } from "~/searchParams";
 
 import type { Notebook } from "../db/notebooks.server";
 import type { NoteSummary } from "../db/notes.server";
 import { plainExcerpt } from "../excerpt";
 import { maxNotebookNameLength, maxNoteTitleLength } from "../limits";
 import { useNotebooks } from "../navigation";
-import { deleteNotebook, renameNotebook } from "../notebooks.functions";
-import { createNote, deleteNote, listNotes, updateNote } from "../notes.functions";
 import { noteFields, parseNoteSearch, validateNoteSearch } from "../noteSearch";
+import { notebookPath, notePath } from "../paths";
 
-// The notes of a notebook in a grid (pagination, sorting, filtering on the server, state in the URL); a note opens in the editor
-// (notes.$notebookId.$noteId.tsx), which keeps the grid state for its back link
-export const Route = createFileRoute("/_app/notes/$notebookId/")({
-    validateSearch: validateNoteSearch,
-    loaderDeps: ({ search }) => search,
-    loader: async ({ params: { notebookId }, deps }) => {
-        const result = await listNotes({ data: { notebookId, ...deps } });
+// /notes/:notebookId: the notes of a notebook in a grid (pagination, sorting, filtering on the server, state in the URL); a note opens
+// in the editor (note.tsx), which keeps the grid state for its back link
+export async function notebookLoader({ params, request }: LoaderFunctionArgs) {
+    const notebookId = params.notebookId ?? "";
+    const search = validateNoteSearch(requestSearch(request));
+    const result = await loadOrNotFound(api.notes.list.query({ notebookId, ...search }, { signal: request.signal }));
 
-        // e.g. after deleting the last note of the last page
-        const lastPage = lastPageWithRows(parseNoteSearch(deps), result.notes.length, result.totalCount);
-        if (lastPage !== undefined) {
-            throw redirect({ to: "/notes/$notebookId", params: { notebookId }, search: { ...deps, page: lastPage || undefined } });
-        }
+    // e.g. after deleting the last note of the last page
+    const lastPage = lastPageWithRows(parseNoteSearch(search), result.notes.length, result.totalCount);
+    if (lastPage !== undefined) {
+        throw replace(notebookPath(notebookId) + stringifySearch({ ...search, page: lastPage || undefined }));
+    }
 
-        return result;
-    },
-    head: ({ loaderData }) => ({ meta: [{ title: loaderData ? `${loaderData.notebook.name} – ${appName}` : appName }] }),
-    component: NotebookPage,
-});
+    return result;
+}
 
-const LinkCell = createLink(MuiLink);
-
-function NotebookPage() {
-    const { notebook, notes, totalCount } = Route.useLoaderData();
+export function NotebookPage() {
+    const { notebook, notes, totalCount } = useLoaderResult<typeof notebookLoader>();
     const notebooks = useNotebooks();
-    const navigate = Route.useNavigate();
-    const router = useRouter();
-    const updateNoteFn = useServerFn(updateNote);
-    const deleteNoteFn = useServerFn(deleteNote);
+    const navigate = useNavigate();
+    const { revalidate } = useRevalidator();
     const mutate = useMutate();
     const [noteToDelete, setNoteToDelete] = useState<NoteSummary | null>(null);
     const { search, hasFilter, updateSearch, gridProps } = useServerGrid({
         validateSearch: validateNoteSearch,
         fields: noteFields,
-        navigate: (newSearch, { replace }) => void navigate({ search: newSearch, replace, resetScroll: false }),
         rowCount: totalCount,
     });
+    usePageTitle(notebook.name);
 
-    const openNote = (noteId: string) => void navigate({ to: "/notes/$notebookId/$noteId", params: { notebookId: notebook.id, noteId }, search });
+    // the note's editor keeps the grid state for its back link
+    const noteLink = (noteId: string) => notePath(notebook.id, noteId) + stringifySearch(search);
+    const openNote = (noteId: string) => void navigate(noteLink(noteId));
 
     const columns: GridColDef<NoteSummary>[] = [
         {
@@ -71,16 +65,9 @@ function NotebookPage() {
             filterOperators: supportedOperators(getGridStringOperators(), noteFields.title.operators),
             // a real link: keyboard, open in a new tab
             renderCell: ({ row }) => (
-                <LinkCell
-                    to="/notes/$notebookId/$noteId"
-                    params={{ notebookId: notebook.id, noteId: row.id }}
-                    search={search}
-                    underline="hover"
-                    color="inherit"
-                    sx={{ fontWeight: 500 }}
-                >
+                <MuiLink component={Link} to={noteLink(row.id)} underline="hover" color="inherit" sx={{ fontWeight: 500 }}>
                     {row.title}
-                </LinkCell>
+                </MuiLink>
             ),
         },
         {
@@ -128,7 +115,7 @@ function NotebookPage() {
                             onClick={() =>
                                 // also reloads the sidebar's note counts
                                 void mutate(
-                                    updateNoteFn({ data: { id: row.id, notebookId: otherNotebook.id } }),
+                                    api.notes.update.mutate({ id: row.id, notebookId: otherNotebook.id }),
                                     "Moving the note failed, please try again.",
                                 )
                             }
@@ -191,9 +178,9 @@ function NotebookPage() {
                 onClose={() => setNoteToDelete(null)}
                 onDelete={async () => {
                     if (noteToDelete) {
-                        await deleteNoteFn({ data: { id: noteToDelete.id } });
+                        await api.notes.delete.mutate({ id: noteToDelete.id });
                         // also the sidebar's note counts
-                        await router.invalidate();
+                        await revalidate();
                     }
                 }}
             />
@@ -202,18 +189,17 @@ function NotebookPage() {
 }
 
 function NewNoteButton({ notebookId }: { notebookId: string }) {
-    const router = useRouter();
+    const { revalidate } = useRevalidator();
     const navigate = useNavigate();
-    const createNoteFn = useServerFn(createNote);
     const [dialogOpen, setDialogOpen] = useState(false);
 
     const handleCreate = async (title: string) => {
-        const result = await createNoteFn({ data: { notebookId, title } });
+        const result = await api.notes.create.mutate({ notebookId, title });
         if (result.id !== null) {
             setDialogOpen(false);
-            await navigate({ to: "/notes/$notebookId/$noteId", params: { notebookId, noteId: result.id } });
+            await navigate(notePath(notebookId, result.id));
             // the sidebar's note counts aren't reloaded by the navigation (the layout route's loader data is reused)
-            await router.invalidate();
+            await revalidate();
         }
         return result.error;
     };
@@ -237,10 +223,8 @@ function NewNoteButton({ notebookId }: { notebookId: string }) {
 }
 
 function NotebookHeader({ notebook }: { notebook: Notebook }) {
-    const router = useRouter();
+    const { revalidate } = useRevalidator();
     const navigate = useNavigate();
-    const renameNotebookFn = useServerFn(renameNotebook);
-    const deleteNotebookFn = useServerFn(deleteNotebook);
 
     return (
         <CollectionHeader
@@ -249,18 +233,18 @@ function NotebookHeader({ notebook }: { notebook: Notebook }) {
             deleteText={`“${notebook.name}” and all its notes will be deleted.`}
             maxNameLength={maxNotebookNameLength}
             onRename={async (name) => {
-                const result = await renameNotebookFn({ data: { id: notebook.id, name } });
+                const result = await api.notebooks.rename.mutate({ id: notebook.id, name });
                 if (result.error === null) {
-                    await router.invalidate();
+                    await revalidate();
                 }
                 return result.error;
             }}
             onDelete={async () => {
-                await deleteNotebookFn({ data: { id: notebook.id } });
+                await api.notebooks.delete.mutate({ id: notebook.id });
                 // redirects to the first remaining notebook (or creates a new one)
-                await navigate({ to: "/notes", replace: true });
+                await navigate("/notes", { replace: true });
                 // the sidebar's notebooks aren't reloaded by the navigation (the layout route's loader data is reused)
-                await router.invalidate();
+                await revalidate();
             }}
         />
     );

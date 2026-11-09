@@ -1,13 +1,14 @@
 import type { ServerModule } from "~/modules/types";
-import type { FileRoutesById } from "~/routeTree.gen";
 
 import { getListRepository } from "./db/lists.server";
+import { listsApi } from "./lists.api.server";
+import { listRouteId } from "./paths";
+import { todosApi } from "./todos.api.server";
 import { createTodoTools, todoToolsInstructions } from "./tools.server";
 
-const listRouteId: keyof FileRoutesById = "/_app/lists/$listId";
-
 // The todos module (todo lists and todos), server part. App shell part: module.ts.
-export const todosServerModule: ServerModule = {
+export const todosServerModule = {
+    api: { lists: listsApi, todos: todosApi },
     createTools: createTodoTools,
     instructions: todoToolsInstructions,
     chatContext: async (userId, page) => {
@@ -19,4 +20,4 @@ export const todosServerModule: ServerModule = {
                 : "The user isn't looking at a todo list right now. If it's unclear which list is meant, look up the lists and ask.",
         ];
     },
-};
+} satisfies ServerModule;
