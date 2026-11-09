@@ -1,19 +1,16 @@
 import type { ServerModule } from "~/modules/types";
-import type { FileRoutesById } from "~/routeTree.gen";
 
 import { getNotebookRepository } from "./db/notebooks.server";
 import { getNoteRepository } from "./db/notes.server";
+import { notebookPath, notePath } from "./paths";
 import { createNoteTools, noteToolsInstructions } from "./tools.server";
 
-const notebookRouteId: keyof FileRoutesById = "/_app/notes/$notebookId/";
-const noteRouteId: keyof FileRoutesById = "/_app/notes/$notebookId/$noteId";
-
-// The notes module (notebooks and Markdown notes), server part. App shell part: module.ts.
+// The notes module (notebooks and Markdown notes), server part (REST API: api.server.ts). App shell part: module.ts.
 export const notesServerModule: ServerModule = {
     createTools: createNoteTools,
     instructions: noteToolsInstructions,
     chatContext: async (userId, page) => {
-        if (page?.routeId === noteRouteId && page.params.noteId) {
+        if (page?.routeId === notePath && page.params.noteId) {
             const note = await getNoteRepository().get(userId, page.params.noteId);
             if (note) {
                 return [
@@ -21,7 +18,7 @@ export const notesServerModule: ServerModule = {
                 ];
             }
         }
-        if ((page?.routeId === notebookRouteId || page?.routeId === noteRouteId) && page.params.notebookId) {
+        if ((page?.routeId === notebookPath || page?.routeId === notePath) && page.params.notebookId) {
             const notebook = await getNotebookRepository().get(userId, page.params.notebookId);
             if (notebook) {
                 return [
