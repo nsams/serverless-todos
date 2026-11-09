@@ -1,27 +1,26 @@
 import { Chatbot, Hamburger, Logout } from "@dextinity/admin-icons";
 import { AppBar, Box, CircularProgress, Divider, Drawer, IconButton, ListSubheader, Toolbar, Typography } from "@mui/material";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { parseResponse } from "hono/client";
 import { Fragment, lazy, Suspense, useState } from "react";
-import { Outlet, type ShouldRevalidateFunctionArgs, useLoaderData } from "react-router";
+import { Outlet } from "react-router";
 
 import { api } from "~/api/client";
 import { appName } from "~/app";
-import { appModules, loadNavigationData } from "~/modules/registry";
+import { appModules } from "~/modules/registry";
 
-import { RouteErrorMessage } from "./root";
+import { PageErrorBoundary } from "./errors";
 
-// Layout of the app pages: app bar and the navigation of the modules in a sidebar
+// Layout of the app pages: app bar and the navigation of the modules in a sidebar. The layout stays mounted while navigating
+// between the pages, so its data (the user, the sidebar's data loaded by the modules' navigation components) isn't reloaded by
+// navigations, only when its queries are invalidated (e.g. after creating a list).
 
-export async function appLoader() {
-    const [user, navigation] = await Promise.all([parseResponse(api.user.$get()), loadNavigationData()]);
-    return { user, navigation };
-}
-
-// The navigation data (e.g. the lists in the sidebar) isn't reloaded by navigations between the pages, only by an explicit
-// revalidation (useRevalidator, e.g. after creating a list)
-export function shouldRevalidateApp({ currentUrl, nextUrl, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {
-    return currentUrl.href === nextUrl.href && defaultShouldRevalidate;
-}
+const userQuery = queryOptions({
+    queryKey: ["user"],
+    queryFn: () => parseResponse(api.user.$get()),
+    // doesn't change while the app is open
+    staleTime: Infinity,
+});
 
 const drawerWidth = 260;
 const chatWidth = 420;
@@ -30,7 +29,8 @@ const chatWidth = 420;
 const ChatPanel = lazy(() => import("~/components/ChatPanel"));
 
 export function AppLayout() {
-    const { user } = useLoaderData<typeof appLoader>();
+    // shown once loaded, the layout doesn't wait for it
+    const { data: user } = useQuery(userQuery);
     const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
     const [chatOpen, setChatOpen] = useState(false);
     // stays mounted once opened, so the conversation (and a running answer) survives closing the panel
@@ -76,7 +76,7 @@ export function AppLayout() {
                     <Typography variant="h6" sx={{ flexGrow: 1 }}>
                         {appName}
                     </Typography>
-                    <Typography sx={{ mr: 1, display: { xs: "none", sm: "block" } }}>{user.email}</Typography>
+                    <Typography sx={{ mr: 1, display: { xs: "none", sm: "block" } }}>{user?.email}</Typography>
                     <IconButton color="inherit" aria-label="Assistant" aria-pressed={chatOpen} onClick={toggleChat}>
                         <Chatbot />
                     </IconButton>
@@ -102,7 +102,10 @@ export function AppLayout() {
             {/* on wide screens the open chat takes space from the page instead of covering it */}
             <Box component="main" sx={{ flexGrow: 1, minWidth: 0, mr: { lg: chatOpen ? `${chatWidth}px` : 0 } }}>
                 <Toolbar />
-                <Outlet />
+                {/* errors of the pages (e.g. a list that doesn't exist (anymore)) are shown in the layout */}
+                <PageErrorBoundary>
+                    <Outlet />
+                </PageErrorBoundary>
             </Box>
             <Drawer anchor="right" variant="persistent" open={chatOpen} sx={{ "& .MuiDrawer-paper": { width: { xs: "100%", sm: chatWidth } } }}>
                 {/* space for the app bar */}
@@ -121,9 +124,4 @@ export function AppLayout() {
             </Drawer>
         </Box>
     );
-}
-
-// Errors of the pages (e.g. a list that doesn't exist (anymore)), shown in the layout
-export function PageErrorBoundary() {
-    return <RouteErrorMessage />;
 }

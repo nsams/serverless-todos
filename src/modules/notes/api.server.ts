@@ -15,7 +15,7 @@ const nameSchema = z.object({ name: z.string().trim().max(maxNotebookNameLength)
 const bodySchema = z.string().max(maxNoteBodyLength);
 
 export const notesApi = createApi()
-    // The user's notebooks with their number of notes: the module's navigation data (sidebar), see navigation.ts
+    // The user's notebooks with their number of notes: the sidebar, see queries.ts
     .get("/notebooks", async (c) => {
         return c.json(await getNotebookRepository().list(c.var.user.id));
     })

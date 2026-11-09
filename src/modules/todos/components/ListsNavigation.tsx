@@ -1,3 +1,4 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { parseResponse } from "hono/client";
 import { generatePath, useNavigate } from "react-router";
 
@@ -5,12 +6,14 @@ import { api } from "~/api/client";
 import { NavigationList } from "~/components/NavigationList";
 
 import { maxListNameLength } from "../limits";
-import { useLists } from "../navigation";
 import { listPath } from "../paths";
+import { listsQuery } from "../queries";
 
 // The user's lists in the app's sidebar
 export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
-    const lists = useLists();
+    // empty while loading
+    const { data: lists = [] } = useQuery(listsQuery);
+    const queryClient = useQueryClient();
     const navigate = useNavigate();
 
     return (
@@ -31,6 +34,7 @@ export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
                 }
                 const { id } = await parseResponse(response);
                 await navigate(generatePath(listPath, { listId: id }));
+                await queryClient.invalidateQueries({ queryKey: listsQuery.queryKey });
                 return null;
             }}
             onNavigate={onNavigate}

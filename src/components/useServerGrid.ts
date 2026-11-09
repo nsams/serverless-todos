@@ -1,5 +1,5 @@
 import { type DataGridProProps, type GridFilterModel, GridLogicOperator, type GridSortModel } from "@mui/x-data-grid-pro";
-import { useLocation, useNavigate, useNavigation } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 
 import { type GridFieldConfig, type GridSearch, pageSizeOptions, parseGridSearch, serializeFilterValue } from "~/gridSearch";
 import { readSearch, stringifySearch } from "~/searchParams";
@@ -11,20 +11,19 @@ type Options<Search extends GridSearch> = {
     fields: Record<string, GridFieldConfig>;
     // the number of rows on the server (with the filters applied)
     rowCount: number;
+    // the rows for the current search params are loading (the grid shows the previous ones meanwhile, see placeholderData)
+    loading: boolean;
     // fields with calendar date filters (YYYY-MM-DD), e.g. a due date
     dateOnlyFields?: string[];
 };
 
 // A DataGrid with server-side pagination, sorting and filtering whose state lives in the URL (see src/gridSearch.ts):
-// gridProps connect the grid to the URL, the page's loader loads the rows for it from the API (parseGridSearch on the server).
-export function useServerGrid<Search extends GridSearch>({ validateSearch, fields, rowCount, dateOnlyFields = [] }: Options<Search>) {
+// gridProps connect the grid to the URL, the page's query loads the rows for the search params from the API (parseGridSearch on the server).
+// The grid's state is the URL's right away, also while its rows are loading (e.g. a filter value while typing).
+export function useServerGrid<Search extends GridSearch>({ validateSearch, fields, rowCount, loading, dateOnlyFields = [] }: Options<Search>) {
     const location = useLocation();
-    const navigation = useNavigation();
     const navigate = useNavigate();
-    // Use the pending location while loading, otherwise the grid would show the old state until the loader is done (e.g. reset a filter value while typing)
-    const pendingLocation = navigation.location?.pathname === location.pathname ? navigation.location : location;
-    const search = readSearch(pendingLocation.search, validateSearch);
-    const loading = navigation.state === "loading";
+    const search = readSearch(location.search, validateSearch);
     const { page, pageSize, sort, filter, filterItems } = parseGridSearch(search, fields);
 
     // Changes the page's search params; keeps the scroll position

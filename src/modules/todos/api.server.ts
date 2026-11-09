@@ -19,7 +19,7 @@ const descriptionSchema = z.string().trim().max(maxTodoDescriptionLength);
 const dueDateSchema = dateStringSchema.nullable();
 
 export const todosApi = createApi()
-    // The user's lists with their number of open todos: the module's navigation data (sidebar), see navigation.ts
+    // The user's lists with their number of open todos: the sidebar, see queries.ts
     .get("/lists", async (c) => {
         return c.json(await getListRepository().list(c.var.user.id));
     })

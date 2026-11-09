@@ -3,17 +3,18 @@ import { Close, Delete } from "@dextinity/admin-icons";
 import { Alert, Box, IconButton, Toolbar, Tooltip, Typography } from "@mui/material";
 import { ChatBox } from "@mui/x-chat";
 import type { ChatAdapter, ChatMessage, ChatMessagePart } from "@mui/x-chat/headless";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAgent } from "agents/react";
 import { getToolName, isToolUIPart, type UIMessage } from "ai";
 import { useEffect, useMemo, useRef } from "react";
-import { type UIMatch, useMatches, useRevalidator } from "react-router";
+import { matchPath, useLocation } from "react-router";
 
 import { chatAgentPath, type ChatRequestBody } from "~/chat/chat";
 import { toDateString } from "~/dates";
 import { appModules } from "~/modules/registry";
 
 const suggestions = appModules.flatMap((module) => module.chat?.suggestions ?? []);
-// tools that change data: the page data is reloaded after they ran
+// tools that change data: the queries are reloaded after they ran
 const mutatingToolNames: ReadonlySet<string> = new Set(appModules.flatMap((module) => module.chat?.mutatingToolNames ?? []));
 
 // The chat with the assistant (src/chat/agent.server.ts).
@@ -22,13 +23,13 @@ const mutatingToolNames: ReadonlySet<string> = new Set(appModules.flatMap((modul
 // after reconnects, tool approvals. MUI X Chat only renders it: its messages are controlled by useAgentChat's messages and its adapter
 // forwards sending, stopping and approvals to useAgentChat.
 export default function ChatPanel({ onClose }: { onClose: () => void }) {
-    const { revalidate } = useRevalidator();
+    const queryClient = useQueryClient();
     // the page shown, read when a message is sent
-    const matches = useMatches();
+    const { pathname } = useLocation();
     const page = useRef<ChatRequestBody["page"]>(undefined);
     useEffect(() => {
-        page.current = currentPage(matches);
-    }, [matches]);
+        page.current = currentPage(pathname);
+    }, [pathname]);
 
     // the server picks the agent instance of the authenticated user (src/server.ts)
     const agent = useAgent({ agent: "ChatAgent", basePath: chatAgentPath });
@@ -61,7 +62,8 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
         [sendMessage, stop, addToolApprovalResponse],
     );
 
-    // Reload the page data (lists, todos) after the assistant changed something
+    // Reload the data shown (e.g. the list's todos, the sidebar's lists, the open note) after the assistant changed something:
+    // all queries, the core doesn't know which data a module's tool changes
     const handledToolCallIds = useRef(new Set<string>());
     useEffect(() => {
         let changed = false;
@@ -79,9 +81,9 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
             }
         }
         if (changed) {
-            void revalidate();
+            void queryClient.invalidateQueries();
         }
-    }, [messages, revalidate]);
+    }, [messages, queryClient]);
 
     const chatMessages = useMemo(() => messages.map(toChatMessage), [messages]);
 
@@ -121,15 +123,24 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
     );
 }
 
-// The page shown in the app (the deepest route match; the modules' pages have their path as id, see AppModule.routes)
-function currentPage(matches: UIMatch[]): ChatRequestBody["page"] {
-    const match = matches.at(-1);
-    return match
-        ? {
-              routeId: match.id,
-              params: Object.fromEntries(Object.entries(match.params).filter(([, value]) => value !== undefined)) as Record<string, string>,
-          }
-        : undefined;
+// The modules' pages (AppModule.pages): their paths identify them for the assistant
+const pagePaths = appModules.flatMap((module) => module.pages.map((page) => page.path));
+
+// The page shown in the app: the path pattern of the module's page that matches (e.g. "/lists/:listId") and its params
+function currentPage(pathname: string): ChatRequestBody["page"] {
+    for (const path of pagePaths) {
+        const match = matchPath(path, pathname);
+        if (match) {
+            const params: Record<string, string> = {};
+            for (const [name, value] of Object.entries(match.params)) {
+                if (value !== undefined) {
+                    params[name] = value;
+                }
+            }
+            return { routeId: path, params };
+        }
+    }
+    return undefined;
 }
 
 // AI SDK UI message → MUI X Chat message (the part types mostly match, tool parts are nested differently)

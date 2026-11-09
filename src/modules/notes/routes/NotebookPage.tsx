@@ -1,12 +1,14 @@
 import { Add, Delete, Move, Search } from "@dextinity/admin-icons";
 import { Box, Button, Container, InputAdornment, Link as MuiLink, Paper, Stack, TextField, Typography } from "@mui/material";
 import { DataGridPro, getGridDateOperators, getGridStringOperators, GridActionsCellItem, type GridColDef } from "@mui/x-data-grid-pro";
-import { parseResponse } from "hono/client";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { type InferResponseType, parseResponse } from "hono/client";
 import { useState } from "react";
-import { generatePath, Link, type LoaderFunctionArgs, replace, useLoaderData, useNavigate, useRevalidator } from "react-router";
+import { generatePath, Link, Navigate, useLocation, useNavigate } from "react-router";
 
-import { api, loadResponse } from "~/api/client";
-import { pathParam } from "~/client/params";
+import { api } from "~/api/client";
+import { PageLoading } from "~/client/errors";
+import { usePathParams } from "~/client/params";
 import { CollectionHeader } from "~/components/CollectionHeader";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { NameDialog } from "~/components/NameDialog";
@@ -14,44 +16,47 @@ import { useDocumentTitle } from "~/components/useDocumentTitle";
 import { useMutate } from "~/components/useMutate";
 import { useServerGrid } from "~/components/useServerGrid";
 import { lastPageWithRows, supportedOperators } from "~/gridSearch";
-import { readSearch, stringifySearch, toQuery } from "~/searchParams";
+import { readSearch, stringifySearch } from "~/searchParams";
 
 import { plainExcerpt } from "../excerpt";
 import { maxNotebookNameLength, maxNoteTitleLength } from "../limits";
-import { useNotebooks } from "../navigation";
 import { noteFields, parseNoteSearch, validateNoteSearch } from "../noteSearch";
 import { notebookPath, notebooksPath, notePath } from "../paths";
+import { notebookNotesQuery, notebooksQuery, notesQueryKey } from "../queries";
+
+type NotebookNotes = InferResponseType<(typeof api.notebooks)[":notebookId"]["notes"]["$get"], 200>;
+type Notebook = NotebookNotes["notebook"];
+type NoteSummary = NotebookNotes["notes"][number];
 
 // The notes of a notebook in a grid (pagination, sorting, filtering on the server, state in the URL); a note opens in the editor
 // (NotePage.tsx), which keeps the grid state for its back link
-export async function notebookLoader({ params, request }: LoaderFunctionArgs) {
-    const notebookId = pathParam(params, "notebookId");
-    const search = readSearch(new URL(request.url).search, validateNoteSearch);
-    const result = await loadResponse(api.notebooks[":notebookId"].notes.$get({ param: { notebookId }, query: toQuery(search) }));
+export function NotebookPage() {
+    const { notebookId } = usePathParams(notebookPath);
+    const search = readSearch(useLocation().search, validateNoteSearch);
+    const { data, isPlaceholderData } = useQuery(notebookNotesQuery(notebookId, search));
 
-    // e.g. after deleting the last note of the last page
-    const lastPage = lastPageWithRows(parseNoteSearch(search), result.notes.length, result.totalCount);
-    if (lastPage !== undefined) {
-        throw replace(generatePath(notebookPath, { notebookId }) + stringifySearch({ ...search, page: lastPage || undefined }));
+    if (data === undefined) {
+        return <PageLoading />;
     }
-
-    return result;
+    // e.g. after deleting the last note of the last page (not for the previous rows shown while loading)
+    const lastPage = isPlaceholderData ? undefined : lastPageWithRows(parseNoteSearch(search), data.notes.length, data.totalCount);
+    if (lastPage !== undefined) {
+        return <Navigate to={generatePath(notebookPath, { notebookId }) + stringifySearch({ ...search, page: lastPage || undefined })} replace />;
+    }
+    return <NotebookView data={data} loading={isPlaceholderData} />;
 }
 
-type Notebook = Awaited<ReturnType<typeof notebookLoader>>["notebook"];
-type NoteSummary = Awaited<ReturnType<typeof notebookLoader>>["notes"][number];
-
-export function NotebookPage() {
-    const { notebook, notes, totalCount } = useLoaderData<typeof notebookLoader>();
-    const notebooks = useNotebooks();
+function NotebookView({ data: { notebook, notes, totalCount }, loading }: { data: NotebookNotes; loading: boolean }) {
+    const { data: notebooks = [] } = useQuery(notebooksQuery);
     const navigate = useNavigate();
-    const { revalidate } = useRevalidator();
-    const mutate = useMutate();
+    const queryClient = useQueryClient();
+    const mutate = useMutate(notesQueryKey);
     const [noteToDelete, setNoteToDelete] = useState<NoteSummary | null>(null);
     const { search, hasFilter, updateSearch, gridProps } = useServerGrid({
         validateSearch: validateNoteSearch,
         fields: noteFields,
         rowCount: totalCount,
+        loading,
     });
     useDocumentTitle(notebook.name);
 
@@ -186,7 +191,7 @@ export function NotebookPage() {
                     if (noteToDelete) {
                         await parseResponse(api.notes[":noteId"].$delete({ param: { noteId: noteToDelete.id } }));
                         // also the sidebar's note counts
-                        await revalidate();
+                        await queryClient.invalidateQueries({ queryKey: notesQueryKey });
                     }
                 }}
             />
@@ -195,7 +200,7 @@ export function NotebookPage() {
 }
 
 function NewNoteButton({ notebookId }: { notebookId: string }) {
-    const { revalidate } = useRevalidator();
+    const queryClient = useQueryClient();
     const navigate = useNavigate();
     const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -207,8 +212,8 @@ function NewNoteButton({ notebookId }: { notebookId: string }) {
         const { id } = await parseResponse(response);
         setDialogOpen(false);
         await navigate(generatePath(notePath, { notebookId, noteId: id }));
-        // the sidebar's note counts aren't reloaded by the navigation (the app layout's loader data is reused)
-        await revalidate();
+        // the sidebar's note counts and the notebook's notes
+        await queryClient.invalidateQueries({ queryKey: notesQueryKey });
         return null;
     };
 
@@ -231,7 +236,7 @@ function NewNoteButton({ notebookId }: { notebookId: string }) {
 }
 
 function NotebookHeader({ notebook }: { notebook: Notebook }) {
-    const { revalidate } = useRevalidator();
+    const queryClient = useQueryClient();
     const navigate = useNavigate();
 
     return (
@@ -246,15 +251,16 @@ function NotebookHeader({ notebook }: { notebook: Notebook }) {
                     return (await response.json()).error;
                 }
                 await parseResponse(response);
-                await revalidate();
+                // the heading and the sidebar
+                await queryClient.invalidateQueries({ queryKey: notesQueryKey });
                 return null;
             }}
             onDelete={async () => {
                 await parseResponse(api.notebooks[":notebookId"].$delete({ param: { notebookId: notebook.id } }));
                 // redirects to the first remaining notebook (or creates a new one)
                 await navigate(notebooksPath, { replace: true });
-                // the sidebar's notebooks aren't reloaded by the navigation (the app layout's loader data is reused)
-                await revalidate();
+                // the sidebar's notebooks; after leaving the page, otherwise its query would show the deleted notebook's 404
+                await queryClient.invalidateQueries({ queryKey: notesQueryKey });
             }}
         />
     );

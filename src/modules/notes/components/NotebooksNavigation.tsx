@@ -1,3 +1,4 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { parseResponse } from "hono/client";
 import { generatePath, useNavigate } from "react-router";
 
@@ -5,12 +6,14 @@ import { api } from "~/api/client";
 import { NavigationList } from "~/components/NavigationList";
 
 import { maxNotebookNameLength } from "../limits";
-import { useNotebooks } from "../navigation";
 import { notebookPath } from "../paths";
+import { notebooksQuery } from "../queries";
 
 // The user's notebooks in the app's sidebar
 export function NotebooksNavigation({ onNavigate }: { onNavigate: () => void }) {
-    const notebooks = useNotebooks();
+    // empty while loading
+    const { data: notebooks = [] } = useQuery(notebooksQuery);
+    const queryClient = useQueryClient();
     const navigate = useNavigate();
 
     return (
@@ -31,6 +34,7 @@ export function NotebooksNavigation({ onNavigate }: { onNavigate: () => void }) 
                 }
                 const { id } = await parseResponse(response);
                 await navigate(generatePath(notebookPath, { notebookId: id }));
+                await queryClient.invalidateQueries({ queryKey: notebooksQuery.queryKey });
                 return null;
             }}
             onNavigate={onNavigate}

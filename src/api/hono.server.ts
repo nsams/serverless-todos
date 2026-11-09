@@ -13,5 +13,5 @@ export function createApi() {
 }
 
 // The search params of a grid (src/gridSearch.ts) as query: the handler normalizes them leniently (invalid values are dropped)
-// with the validateSearch of the page's loader, like the page
+// with the validateSearch of the page, like the page
 export const gridQueryValidator = zValidator("query", z.record(z.string(), z.union([z.string(), z.array(z.string())])));

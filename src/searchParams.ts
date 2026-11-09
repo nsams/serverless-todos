@@ -22,7 +22,7 @@ export function stringifySearch(search: Record<string, unknown>) {
     return searchStr ? `?${searchStr}` : "";
 }
 
-// The search params of a location (e.g. new URL(request.url).search in a loader), typed by validateSearch
+// The search params of a location (e.g. useLocation().search), typed by validateSearch
 export function readSearch<Search>(searchStr: string, validateSearch: (search: unknown) => Search) {
     return validateSearch(parseSearch(searchStr));
 }

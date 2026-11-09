@@ -1,17 +1,16 @@
 import type { AppModule } from "~/modules/types";
 
 import { NotebooksNavigation } from "./components/NotebooksNavigation";
-import { loadNotebooks, notesModuleId } from "./navigation";
-import { notesRoutes } from "./routes";
+import { notesPages } from "./pages";
+import { notesModuleId } from "./queries";
 
 // The notes module (notebooks and Markdown notes), app shell part. Server part: module.server.ts (REST API: api.server.ts);
-// pages: routes.ts (/notes, /notes/:notebookId, /notes/:notebookId/:noteId).
+// pages: pages.tsx (/notes, /notes/:notebookId, /notes/:notebookId/:noteId).
 export const notesModule: AppModule = {
     id: notesModuleId,
-    routes: notesRoutes,
+    pages: notesPages,
     navigation: {
         title: "Notes",
-        loader: loadNotebooks,
         Component: NotebooksNavigation,
     },
     chat: {
