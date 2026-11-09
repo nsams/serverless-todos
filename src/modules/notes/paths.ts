@@ -1,13 +1,10 @@
-// Paths and route ids of the module's pages (routes.tsx), also used by the server (chat context, module.server.ts)
+import type { CheckedRouteId } from "~/chat/chat";
 
-// Route ids of a notebook's page and of a note's page, see ChatPage in src/chat/chat.ts
-export const notebookRouteId = "notes/notebook";
-export const noteRouteId = "notes/note";
+// Route ids of the module's pages (routes/), also used by the server (chat context, module.server.ts), see ChatPage in src/chat/chat.ts
 
-export function notebookPath(notebookId: string) {
-    return `/notes/${encodeURIComponent(notebookId)}`;
-}
-
-export function notePath(notebookId: string, noteId: string) {
-    return `${notebookPath(notebookId)}/${encodeURIComponent(noteId)}`;
-}
+// a notebook's page (routes/notes.$notebookId.index.tsx) and a note's page (routes/notes.$notebookId.$noteId.tsx)
+export const notebookRouteId = "/_app/notes/$notebookId/";
+export const noteRouteId = "/_app/notes/$notebookId/$noteId";
+// fail to compile if the routes don't exist (e.g. after renaming the route files)
+export type NotebookRouteId = CheckedRouteId<typeof notebookRouteId>;
+export type NoteRouteId = CheckedRouteId<typeof noteRouteId>;

@@ -1,8 +1,8 @@
-// Paths and route ids of the module's pages (routes.tsx), also used by the server (chat context, module.server.ts)
+import type { CheckedRouteId } from "~/chat/chat";
 
-// Route id of a list's page, see ChatPage in src/chat/chat.ts
-export const listRouteId = "todos/list";
+// Route ids of the module's pages (routes/), also used by the server (chat context, module.server.ts), see ChatPage in src/chat/chat.ts
 
-export function listPath(listId: string) {
-    return `/lists/${encodeURIComponent(listId)}`;
-}
+// a list's page (routes/lists.$listId.tsx)
+export const listRouteId = "/_app/lists/$listId";
+// fails to compile if the route doesn't exist (e.g. after renaming the route file)
+export type ListRouteId = CheckedRouteId<typeof listRouteId>;

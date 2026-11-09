@@ -1,18 +1,15 @@
-import { api } from "~/api/client";
 import type { AppModule } from "~/modules/types";
 
 import { NotebooksNavigation } from "./components/NotebooksNavigation";
 import { notesModuleId } from "./navigation";
-import { notesRoutes } from "./routes";
 
 // The notes module (notebooks and Markdown notes), app shell part. Server part: module.server.ts;
-// pages: routes.tsx (/notes, /notes/:notebookId, /notes/:notebookId/:noteId).
+// pages: routes/ (/notes, /notes/$notebookId, /notes/$notebookId/$noteId).
 export const notesModule: AppModule = {
     id: notesModuleId,
-    routes: notesRoutes,
     navigation: {
         title: "Notes",
-        loader: () => api.notebooks.list.query(),
+        loader: ({ queryClient, trpc }) => queryClient.fetchQuery(trpc.notebooks.list.queryOptions()),
         Component: NotebooksNavigation,
     },
     chat: {

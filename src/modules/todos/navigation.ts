@@ -1,9 +1,10 @@
-import type { ApiOutputs } from "~/api/client";
-import { useNavigationData } from "~/modules/navigation";
+import { useSuspenseQuery } from "@tanstack/react-query";
+
+import { trpc } from "~/api/query";
 
 export const todosModuleId = "todos";
 
-// The user's lists with their number of open todos: the navigation data of the module (loaded by the app layout with api.lists.list)
+// The user's lists with their number of open todos: the navigation data of the module (loaded by the app layout, see module.ts)
 export function useLists() {
-    return useNavigationData(todosModuleId) as ApiOutputs["lists"]["list"];
+    return useSuspenseQuery(trpc.lists.list.queryOptions()).data;
 }

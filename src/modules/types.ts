@@ -1,8 +1,8 @@
 import type { AnyRouter } from "@trpc/server";
 import type { ComponentType } from "react";
-import type { RouteObject } from "react-router";
 import type { z } from "zod";
 
+import type { RouterContext } from "~/api/query";
 import type { ChatPage } from "~/chat/chat";
 
 // The app consists of a core (app shell, authentication, chat assistant, MCP server, database connection) and feature modules.
@@ -10,18 +10,19 @@ import type { ChatPage } from "~/chat/chat";
 // routes, components, AI tools. The core only knows the modules through the registries (src/modules/registry.ts, registry.server.ts)
 // and the interfaces below.
 
-// The part of a module the app shell uses (browser)
+// The part of a module the app shell uses (browser). The module's pages are route files in its folder routes/ (TanStack Router file-based
+// routing), mounted into the app layout by src/routes.ts.
 export type AppModule = {
-    // unique; key of the module's navigation data
+    // unique
     id: string;
-    // the module's pages (React Router route objects), mounted into the app layout (src/router.tsx)
-    routes: RouteObject[];
     // shown in the app's sidebar
     navigation?: {
         // heading of the module's section in the sidebar
         title: string;
-        // loaded by the app layout (src/routes/app.tsx) for every page; the module reads it with useNavigationData
-        loader: () => Promise<unknown>;
+        // loads the navigation data into the query cache (e.g. queryClient.fetchQuery(trpc.lists.list.queryOptions())); called by the
+        // app layout's loader (src/routes/_app.tsx), so it is loaded before any page is shown; the module's components read it from the cache
+        // (useSuspenseQuery with the same query options)
+        loader: (context: RouterContext) => Promise<unknown>;
         // onNavigate: closes the sidebar on small screens
         Component: ComponentType<{ onNavigate: () => void }>;
     };

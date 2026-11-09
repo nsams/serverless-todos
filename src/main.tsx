@@ -2,9 +2,11 @@ import "@fontsource-variable/roboto-flex";
 
 import { CssBaseline } from "@mui/material";
 import { ThemeProvider } from "@mui/material/styles";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { RouterProvider } from "@tanstack/react-router";
 import { createRoot } from "react-dom/client";
-import { RouterProvider } from "react-router/dom";
 
+import { queryClient } from "./api/query";
 import { ErrorSnackbarProvider } from "./components/ErrorSnackbar";
 import { router } from "./router";
 import { theme } from "./theme";
@@ -18,7 +20,9 @@ createRoot(root).render(
     <ThemeProvider theme={theme}>
         <CssBaseline />
         <ErrorSnackbarProvider>
-            <RouterProvider router={router} />
+            <QueryClientProvider client={queryClient}>
+                <RouterProvider router={router} />
+            </QueryClientProvider>
         </ErrorSnackbarProvider>
     </ThemeProvider>,
 );

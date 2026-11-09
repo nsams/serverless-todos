@@ -1,24 +1,28 @@
 import { Chatbot, Hamburger, Logout } from "@dextinity/admin-icons";
 import { AppBar, Box, CircularProgress, Divider, Drawer, IconButton, ListSubheader, Toolbar, Typography } from "@mui/material";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { Fragment, lazy, Suspense, useState } from "react";
-import { Outlet, type ShouldRevalidateFunctionArgs } from "react-router";
 
-import { api } from "~/api/client";
+import { trpc } from "~/api/query";
 import { appName } from "~/app";
 import { appModules, loadNavigationData } from "~/modules/registry";
-import { useLoaderResult } from "~/routing";
 
-// Layout of the app pages: app bar and the navigation of the modules in a sidebar (route id appRouteId, src/modules/navigation.ts)
-export async function appLoader() {
-    const [user, navigation] = await Promise.all([api.user.query(), loadNavigationData()]);
-    return { user, navigation };
-}
-
-// The navigation data (e.g. the sidebar's lists) is reloaded when the page data is reloaded explicitly (useRevalidator, e.g. after a change),
-// not on every change of the search params (e.g. a grid's filter)
-export function shouldRevalidateApp({ currentUrl, nextUrl, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {
-    return currentUrl.href === nextUrl.href && defaultShouldRevalidate;
-}
+// Layout of the app pages: app bar and the navigation of the modules in a sidebar
+export const Route = createFileRoute("/_app")({
+    // Runs on every navigation (by default only when the layout is entered), in the background once the layout is shown: the query cache
+    // only loads the user and the navigation data (e.g. the sidebar's lists) if they are outdated, e.g. after a change (useRefresh)
+    // followed by a navigation to the created item
+    shouldReload: true,
+    loader: ({ context }) => Promise.all([context.queryClient.fetchQuery(context.trpc.user.queryOptions()), loadNavigationData(context)]),
+    component: AppLayout,
+    // while the first page is loading (later navigations keep showing the current page until the next one is loaded)
+    pendingComponent: () => (
+        <Box sx={{ display: "flex", justifyContent: "center", p: 8 }}>
+            <CircularProgress />
+        </Box>
+    ),
+});
 
 const drawerWidth = 260;
 const chatWidth = 420;
@@ -26,8 +30,8 @@ const chatWidth = 420;
 // loaded on first open: the chat (MUI X Chat, Agents SDK client) is only needed in the browser
 const ChatPanel = lazy(() => import("~/components/ChatPanel"));
 
-export function AppLayout() {
-    const { user } = useLoaderResult<typeof appLoader>();
+function AppLayout() {
+    const { data: user } = useSuspenseQuery(trpc.user.queryOptions());
     const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
     const [chatOpen, setChatOpen] = useState(false);
     // stays mounted once opened, so the conversation (and a running answer) survives closing the panel

@@ -1,4 +1,5 @@
 import { cloudflare } from "@cloudflare/vite-plugin";
+import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -34,6 +35,9 @@ export default defineConfig({
             // calls the model through cloudflareAiDevProxy instead (see src/chat/model.server.ts)
             remoteBindings: false,
         }),
+        // generates the route tree (src/routeTree.gen.ts) from the route files; the routes of the modules live in their module folders,
+        // see src/routes.ts. Each page's component is loaded on demand (code splitting), in parallel with its loader's data.
+        tanstackRouter({ target: "react", virtualRouteConfig: "./src/routes.ts", autoCodeSplitting: true }),
         viteReact(),
     ],
     server: {

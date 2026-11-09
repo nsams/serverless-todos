@@ -1,37 +1,29 @@
-import { createBrowserRouter } from "react-router";
+import { createRouter } from "@tanstack/react-router";
 
-import { appRouteId } from "./modules/navigation";
-import { appModules } from "./modules/registry";
-import { AppLayout, appLoader, shouldRevalidateApp } from "./routes/app";
-import { indexLoader } from "./routes/index";
-import { InitialLoading, NoContent, Root, RouteError } from "./routes/root";
+import { queryClient, trpc } from "./api/query";
+import { RouteError, RouteNotFound } from "./components/RouteError";
+import { routeTree } from "./routeTree.gen";
+import { parseSearch, stringifySearch } from "./searchParams";
 
-// The app's routes (React Router data mode): the pages of the modules (AppModule.routes, src/modules/registry.ts) in the app layout.
-// The loaders load the page data from the API (src/api/client.ts); after a change the page data is reloaded with useRevalidator.
-export const router = createBrowserRouter([
-    {
-        Component: Root,
-        HydrateFallback: InitialLoading,
-        ErrorBoundary: RouteError,
-        children: [
-            { index: true, loader: indexLoader, Component: NoContent },
-            {
-                id: appRouteId,
-                loader: appLoader,
-                shouldRevalidate: shouldRevalidateApp,
-                Component: AppLayout,
-                children: [
-                    {
-                        // errors of the pages are shown in the app layout
-                        ErrorBoundary: RouteError,
-                        children: [...appModules.flatMap((module) => module.routes), { path: "*", loader: notFound, Component: NoContent }],
-                    },
-                ],
-            },
-        ],
-    },
-]);
+// The app's router (TanStack Router, client-side only): the route tree is generated from the route files (src/routes.ts) into
+// src/routeTree.gen.ts. The loaders load the page data from the API into the query cache (context: src/api/query.ts).
+export const router = createRouter({
+    routeTree,
+    context: { queryClient, trpc },
+    parseSearch,
+    stringifySearch,
+    scrollRestoration: true,
+    // the data of a link's page is loaded on hover/focus; the query cache decides whether it is loaded again (staleTime)
+    defaultPreload: "intent",
+    defaultPreloadStaleTime: 0,
+    // 404 (unknown path, or e.g. a list that doesn't exist (anymore)) and errors are shown in place of the route's page, i.e. within the app layout
+    defaultNotFoundComponent: RouteNotFound,
+    defaultErrorComponent: RouteError,
+});
 
-function notFound(): never {
-    throw new Response(null, { status: 404 });
+// Registers the router's type: links, navigate, redirect, route ids, params and search params are checked against the route tree
+declare module "@tanstack/react-router" {
+    interface Register {
+        router: typeof router;
+    }
 }
