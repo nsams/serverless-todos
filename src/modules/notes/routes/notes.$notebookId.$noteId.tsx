@@ -1,37 +1,23 @@
 import { ArrowLeft, Delete, Move } from "@dextinity/admin-icons";
-import {
-    Box,
-    Button,
-    Dialog,
-    DialogActions,
-    DialogContent,
-    DialogContentText,
-    DialogTitle,
-    IconButton,
-    Menu,
-    MenuItem,
-    Paper,
-    Stack,
-    Tab,
-    Tabs,
-    TextField,
-    Tooltip,
-    Typography,
-} from "@mui/material";
+import { Box, Container, IconButton, Menu, MenuItem, Paper, Stack, Tab, Tabs, TextField, Tooltip, Typography } from "@mui/material";
 import { createFileRoute, createLink, redirect, useNavigate, useRouter } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { appName } from "~/app";
 import { useShowError } from "~/components/ErrorSnackbar";
 
+import { DeleteNoteDialog } from "../components/DeleteNoteDialog";
 import { MarkdownPreview } from "../components/MarkdownPreview";
 import type { Note } from "../db/notes.server";
 import { maxNoteBodyLength, maxNoteTitleLength } from "../limits";
 import { useNotebooks } from "../navigation";
 import { deleteNote, getNote, updateNote } from "../notes.functions";
+import { validateNoteSearch } from "../noteSearch";
 
+// A note in the editor. The search params are the state of the notebook's grid (notes.$notebookId.index.tsx), kept for the back link.
 export const Route = createFileRoute("/_app/notes/$notebookId/$noteId")({
+    validateSearch: validateNoteSearch,
     loader: async ({ params: { notebookId, noteId } }) => {
         const note = await getNote({ data: { id: noteId } });
         // e.g. moved to another notebook by the assistant
@@ -44,19 +30,55 @@ export const Route = createFileRoute("/_app/notes/$notebookId/$noteId")({
     component: NotePage,
     // e.g. deleted by the assistant while open
     notFoundComponent: () => (
-        <Paper sx={{ p: 4, textAlign: "center" }}>
-            <Typography color="text.secondary">This note doesn't exist (anymore).</Typography>
-        </Paper>
+        <NotePageLayout>
+            <Paper sx={{ p: 4, textAlign: "center" }}>
+                <Typography color="text.secondary">This note doesn't exist (anymore).</Typography>
+            </Paper>
+        </NotePageLayout>
     ),
 });
 
+const IconButtonLink = createLink(IconButton);
+
 function NotePage() {
     const note = Route.useLoaderData();
-    // a fresh editor (draft, save state) per note
-    return <NoteEditor key={note.id} note={note} />;
+    return (
+        <NotePageLayout>
+            {/* a fresh editor (draft, save state) per note */}
+            <NoteEditor key={note.id} note={note} />
+        </NotePageLayout>
+    );
 }
 
-const IconButtonLink = createLink(IconButton);
+// The back link to the notebook's grid (in the state it was left) above the editor
+function NotePageLayout({ children }: { children: ReactNode }) {
+    const { notebookId } = Route.useParams();
+    const search = Route.useSearch();
+    const notebook = useNotebooks().find((item) => item.id === notebookId);
+    return (
+        <Container sx={{ py: 4 }}>
+            <Stack spacing={2}>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <Tooltip title="Back to the notebook">
+                        <IconButtonLink
+                            to="/notes/$notebookId"
+                            params={{ notebookId }}
+                            search={search}
+                            edge="start"
+                            aria-label="Back to the notebook"
+                        >
+                            <ArrowLeft />
+                        </IconButtonLink>
+                    </Tooltip>
+                    <Typography color="text.secondary" noWrap>
+                        {notebook?.name}
+                    </Typography>
+                </Box>
+                {children}
+            </Stack>
+        </Container>
+    );
+}
 
 // Changes are saved automatically shortly after typing stops
 const autosaveDelay = 1000;
@@ -181,7 +203,7 @@ function NoteEditor({ note }: { note: Note }) {
             showError("Moving the note failed, please try again.");
             return;
         }
-        await navigate({ to: "/notes/$notebookId/$noteId", params: { notebookId, noteId: note.id } });
+        await navigate({ to: "/notes/$notebookId/$noteId", params: { notebookId, noteId: note.id }, search });
         await router.invalidate();
     };
 
@@ -189,17 +211,6 @@ function NoteEditor({ note }: { note: Note }) {
         <Paper component="article" aria-label={draft.title || "Note"} sx={{ p: 2 }}>
             <Stack spacing={1}>
                 <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1 }}>
-                    <Tooltip title="Back to the notes">
-                        <IconButtonLink
-                            to="/notes/$notebookId"
-                            params={{ notebookId: note.notebookId }}
-                            search={search}
-                            aria-label="Back to the notes"
-                            sx={{ display: { md: "none" }, mt: 0.5 }}
-                        >
-                            <ArrowLeft />
-                        </IconButtonLink>
-                    </Tooltip>
                     <TextField
                         value={draft.title}
                         onChange={(event) => setDraft((values) => ({ ...values, title: event.target.value }))}
@@ -283,23 +294,7 @@ function MoveNoteButton({ currentNotebookId, onMove }: { currentNotebookId: stri
 
 // onDelete: deletes the note and leaves the page
 function DeleteNoteButton({ title, onDelete }: { title: string; onDelete: () => Promise<void> }) {
-    const showError = useShowError();
     const [dialogOpen, setDialogOpen] = useState(false);
-    const [deleting, setDeleting] = useState(false);
-
-    const handleDelete = async () => {
-        setDeleting(true);
-        try {
-            await onDelete();
-            setDialogOpen(false);
-        } catch (error) {
-            console.error(error);
-            showError("Deleting the note failed, please try again.");
-        } finally {
-            setDeleting(false);
-        }
-    };
-
     return (
         <>
             <Tooltip title="Delete note">
@@ -307,18 +302,7 @@ function DeleteNoteButton({ title, onDelete }: { title: string; onDelete: () => 
                     <Delete />
                 </IconButton>
             </Tooltip>
-            <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)}>
-                <DialogTitle>Delete note?</DialogTitle>
-                <DialogContent>
-                    <DialogContentText>“{title}” will be deleted.</DialogContentText>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
-                    <Button color="error" variant="contained" disabled={deleting} onClick={() => void handleDelete()}>
-                        Delete
-                    </Button>
-                </DialogActions>
-            </Dialog>
+            <DeleteNoteDialog note={dialogOpen ? { title } : null} onClose={() => setDialogOpen(false)} onDelete={onDelete} />
         </>
     );
 }

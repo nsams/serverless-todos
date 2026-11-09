@@ -1,6 +1,8 @@
 import { and, asc, desc, eq, gt, gte, isNull, lt, lte, or, type SQL, sql } from "drizzle-orm";
 
 import { getDb } from "~/db/db.server";
+import { dateTimeCondition, textCondition } from "~/db/filters.server";
+import type { DateTimeOperator, TextOperator } from "~/gridSearch";
 
 import { getListRepository } from "./lists.server";
 import { todos } from "./schema";
@@ -9,14 +11,12 @@ export type Todo = typeof todos.$inferSelect;
 
 export type TodoSort = { field: "title" | "description" | "dueDate" | "done" | "createdAt"; direction: "asc" | "desc" };
 
-type TextOperator = "contains" | "equals" | "startsWith" | "endsWith";
-
 export type TodoFilter =
     | { field: "title"; operator: TextOperator; value: string }
     | { field: "description"; operator: TextOperator; value: string }
     | { field: "dueDate"; operator: "is" | "after" | "onOrAfter" | "before" | "onOrBefore"; value: string /* YYYY-MM-DD */ }
     | { field: "done"; operator: "is"; value: boolean }
-    | { field: "createdAt"; operator: "after" | "onOrAfter" | "before" | "onOrBefore"; value: Date };
+    | { field: "createdAt"; operator: DateTimeOperator; value: Date };
 
 export type TodoFilterModel = { items: TodoFilter[]; logicOperator: "and" | "or" };
 
@@ -127,12 +127,8 @@ export function getTodoRepository(): TodoRepository {
 function filterCondition(filter: TodoFilter): SQL | undefined {
     switch (filter.field) {
         case "title":
-        case "description": {
-            // case-insensitive (no ILIKE in SQLite), wildcards in the value are matched literally
-            const value = filter.value.toLowerCase().replace(/[\\%_]/g, "\\$&");
-            const pattern = { contains: `%${value}%`, equals: value, startsWith: `${value}%`, endsWith: `%${value}` }[filter.operator];
-            return sql`lower(${todos[filter.field]}) like ${pattern} escape '\\'`;
-        }
+        case "description":
+            return textCondition(todos[filter.field], filter.operator, filter.value);
         case "dueDate":
             // YYYY-MM-DD strings compare like dates; todos without due date never match
             return {
@@ -144,17 +140,7 @@ function filterCondition(filter: TodoFilter): SQL | undefined {
             }[filter.operator];
         case "done":
             return eq(todos.done, filter.value);
-        case "createdAt": {
-            // minute precision, like the DataGrid's dateTime filter
-            const minute = new Date(filter.value);
-            minute.setSeconds(0, 0);
-            const nextMinute = new Date(minute.getTime() + 60_000);
-            return {
-                after: gte(todos.createdAt, nextMinute),
-                onOrAfter: gte(todos.createdAt, minute),
-                before: lt(todos.createdAt, minute),
-                onOrBefore: lt(todos.createdAt, nextMinute),
-            }[filter.operator];
-        }
+        case "createdAt":
+            return dateTimeCondition(todos.createdAt, filter.operator, filter.value);
     }
 }

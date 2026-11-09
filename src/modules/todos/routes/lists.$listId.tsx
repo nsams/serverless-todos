@@ -25,7 +25,6 @@ import {
     GridActionsCellItem,
     type GridColDef,
     type GridFilterModel,
-    type GridFilterOperator,
     GridLogicOperator,
     type GridSortModel,
 } from "@mui/x-data-grid-pro";
@@ -37,17 +36,18 @@ import { appName } from "~/app";
 import { useShowError } from "~/components/ErrorSnackbar";
 import { NameDialog } from "~/components/NameDialog";
 import { fromDateString, toDateString, useToday } from "~/dates";
+import { type GridSearch, pageSizeOptions, serializeFilterValue, supportedOperators, validateGridSearch } from "~/gridSearch";
 
-import type { Todo, TodoFilter } from "../db/todos.server";
+import type { Todo } from "../db/todos.server";
 import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "../limits";
 import { deleteList, renameList } from "../lists.functions";
 import { useLists } from "../navigation";
 import { isOverdue } from "../overdue";
 import { createTodo, deleteTodo, listTodos, updateTodo } from "../todos.functions";
-import { filterOperators, pageSizeOptions, parseTodoSearch, type TodoSearch, validateTodoSearch } from "../todoSearch";
+import { parseTodoSearch, todoFields } from "../todoSearch";
 
 export const Route = createFileRoute("/_app/lists/$listId")({
-    validateSearch: validateTodoSearch,
+    validateSearch: validateGridSearch,
     loaderDeps: ({ search }) => search,
     loader: async ({ params: { listId }, deps }) => {
         const result = await listTodos({ data: { listId, ...deps } });
@@ -68,21 +68,6 @@ export const Route = createFileRoute("/_app/lists/$listId")({
     component: Todos,
 });
 
-function supportedOperators(field: TodoFilter["field"], operators: GridFilterOperator[]) {
-    return operators.filter((operator) => (filterOperators[field] as string[]).includes(operator.value));
-}
-
-function serializeFilterValue(field: string, value: unknown) {
-    if (value instanceof Date) {
-        if (Number.isNaN(value.getTime())) {
-            return "";
-        }
-        // the grid's date filter input creates dates at UTC midnight (new Date("YYYY-MM-DD"))
-        return field === "dueDate" ? value.toISOString().slice(0, 10) : value.toISOString();
-    }
-    return value == null ? "" : String(value);
-}
-
 function Todos() {
     const { list, todos, totalCount } = Route.useLoaderData();
     const lists = useLists();
@@ -94,7 +79,7 @@ function Todos() {
     const today = useToday();
 
     // Use the pending location while loading, otherwise the grid would show the old state until the loader is done (e.g. reset a filter value while typing)
-    const search = validateTodoSearch(useRouterState({ select: (state) => state.location.search }));
+    const search = validateGridSearch(useRouterState({ select: (state) => state.location.search }));
     const isLoading = useRouterState({ select: (state) => state.status === "pending" && state.location.href !== state.resolvedLocation?.href });
     const { page, pageSize, sort, filter, filterItems } = parseTodoSearch(search);
     const sortModel: GridSortModel = sort.map(({ field, direction }) => ({ field, sort: direction }));
@@ -103,7 +88,7 @@ function Todos() {
         logicOperator: filter.logicOperator === "or" ? GridLogicOperator.Or : GridLogicOperator.And,
     };
 
-    const updateSearch = (values: TodoSearch, { replace = false } = {}) => {
+    const updateSearch = (values: GridSearch, { replace = false } = {}) => {
         void navigate({ search: { ...search, ...values }, replace, resetScroll: false });
     };
 
@@ -124,7 +109,7 @@ function Todos() {
             headerName: "Done",
             type: "boolean",
             width: 80,
-            filterOperators: supportedOperators("done", getGridBooleanOperators()),
+            filterOperators: supportedOperators(getGridBooleanOperators(), todoFields.done.operators),
             renderCell: ({ row }) => (
                 <Checkbox
                     checked={row.done}
@@ -139,7 +124,7 @@ function Todos() {
             flex: 1,
             minWidth: 150,
             editable: true,
-            filterOperators: supportedOperators("title", getGridStringOperators()),
+            filterOperators: supportedOperators(getGridStringOperators(), todoFields.title.operators),
         },
         {
             field: "description",
@@ -148,7 +133,7 @@ function Todos() {
             flex: 1.5,
             minWidth: 150,
             editable: true,
-            filterOperators: supportedOperators("description", getGridStringOperators()),
+            filterOperators: supportedOperators(getGridStringOperators(), todoFields.description.operators),
         },
         {
             field: "dueDate",
@@ -156,7 +141,7 @@ function Todos() {
             type: "date",
             width: 150,
             editable: true,
-            filterOperators: supportedOperators("dueDate", getGridDateOperators()),
+            filterOperators: supportedOperators(getGridDateOperators(), todoFields.dueDate.operators),
             // the grid works with Date values (at local midnight), the todo has a YYYY-MM-DD string
             valueGetter: (value: string | null) => (value ? fromDateString(value) : null),
             valueSetter: (value: Date | null, row) => ({ ...row, dueDate: value && !Number.isNaN(value.getTime()) ? toDateString(value) : null }),
@@ -176,7 +161,7 @@ function Todos() {
             headerName: "Created",
             type: "dateTime",
             width: 180,
-            filterOperators: supportedOperators("createdAt", getGridDateOperators(true)),
+            filterOperators: supportedOperators(getGridDateOperators(true), todoFields.createdAt.operators),
         },
         {
             field: "actions",
@@ -227,6 +212,7 @@ function Todos() {
                         columns={columns}
                         autoHeight
                         disableRowSelectionOnClick
+                        pagination
                         paginationMode="server"
                         sortingMode="server"
                         filterMode="server"
@@ -242,7 +228,8 @@ function Todos() {
                                 {
                                     page: undefined,
                                     filter: model.items.map(
-                                        (item) => `${item.field}:${item.operator}:${serializeFilterValue(item.field, item.value)}`,
+                                        (item) =>
+                                            `${item.field}:${item.operator}:${serializeFilterValue(item.value, { dateOnly: item.field === "dueDate" })}`,
                                     ),
                                     filterLogic: model.logicOperator === GridLogicOperator.Or ? "or" : undefined,
                                 },

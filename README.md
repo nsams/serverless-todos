@@ -52,12 +52,12 @@ Core:
 - `src/modules/registry.ts`, `src/modules/registry.server.ts`: the modules of the app
 - `src/chat/`: chat assistant (see [Chat assistant](#chat-assistant)), `src/components/ChatPanel.tsx`: its UI
 - `src/mcp/`: MCP server (see [MCP server](#mcp-server-external-ai-clients))
-- `src/db/db.server.ts`: database connection; `src/dates.ts`: calendar dates (`YYYY-MM-DD`) without time zone, the user's local date; `src/searchParams.ts`: search params serialization; `src/components/`: shared components
+- `src/db/db.server.ts`: database connection; `src/dates.ts`: calendar dates (`YYYY-MM-DD`) without time zone, the user's local date; `src/searchParams.ts`: search params serialization; `src/gridSearch.ts`, `src/db/filters.server.ts`: the state of DataGrids with server-side pagination, sorting and filtering in the URL and its SQL conditions (used by the modules' grids); `src/components/`: shared components
 
 Todos module (`src/modules/todos/`):
 
 - `module.ts`, `module.server.ts`: the module's definition (`AppModule`, `ServerModule`)
-- `routes/`: `/lists` (redirects to the user's first list, creates a list "Todos" if the user has none), `/lists/$listId` (todos of a list; grid state (pagination, sorting, filtering) lives in the URL, `todoSearch.ts`)
+- `routes/`: `/lists` (redirects to the user's first list, creates a list "Todos" if the user has none), `/lists/$listId` (todos of a list; grid state (pagination, sorting, filtering) lives in the URL, `todoSearch.ts` with `src/gridSearch.ts`)
 - `components/ListsNavigation.tsx`: the user's lists in the sidebar (navigation data loaded by the app layout, `navigation.ts`)
 - `todos.functions.ts`, `lists.functions.ts`: server functions (data loading and mutations, input validated with zod; length limits in `limits.ts`)
 - `db/`: database schema and repositories
@@ -66,7 +66,7 @@ Todos module (`src/modules/todos/`):
 
 Notes module (`src/modules/notes/`), same structure:
 
-- `routes/`: `/notes` (redirects to the user's first notebook, creates a notebook "Notes" if the user has none), `/notes/$notebookId` (the notebook's notes, searchable (`?q=`, title and body), next to the open note; on small screens either the notes or the note), `/notes/$notebookId/$noteId` (editor: title, body in Markdown with preview (`components/MarkdownPreview.tsx`, `markdown-to-jsx`, raw HTML isn't rendered), saved automatically shortly after typing stops and when leaving the note, move to another notebook, delete)
+- `routes/`: `/notes` (redirects to the user's first notebook, creates a notebook "Notes" if the user has none), `/notes/$notebookId` (the notebook's notes in a grid like the todos (`noteSearch.ts`), plus a search in title and body (`?q=`); a click on a row opens the note), `/notes/$notebookId/$noteId` (editor, keeps the grid state for its back link: title, body in Markdown with preview (`components/MarkdownPreview.tsx`, `markdown-to-jsx`, raw HTML isn't rendered), saved automatically shortly after typing stops and when leaving the note, move to another notebook, delete)
 - `components/NotebooksNavigation.tsx`: the user's notebooks in the sidebar (`navigation.ts`)
 - `notebooks.functions.ts`, `notes.functions.ts`, `db/`, `limits.ts`: like in the todos module
 - `tools.server.ts`: the tools that manage notebooks and notes (find, read, create, update, append to, move, delete). Together with the todo tools the assistant can e.g. turn a note into todos, without the modules knowing each other.

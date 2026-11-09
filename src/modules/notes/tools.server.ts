@@ -89,7 +89,13 @@ export function createNoteTools(userId: string) {
             effect: "read",
             execute: async ({ notebookId, query }) => {
                 const rows = await notes.search(userId, { notebookId, query: query || undefined, limit: maxSearchResults });
-                return rows.map(({ updatedAt, ...note }) => ({ ...note, updatedAt: updatedAt.toISOString() }));
+                return rows.map(({ id, notebookId, title, excerpt, updatedAt }) => ({
+                    id,
+                    notebookId,
+                    title,
+                    excerpt,
+                    updatedAt: updatedAt.toISOString(),
+                }));
             },
         }),
         getNote: defineTool({

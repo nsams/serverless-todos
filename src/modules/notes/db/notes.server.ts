@@ -1,23 +1,39 @@
-import { and, desc, eq, or, type SQL, sql } from "drizzle-orm";
+import { and, asc, desc, eq, or, sql } from "drizzle-orm";
 
 import { getDb } from "~/db/db.server";
+import { dateTimeCondition, textCondition } from "~/db/filters.server";
+import type { DateTimeOperator, TextOperator } from "~/gridSearch";
 
 import { getNotebookRepository } from "./notebooks.server";
 import { notes } from "./schema";
 
 export type Note = typeof notes.$inferSelect;
 
-// A note without its body (lists, search results), with the beginning of the body as excerpt
-export type NoteSummary = Pick<Note, "id" | "notebookId" | "title" | "updatedAt"> & { excerpt: string };
+// A note without its body (grid, search results), with the beginning of the body as excerpt
+export type NoteSummary = Pick<Note, "id" | "notebookId" | "title" | "createdAt" | "updatedAt"> & { excerpt: string };
+
+export type NoteSort = { field: "title" | "body" | "createdAt" | "updatedAt"; direction: "asc" | "desc" };
+
+type TextFilter<Field> = { field: Field; operator: TextOperator; value: string };
+type DateTimeFilter<Field> = { field: Field; operator: DateTimeOperator; value: Date };
+
+export type NoteFilter = TextFilter<"title"> | TextFilter<"body"> | DateTimeFilter<"createdAt"> | DateTimeFilter<"updatedAt">;
+
+export type NoteFilterModel = { items: NoteFilter[]; logicOperator: "and" | "or" };
+
+// The grid of a notebook. query: only notes whose title or body contains it (the search field next to the grid's filters)
+type ListOptions = { offset: number; limit: number; sort: NoteSort[]; filter: NoteFilterModel; query?: string };
 
 export type NoteValues = Pick<Note, "title" | "body">;
 
 const excerptLength = 200;
 
-// notebookId: only notes of this notebook; query: only notes whose title or body contains it (case-insensitive)
+// Search across the user's notebooks (used by the AI tools). notebookId: only notes of this notebook; query: only notes whose title or body contains it
 type SearchOptions = { notebookId?: string; query?: string; limit: number };
 
 type NoteRepository = {
+    // sorted by sort, then most recently changed first
+    list(userId: string, notebookId: string, options: ListOptions): Promise<{ rows: NoteSummary[]; totalCount: number }>;
     // most recently changed first
     search(userId: string, options: SearchOptions): Promise<NoteSummary[]>;
     get(userId: string, id: string): Promise<Note | undefined>;
@@ -34,23 +50,36 @@ export function getNoteRepository(): NoteRepository {
     const db = getDb();
     const notebookExists = async (userId: string, notebookId: string) => (await getNotebookRepository().get(userId, notebookId)) !== undefined;
     return {
+        list: async (userId, notebookId, { offset, limit, sort, filter, query }) => {
+            const filterConditions = filter.items.map((item) => filterCondition(item));
+            const where = and(
+                eq(notes.userId, userId),
+                eq(notes.notebookId, notebookId),
+                filter.logicOperator === "or" ? or(...filterConditions) : and(...filterConditions),
+                queryCondition(query),
+            );
+            const orderBy = sort.map(({ field, direction }) => {
+                const order = direction === "asc" ? asc : desc;
+                // text case-insensitive (SQLite compares binary by default)
+                return field === "title" || field === "body" ? order(sql`lower(${notes[field]})`) : order(notes[field]);
+            });
+            const [rows, totalCount] = await Promise.all([
+                db
+                    .select(summaryColumns)
+                    .from(notes)
+                    .where(where)
+                    .orderBy(...orderBy, desc(notes.updatedAt), desc(notes.id))
+                    .limit(limit)
+                    .offset(offset),
+                db.$count(notes, where),
+            ]);
+            return { rows, totalCount };
+        },
         search: async (userId, { notebookId, query, limit }) => {
             return db
-                .select({
-                    id: notes.id,
-                    notebookId: notes.notebookId,
-                    title: notes.title,
-                    updatedAt: notes.updatedAt,
-                    excerpt: sql<string>`substr(${notes.body}, 1, ${excerptLength})`,
-                })
+                .select(summaryColumns)
                 .from(notes)
-                .where(
-                    and(
-                        eq(notes.userId, userId),
-                        notebookId !== undefined ? eq(notes.notebookId, notebookId) : undefined,
-                        query ? or(containsCondition(notes.title, query), containsCondition(notes.body, query)) : undefined,
-                    ),
-                )
+                .where(and(eq(notes.userId, userId), notebookId !== undefined ? eq(notes.notebookId, notebookId) : undefined, queryCondition(query)))
                 .orderBy(desc(notes.updatedAt), desc(notes.id))
                 .limit(limit);
         },
@@ -98,8 +127,27 @@ export function getNoteRepository(): NoteRepository {
     };
 }
 
-// Case-insensitive substring match (no ILIKE in SQLite), wildcards in the value are matched literally
-function containsCondition(column: typeof notes.title | typeof notes.body, value: string): SQL {
-    const pattern = `%${value.toLowerCase().replace(/[\\%_]/g, "\\$&")}%`;
-    return sql`lower(${column}) like ${pattern} escape '\\'`;
+const summaryColumns = {
+    id: notes.id,
+    notebookId: notes.notebookId,
+    title: notes.title,
+    createdAt: notes.createdAt,
+    updatedAt: notes.updatedAt,
+    excerpt: sql<string>`substr(${notes.body}, 1, ${excerptLength})`,
+};
+
+// Title or body contains the text (case-insensitive)
+function queryCondition(query: string | undefined) {
+    return query ? or(textCondition(notes.title, "contains", query), textCondition(notes.body, "contains", query)) : undefined;
+}
+
+function filterCondition(filter: NoteFilter) {
+    switch (filter.field) {
+        case "title":
+        case "body":
+            return textCondition(notes[filter.field], filter.operator, filter.value);
+        case "createdAt":
+        case "updatedAt":
+            return dateTimeCondition(notes[filter.field], filter.operator, filter.value);
+    }
 }

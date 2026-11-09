@@ -5,7 +5,7 @@ import { getNotebookRepository } from "./db/notebooks.server";
 import { getNoteRepository } from "./db/notes.server";
 import { createNoteTools, noteToolsInstructions } from "./tools.server";
 
-const notebookRouteId: keyof FileRoutesById = "/_app/notes/$notebookId";
+const notebookRouteId: keyof FileRoutesById = "/_app/notes/$notebookId/";
 const noteRouteId: keyof FileRoutesById = "/_app/notes/$notebookId/$noteId";
 
 // The notes module (notebooks and Markdown notes), server part. App shell part: module.ts.

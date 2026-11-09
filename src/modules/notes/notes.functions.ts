@@ -5,22 +5,28 @@ import { z } from "zod";
 import { getNotebookRepository } from "./db/notebooks.server";
 import { getNoteRepository } from "./db/notes.server";
 import { maxNoteBodyLength, maxNoteTitleLength } from "./limits";
-
-// The notes list of a notebook page shows at most this many notes (most recently changed first); the search finds older ones
-const maxListedNotes = 200;
+import { parseNoteSearch, validateNoteSearch } from "./noteSearch";
 
 const bodySchema = z.string().max(maxNoteBodyLength);
 
-// The notes of a notebook, optionally only those containing the search text
+// The notes of a notebook for its grid (one page, sorted and filtered as in the URL)
 export const listNotes = createServerFn()
-    .validator(z.object({ notebookId: z.string(), query: z.string().trim().optional() }))
-    .handler(async ({ data: { notebookId, query }, context: { user } }) => {
+    // the search params are normalized leniently (invalid values are dropped), like in the route's validateSearch
+    .validator(z.looseObject({ notebookId: z.string() }).transform(({ notebookId, ...search }) => ({ notebookId, ...validateNoteSearch(search) })))
+    .handler(async ({ data: { notebookId, ...search }, context: { user } }) => {
         const notebook = await getNotebookRepository().get(user.id, notebookId);
         if (!notebook) {
             throw notFound();
         }
-        const notes = await getNoteRepository().search(user.id, { notebookId, query: query || undefined, limit: maxListedNotes });
-        return { notebook, notes };
+        const { page, pageSize, sort, filter, query } = parseNoteSearch(search);
+        const { rows, totalCount } = await getNoteRepository().list(user.id, notebookId, {
+            offset: page * pageSize,
+            limit: pageSize,
+            sort,
+            filter,
+            query,
+        });
+        return { notebook, notes: rows, totalCount };
     });
 
 export const getNote = createServerFn()

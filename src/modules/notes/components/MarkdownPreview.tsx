@@ -16,11 +16,13 @@ export function MarkdownPreview({ markdown }: { markdown: string }) {
             sx={{
                 typography: "body1",
                 overflowWrap: "anywhere",
-                "& > :first-child": { mt: 0 },
-                "& h1": { typography: "h4", mt: 3, mb: 1 },
-                "& h2": { typography: "h5", mt: 3, mb: 1 },
-                "& h3": { typography: "h6", mt: 2, mb: 1 },
-                "& h4, & h5, & h6": { typography: "subtitle1", fontWeight: "bold", mt: 2, mb: 1 },
+                "& h1": { typography: "h4", mt: 0, mb: 1 },
+                "& h2": { typography: "h5", mt: 0, mb: 1 },
+                "& h3": { typography: "h6", mt: 0, mb: 1 },
+                "& h4, & h5, & h6": { typography: "subtitle1", fontWeight: "bold", mt: 0, mb: 1 },
+                // space above headings, except at the top (no :first-child, it's unsafe with server rendering)
+                "& * + h1, & * + h2": { mt: 3 },
+                "& * + h3, & * + h4, & * + h5, & * + h6": { mt: 2 },
                 "& p, & ul, & ol, & blockquote, & pre, & table": { mt: 0, mb: 1.5 },
                 "& ul, & ol": { pl: 3 },
                 "& a": { color: "primary.main" },

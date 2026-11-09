@@ -14,7 +14,6 @@ import { Route as appRouteImport } from './routes/_app'
 import { Route as ListsDotindexRouteImport } from './modules/todos/routes/lists.index'
 import { Route as ListsDotlistIdRouteImport } from './modules/todos/routes/lists.$listId'
 import { Route as NotesDotindexRouteImport } from './modules/notes/routes/notes.index'
-import { Route as NotesDotnotebookIdRouteImport } from './modules/notes/routes/notes.$notebookId'
 import { Route as NotesDotnotebookIdDotindexRouteImport } from './modules/notes/routes/notes.$notebookId.index'
 import { Route as NotesDotnotebookIdDotnoteIdRouteImport } from './modules/notes/routes/notes.$notebookId.$noteId'
 
@@ -42,28 +41,22 @@ const NotesDotindexRoute = NotesDotindexRouteImport.update({
   path: '/notes/',
   getParentRoute: () => appRoute,
 } as any)
-const NotesDotnotebookIdRoute = NotesDotnotebookIdRouteImport.update({
-  id: '/notes/$notebookId',
-  path: '/notes/$notebookId',
-  getParentRoute: () => appRoute,
-} as any)
 const NotesDotnotebookIdDotindexRoute =
   NotesDotnotebookIdDotindexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => NotesDotnotebookIdRoute,
+    id: '/notes/$notebookId/',
+    path: '/notes/$notebookId/',
+    getParentRoute: () => appRoute,
   } as any)
 const NotesDotnotebookIdDotnoteIdRoute =
   NotesDotnotebookIdDotnoteIdRouteImport.update({
-    id: '/$noteId',
-    path: '/$noteId',
-    getParentRoute: () => NotesDotnotebookIdRoute,
+    id: '/notes/$notebookId/$noteId',
+    path: '/notes/$notebookId/$noteId',
+    getParentRoute: () => appRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof indexRoute
   '/lists/$listId': typeof ListsDotlistIdRoute
-  '/notes/$notebookId': typeof NotesDotnotebookIdRouteWithChildren
   '/lists/': typeof ListsDotindexRoute
   '/notes/': typeof NotesDotindexRoute
   '/notes/$notebookId/$noteId': typeof NotesDotnotebookIdDotnoteIdRoute
@@ -82,7 +75,6 @@ export interface FileRoutesById {
   '/': typeof indexRoute
   '/_app': typeof appRouteWithChildren
   '/_app/lists/$listId': typeof ListsDotlistIdRoute
-  '/_app/notes/$notebookId': typeof NotesDotnotebookIdRouteWithChildren
   '/_app/lists/': typeof ListsDotindexRoute
   '/_app/notes/': typeof NotesDotindexRoute
   '/_app/notes/$notebookId/$noteId': typeof NotesDotnotebookIdDotnoteIdRoute
@@ -93,7 +85,6 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/lists/$listId'
-    | '/notes/$notebookId'
     | '/lists/'
     | '/notes/'
     | '/notes/$notebookId/$noteId'
@@ -111,7 +102,6 @@ export interface FileRouteTypes {
     | '/'
     | '/_app'
     | '/_app/lists/$listId'
-    | '/_app/notes/$notebookId'
     | '/_app/lists/'
     | '/_app/notes/'
     | '/_app/notes/$notebookId/$noteId'
@@ -160,55 +150,37 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NotesDotindexRouteImport
       parentRoute: typeof appRoute
     }
-    '/_app/notes/$notebookId': {
-      id: '/_app/notes/$notebookId'
-      path: '/notes/$notebookId'
-      fullPath: '/notes/$notebookId'
-      preLoaderRoute: typeof NotesDotnotebookIdRouteImport
-      parentRoute: typeof appRoute
-    }
     '/_app/notes/$notebookId/': {
       id: '/_app/notes/$notebookId/'
-      path: '/'
+      path: '/notes/$notebookId'
       fullPath: '/notes/$notebookId/'
       preLoaderRoute: typeof NotesDotnotebookIdDotindexRouteImport
-      parentRoute: typeof NotesDotnotebookIdRoute
+      parentRoute: typeof appRoute
     }
     '/_app/notes/$notebookId/$noteId': {
       id: '/_app/notes/$notebookId/$noteId'
-      path: '/$noteId'
+      path: '/notes/$notebookId/$noteId'
       fullPath: '/notes/$notebookId/$noteId'
       preLoaderRoute: typeof NotesDotnotebookIdDotnoteIdRouteImport
-      parentRoute: typeof NotesDotnotebookIdRoute
+      parentRoute: typeof appRoute
     }
   }
 }
 
-interface NotesDotnotebookIdRouteChildren {
+interface appRouteChildren {
+  ListsDotlistIdRoute: typeof ListsDotlistIdRoute
+  ListsDotindexRoute: typeof ListsDotindexRoute
+  NotesDotindexRoute: typeof NotesDotindexRoute
   NotesDotnotebookIdDotnoteIdRoute: typeof NotesDotnotebookIdDotnoteIdRoute
   NotesDotnotebookIdDotindexRoute: typeof NotesDotnotebookIdDotindexRoute
 }
 
-const NotesDotnotebookIdRouteChildren: NotesDotnotebookIdRouteChildren = {
-  NotesDotnotebookIdDotnoteIdRoute: NotesDotnotebookIdDotnoteIdRoute,
-  NotesDotnotebookIdDotindexRoute: NotesDotnotebookIdDotindexRoute,
-}
-
-const NotesDotnotebookIdRouteWithChildren =
-  NotesDotnotebookIdRoute._addFileChildren(NotesDotnotebookIdRouteChildren)
-
-interface appRouteChildren {
-  ListsDotlistIdRoute: typeof ListsDotlistIdRoute
-  NotesDotnotebookIdRoute: typeof NotesDotnotebookIdRouteWithChildren
-  ListsDotindexRoute: typeof ListsDotindexRoute
-  NotesDotindexRoute: typeof NotesDotindexRoute
-}
-
 const appRouteChildren: appRouteChildren = {
   ListsDotlistIdRoute: ListsDotlistIdRoute,
-  NotesDotnotebookIdRoute: NotesDotnotebookIdRouteWithChildren,
   ListsDotindexRoute: ListsDotindexRoute,
   NotesDotindexRoute: NotesDotindexRoute,
+  NotesDotnotebookIdDotnoteIdRoute: NotesDotnotebookIdDotnoteIdRoute,
+  NotesDotnotebookIdDotindexRoute: NotesDotnotebookIdDotindexRoute,
 }
 
 const appRouteWithChildren = appRoute._addFileChildren(appRouteChildren)
