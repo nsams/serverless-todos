@@ -1,59 +1,59 @@
 import { Add, Delete, Move, Search } from "@dextinity/admin-icons";
 import { Box, Button, Container, InputAdornment, Link as MuiLink, Paper, Stack, TextField, Typography } from "@mui/material";
 import { DataGridPro, getGridDateOperators, getGridStringOperators, GridActionsCellItem, type GridColDef } from "@mui/x-data-grid-pro";
+import { keepPreviousData } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, type LoaderFunctionArgs, replace, useNavigate, useRevalidator } from "react-router";
+import { Link, useNavigate } from "react-router";
 
-import { api } from "~/api/client";
+import { api, queryClient, trpc } from "~/api/client";
 import { CollectionHeader } from "~/components/CollectionHeader";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { NameDialog } from "~/components/NameDialog";
+import { PageLoading } from "~/components/PageLoading";
 import { useMutate } from "~/components/useMutate";
 import { useServerGrid } from "~/components/useServerGrid";
-import { lastPageWithRows, supportedOperators } from "~/gridSearch";
-import { loadOrNotFound, requestSearch, useLoaderResult, usePageTitle } from "~/routing";
-import { stringifySearch } from "~/searchParams";
+import { supportedOperators } from "~/gridSearch";
+import { useApiQuery, usePageTitle, useRouteParams, useRouteSearch } from "~/routing";
 
 import type { Notebook } from "../db/notebooks.server";
 import type { NoteSummary } from "../db/notes.server";
 import { plainExcerpt } from "../excerpt";
 import { maxNotebookNameLength, maxNoteTitleLength } from "../limits";
-import { useNotebooks } from "../navigation";
-import { noteFields, parseNoteSearch, validateNoteSearch } from "../noteSearch";
-import { notebookPath, notePath } from "../paths";
+import { noteFields } from "../noteSearch";
+import { defaultNotebookRoute, notebookRoute, noteRoute } from "../paths";
+import { invalidateNotebooks, invalidateNotes, useNotebooks } from "../queries";
 
 // /notes/:notebookId: the notes of a notebook in a grid (pagination, sorting, filtering on the server, state in the URL); a note opens
 // in the editor (note.tsx), which keeps the grid state for its back link
-export async function notebookLoader({ params, request }: LoaderFunctionArgs) {
-    const notebookId = params.notebookId ?? "";
-    const search = validateNoteSearch(requestSearch(request));
-    const result = await loadOrNotFound(api.notes.list.query({ notebookId, ...search }, { signal: request.signal }));
-
-    // e.g. after deleting the last note of the last page
-    const lastPage = lastPageWithRows(parseNoteSearch(search), result.notes.length, result.totalCount);
-    if (lastPage !== undefined) {
-        throw replace(notebookPath(notebookId) + stringifySearch({ ...search, page: lastPage || undefined }));
-    }
-
-    return result;
+export function NotebookPage() {
+    const { notebookId } = useRouteParams(notebookRoute);
+    // a fresh page per notebook, the notes of the previous notebook aren't shown while the notebook is loading
+    return <NotebookView key={notebookId} notebookId={notebookId} />;
 }
 
-export function NotebookPage() {
-    const { notebook, notes, totalCount } = useLoaderResult<typeof notebookLoader>();
-    const notebooks = useNotebooks();
+function NotebookView({ notebookId }: { notebookId: string }) {
+    const search = useRouteSearch(notebookRoute);
+    // while the notes for new search params are loading, the grid shows the previous ones (with a loading indicator)
+    const { data, isPlaceholderData } = useApiQuery(trpc.notes.list.queryOptions({ notebookId, ...search }, { placeholderData: keepPreviousData }));
+    const notebooks = useNotebooks() ?? [];
     const navigate = useNavigate();
-    const { revalidate } = useRevalidator();
-    const mutate = useMutate();
+    const mutate = useMutate(invalidateNotes);
     const [noteToDelete, setNoteToDelete] = useState<NoteSummary | null>(null);
-    const { search, hasFilter, updateSearch, gridProps } = useServerGrid({
-        validateSearch: validateNoteSearch,
+    const { hasFilter, updateSearch, gridProps } = useServerGrid({
+        search,
         fields: noteFields,
-        rowCount: totalCount,
+        result: data && { rowsOnPage: data.notes.length, rowCount: data.totalCount },
+        loading: isPlaceholderData,
     });
-    usePageTitle(notebook.name);
+    usePageTitle(data?.notebook.name);
+
+    if (!data) {
+        return <PageLoading />;
+    }
+    const { notebook, notes } = data;
 
     // the note's editor keeps the grid state for its back link
-    const noteLink = (noteId: string) => notePath(notebook.id, noteId) + stringifySearch(search);
+    const noteLink = (noteId: string) => noteRoute.href({ notebookId: notebook.id, noteId }, search);
     const openNote = (noteId: string) => void navigate(noteLink(noteId));
 
     const columns: GridColDef<NoteSummary>[] = [
@@ -180,7 +180,7 @@ export function NotebookPage() {
                     if (noteToDelete) {
                         await api.notes.delete.mutate({ id: noteToDelete.id });
                         // also the sidebar's note counts
-                        await revalidate();
+                        await invalidateNotes();
                     }
                 }}
             />
@@ -189,7 +189,6 @@ export function NotebookPage() {
 }
 
 function NewNoteButton({ notebookId }: { notebookId: string }) {
-    const { revalidate } = useRevalidator();
     const navigate = useNavigate();
     const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -197,9 +196,9 @@ function NewNoteButton({ notebookId }: { notebookId: string }) {
         const result = await api.notes.create.mutate({ notebookId, title });
         if (result.id !== null) {
             setDialogOpen(false);
-            await navigate(notePath(notebookId, result.id));
-            // the sidebar's note counts aren't reloaded by the navigation (the layout route's loader data is reused)
-            await revalidate();
+            await navigate(noteRoute.href({ notebookId, noteId: result.id }));
+            // the sidebar's note counts
+            await invalidateNotebooks();
         }
         return result.error;
     };
@@ -223,7 +222,6 @@ function NewNoteButton({ notebookId }: { notebookId: string }) {
 }
 
 function NotebookHeader({ notebook }: { notebook: Notebook }) {
-    const { revalidate } = useRevalidator();
     const navigate = useNavigate();
 
     return (
@@ -235,16 +233,16 @@ function NotebookHeader({ notebook }: { notebook: Notebook }) {
             onRename={async (name) => {
                 const result = await api.notebooks.rename.mutate({ id: notebook.id, name });
                 if (result.error === null) {
-                    await revalidate();
+                    await invalidateNotes();
                 }
                 return result.error;
             }}
             onDelete={async () => {
                 await api.notebooks.delete.mutate({ id: notebook.id });
-                // redirects to the first remaining notebook (or creates a new one)
-                await navigate("/notes", { replace: true });
-                // the sidebar's notebooks aren't reloaded by the navigation (the layout route's loader data is reused)
-                await revalidate();
+                // redirects to the first remaining notebook (or creates a new one) and reloads the notebooks in the sidebar
+                await navigate(defaultNotebookRoute.href(), { replace: true });
+                // not reloaded now (the page is being left), but when it is shown again (e.g. browser back: 404)
+                await queryClient.invalidateQueries({ ...trpc.notes.list.queryFilter({ notebookId: notebook.id }), refetchType: "none" });
             }}
         />
     );

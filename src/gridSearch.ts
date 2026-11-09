@@ -59,7 +59,7 @@ export function gridInputSchema<Shape extends z.ZodRawShape, Search>(shape: Shap
     });
 }
 
-// The page to redirect a grid's loader to when the requested page is empty, but there are rows on earlier pages
+// The page to redirect a grid to when the requested page is empty, but there are rows on earlier pages
 // (e.g. after deleting the last row of the last page); undefined if the page is fine
 export function lastPageWithRows({ page, pageSize }: { page: number; pageSize: number }, rowsOnPage: number, totalCount: number) {
     if (rowsOnPage > 0 || page === 0) {

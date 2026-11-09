@@ -1,37 +1,24 @@
-import { createBrowserRouter } from "react-router";
+import { Navigate, Route, Routes } from "react-router";
 
-import { appRouteId } from "./modules/navigation";
-import { appModules } from "./modules/registry";
-import { AppLayout, appLoader, shouldRevalidateApp } from "./routes/app";
-import { indexLoader } from "./routes/index";
-import { InitialLoading, NoContent, Root, RouteError } from "./routes/root";
+import { appPages, startPath } from "./modules/registry";
+import { AppLayout } from "./routes/app";
+import { NotFound, ScrollToTop } from "./routes/root";
 
-// The app's routes (React Router data mode): the pages of the modules (AppModule.routes, src/modules/registry.ts) in the app layout.
-// The loaders load the page data from the API (src/api/client.ts); after a change the page data is reloaded with useRevalidator.
-export const router = createBrowserRouter([
-    {
-        Component: Root,
-        HydrateFallback: InitialLoading,
-        ErrorBoundary: RouteError,
-        children: [
-            { index: true, loader: indexLoader, Component: NoContent },
-            {
-                id: appRouteId,
-                loader: appLoader,
-                shouldRevalidate: shouldRevalidateApp,
-                Component: AppLayout,
-                children: [
-                    {
-                        // errors of the pages are shown in the app layout
-                        ErrorBoundary: RouteError,
-                        children: [...appModules.flatMap((module) => module.routes), { path: "*", loader: notFound, Component: NoContent }],
-                    },
-                ],
-            },
-        ],
-    },
-]);
-
-function notFound(): never {
-    throw new Response(null, { status: 404 });
+// The app's routes (React Router declarative mode, <BrowserRouter> in src/main.tsx): the pages of the modules (AppModule.pages,
+// src/modules/registry.ts) in the app layout. The pages load their data themselves with TanStack Query (src/api/client.ts).
+export function AppRoutes() {
+    return (
+        <>
+            <ScrollToTop />
+            <Routes>
+                <Route path="/" element={<Navigate to={startPath} replace />} />
+                <Route element={<AppLayout />}>
+                    {appPages.map(({ route, Component }) => (
+                        <Route key={route.path} path={route.path} element={<Component />} />
+                    ))}
+                    <Route path="*" element={<NotFound />} />
+                </Route>
+            </Routes>
+        </>
+    );
 }

@@ -1,9 +1,9 @@
 import type { AnyRouter } from "@trpc/server";
 import type { ComponentType } from "react";
-import type { RouteObject } from "react-router";
 import type { z } from "zod";
 
 import type { ChatPage } from "~/chat/chat";
+import type { RouteDefinition } from "~/routeDefinition";
 
 // The app consists of a core (app shell, authentication, chat assistant, MCP server, database connection) and feature modules.
 // Everything that belongs to a module lives in its folder src/modules/<module>/: database schema, repositories, API procedures,
@@ -12,17 +12,15 @@ import type { ChatPage } from "~/chat/chat";
 
 // The part of a module the app shell uses (browser)
 export type AppModule = {
-    // unique; key of the module's navigation data
+    // unique
     id: string;
-    // the module's pages (React Router route objects), mounted into the app layout (src/router.tsx)
-    routes: RouteObject[];
+    // the module's pages, mounted into the app layout (src/router.tsx)
+    pages: AppPage[];
     // shown in the app's sidebar
     navigation?: {
         // heading of the module's section in the sidebar
         title: string;
-        // loaded by the app layout (src/routes/app.tsx) for every page; the module reads it with useNavigationData
-        loader: () => Promise<unknown>;
-        // onNavigate: closes the sidebar on small screens
+        // loads its data itself (a query, e.g. the user's lists); onNavigate: closes the sidebar on small screens
         Component: ComponentType<{ onNavigate: () => void }>;
     };
     chat?: {
@@ -31,6 +29,13 @@ export type AppModule = {
         // tools that change data: the chat reloads the page data after they ran
         mutatingToolNames?: string[];
     };
+};
+
+// A page of a module: its route (path, params, search params, id, see src/routeDefinition.ts) and its component, which loads its data
+// itself (TanStack Query, see src/api/client.ts)
+export type AppPage = {
+    route: Pick<RouteDefinition, "id" | "path">;
+    Component: ComponentType;
 };
 
 // The part of a module the server uses (API, chat assistant, MCP server)

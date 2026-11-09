@@ -1,36 +1,43 @@
 import { type DataGridProProps, type GridFilterModel, GridLogicOperator, type GridSortModel } from "@mui/x-data-grid-pro";
-import { useLocation, useNavigate, useNavigation } from "react-router";
+import { useEffect } from "react";
+import { useNavigate } from "react-router";
 
-import { type GridFieldConfig, type GridSearch, pageSizeOptions, parseGridSearch, serializeFilterValue } from "~/gridSearch";
-import { parseSearch, stringifySearch } from "~/searchParams";
+import { type GridFieldConfig, type GridSearch, lastPageWithRows, pageSizeOptions, parseGridSearch, serializeFilterValue } from "~/gridSearch";
+import { stringifySearch } from "~/searchParams";
 
 type Options<Search extends GridSearch> = {
-    // the route's validateSearch
-    validateSearch: (search: unknown) => Search;
+    // the current search params (useRouteSearch), the page's query loads the rows for them
+    search: Search;
     // the sortable and filterable fields
     fields: Record<string, GridFieldConfig>;
-    // the number of rows on the server (with the filters applied)
-    rowCount: number;
+    // the query's result: the number of rows on the page and on the server (with the filters applied); undefined before the first result
+    result: { rowsOnPage: number; rowCount: number } | undefined;
+    // the rows for the current search params are loading (the previous result is shown meanwhile: placeholderData: keepPreviousData)
+    loading: boolean;
     // fields with calendar date filters (YYYY-MM-DD), e.g. a due date
     dateOnlyFields?: string[];
 };
 
 // A DataGrid with server-side pagination, sorting and filtering whose state lives in the URL (see src/gridSearch.ts):
-// gridProps connect the grid to the URL, the route's loader loads the rows for it (parseGridSearch on the server).
-export function useServerGrid<Search extends GridSearch>({ validateSearch, fields, rowCount, dateOnlyFields = [] }: Options<Search>) {
-    const location = useLocation();
-    const navigation = useNavigation();
+// gridProps connect the grid to the URL, the page's query loads the rows for it (parseGridSearch on the server).
+// The grid shows a new state (e.g. a filter value while typing) right away, with a loading indicator until its rows are loaded.
+export function useServerGrid<Search extends GridSearch>({ search, fields, result, loading, dateOnlyFields = [] }: Options<Search>) {
     const routerNavigate = useNavigate();
-    // A navigation to other search params of this page: use its location while loading, otherwise the grid would show the old state until
-    // the loader is done (e.g. reset a filter value while typing)
-    const pendingLocation = navigation.location?.pathname === location.pathname ? navigation.location : undefined;
-    const search = validateSearch(parseSearch((pendingLocation ?? location).search));
-    const loading = pendingLocation !== undefined && pendingLocation.search !== location.search;
     const { page, pageSize, sort, filter, filterItems } = parseGridSearch(search, fields);
 
-    // changes the search params of this page (keeps the scroll position)
+    // changes the search params of this page
     const navigate = (newSearch: Search, { replace }: { replace: boolean }) =>
-        void routerNavigate({ search: stringifySearch(newSearch) }, { replace, preventScrollReset: true });
+        void routerNavigate({ search: stringifySearch(newSearch) }, { replace });
+
+    // e.g. after deleting the last row of the last page: go to the last page with rows
+    const lastPage = result && !loading ? lastPageWithRows({ page, pageSize }, result.rowsOnPage, result.rowCount) : undefined;
+    useEffect(() => {
+        if (lastPage !== undefined) {
+            navigate({ ...search, page: lastPage || undefined }, { replace: true });
+        }
+        // only when the result is in
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [lastPage]);
 
     const sortModel: GridSortModel = sort.map(({ field, direction }) => ({ field, sort: direction }));
     const filterModel: GridFilterModel = {
@@ -46,11 +53,12 @@ export function useServerGrid<Search extends GridSearch>({ validateSearch, field
         paginationMode: "server",
         sortingMode: "server",
         filterMode: "server",
-        rowCount,
+        rowCount: result?.rowCount ?? 0,
         loading,
         pageSizeOptions,
-        paginationModel: { page, pageSize },
-        onPaginationModelChange: (model) => navigate({ ...search, page: model.page, pageSize: model.pageSize }, { replace: false }),
+        // the last page with rows right away, the grid would go to the first page itself otherwise
+        paginationModel: { page: lastPage ?? page, pageSize },
+        onPaginationModelChange: (model) => navigate({ ...search, page: model.page || undefined, pageSize: model.pageSize }, { replace: false }),
         sortModel,
         onSortModelChange: (model) =>
             navigate({ ...search, page: undefined, sort: model.map((item) => `${item.field}:${item.sort}`) }, { replace: false }),

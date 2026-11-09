@@ -6,15 +6,29 @@ import type { ChatAdapter, ChatMessage, ChatMessagePart } from "@mui/x-chat/head
 import { useAgent } from "agents/react";
 import { getToolName, isToolUIPart, type UIMessage } from "ai";
 import { useEffect, useMemo, useRef } from "react";
-import { useMatches, useRevalidator } from "react-router";
+import { matchRoutes, useLocation } from "react-router";
 
+import { invalidate } from "~/api/client";
 import { chatAgentPath, type ChatPage, type ChatRequestBody } from "~/chat/chat";
 import { toDateString } from "~/dates";
-import { appModules } from "~/modules/registry";
+import { appModules, appPages } from "~/modules/registry";
 
 const suggestions = appModules.flatMap((module) => module.chat?.suggestions ?? []);
 // tools that change data: the page data is reloaded after they ran
 const mutatingToolNames: ReadonlySet<string> = new Set(appModules.flatMap((module) => module.chat?.mutatingToolNames ?? []));
+
+// The pages the assistant gets context for (with a route id, see RouteDefinition)
+const chatPageRoutes = appPages.flatMap(({ route }) => (route.id === undefined ? [] : [{ id: route.id, path: route.path }]));
+
+// The page shown at a path: its route id and params (e.g. { routeId: "todos/list", params: { listId } })
+function chatPage(pathname: string): ChatPage | undefined {
+    const match = matchRoutes(chatPageRoutes, pathname)?.at(-1);
+    if (!match) {
+        return undefined;
+    }
+    const params = Object.entries(match.params).flatMap(([key, value]) => (value === undefined ? [] : [[key, value] as const]));
+    return { routeId: match.route.id, params: Object.fromEntries(params) };
+}
 
 // The chat with the assistant (src/chat/agent.server.ts).
 //
@@ -22,15 +36,12 @@ const mutatingToolNames: ReadonlySet<string> = new Set(appModules.flatMap((modul
 // after reconnects, tool approvals. MUI X Chat only renders it: its messages are controlled by useAgentChat's messages and its adapter
 // forwards sending, stopping and approvals to useAgentChat.
 export default function ChatPanel({ onClose }: { onClose: () => void }) {
-    const { revalidate } = useRevalidator();
-
-    // The page shown in the app (the deepest route match), sent with every message
-    const matches = useMatches();
+    // The page shown in the app, sent with every message
+    const { pathname } = useLocation();
     const currentPage = useRef<ChatPage | undefined>(undefined);
     useEffect(() => {
-        const match = matches.at(-1);
-        currentPage.current = match ? { routeId: match.id, params: match.params as Record<string, string> } : undefined;
-    }, [matches]);
+        currentPage.current = chatPage(pathname);
+    }, [pathname]);
 
     // the server picks the agent instance of the authenticated user (src/server.ts)
     const agent = useAgent({ agent: "ChatAgent", basePath: chatAgentPath });
@@ -63,7 +74,8 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
         [sendMessage, stop, addToolApprovalResponse],
     );
 
-    // Reload the page data (lists, todos) after the assistant changed something
+    // Reload the data (e.g. the lists in the sidebar, the todos of the page) after the assistant changed something: the tools
+    // of all modules can change anything, so all queries are invalidated
     const handledToolCallIds = useRef(new Set<string>());
     useEffect(() => {
         let changed = false;
@@ -81,9 +93,9 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
             }
         }
         if (changed) {
-            void revalidate();
+            void invalidate();
         }
-    }, [messages, revalidate]);
+    }, [messages]);
 
     const chatMessages = useMemo(() => messages.map(toChatMessage), [messages]);
 

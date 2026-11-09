@@ -19,7 +19,7 @@ const t = initTRPC.context<ApiContext>().create({
 export const router = t.router;
 export const procedure = t.procedure;
 
-// e.g. a list that doesn't exist or belongs to another user; the client's loaders turn it into a 404 page (src/routing.ts)
+// e.g. a list that doesn't exist or belongs to another user; the client's pages show a 404 page for it (useApiQuery in src/routing.tsx)
 export function notFound() {
     return new TRPCError({ code: "NOT_FOUND" });
 }

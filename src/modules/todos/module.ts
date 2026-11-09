@@ -1,17 +1,14 @@
-import { api } from "~/api/client";
 import type { AppModule } from "~/modules/types";
 
 import { ListsNavigation } from "./components/ListsNavigation";
-import { todosModuleId } from "./navigation";
-import { todosRoutes } from "./routes";
+import { todosPages } from "./pages";
 
-// The todos module (todo lists and todos), app shell part. Server part: module.server.ts; pages: routes.tsx (/lists, /lists/:listId).
+// The todos module (todo lists and todos), app shell part. Server part: module.server.ts; pages: pages.ts (/lists, /lists/:listId).
 export const todosModule: AppModule = {
-    id: todosModuleId,
-    routes: todosRoutes,
+    id: "todos",
+    pages: todosPages,
     navigation: {
         title: "Todo lists",
-        loader: () => api.lists.list.query(),
         Component: ListsNavigation,
     },
     chat: {

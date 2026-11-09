@@ -9,55 +9,55 @@ import {
     GridActionsCellItem,
     type GridColDef,
 } from "@mui/x-data-grid-pro";
+import { keepPreviousData } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
-import { type LoaderFunctionArgs, replace, useNavigate, useRevalidator } from "react-router";
+import { useNavigate } from "react-router";
 
-import { api } from "~/api/client";
+import { api, queryClient, trpc } from "~/api/client";
 import { CollectionHeader } from "~/components/CollectionHeader";
 import { useShowError } from "~/components/ErrorSnackbar";
+import { PageLoading } from "~/components/PageLoading";
 import { useMutate } from "~/components/useMutate";
 import { useServerGrid } from "~/components/useServerGrid";
 import { fromDateString, toDateString, useToday } from "~/dates";
-import { lastPageWithRows, supportedOperators, validateGridSearch } from "~/gridSearch";
-import { loadOrNotFound, requestSearch, useLoaderResult, usePageTitle } from "~/routing";
-import { stringifySearch } from "~/searchParams";
+import { supportedOperators } from "~/gridSearch";
+import { useApiQuery, usePageTitle, useRouteParams, useRouteSearch } from "~/routing";
 
 import type { Todo } from "../db/todos.server";
 import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "../limits";
-import { useLists } from "../navigation";
 import { isOverdue } from "../overdue";
-import { listPath } from "../paths";
-import { parseTodoSearch, todoFields } from "../todoSearch";
+import { defaultListRoute, listRoute } from "../paths";
+import { invalidateTodos, useLists } from "../queries";
+import { todoFields } from "../todoSearch";
 
 // /lists/:listId: the todos of a list. The grid state (pagination, sorting, filtering) lives in the URL.
-export async function listLoader({ params, request }: LoaderFunctionArgs) {
-    const listId = params.listId ?? "";
-    const search = validateGridSearch(requestSearch(request));
-    const result = await loadOrNotFound(api.todos.list.query({ listId, ...search }, { signal: request.signal }));
-
-    // e.g. after deleting the last todo of the last page
-    const lastPage = lastPageWithRows(parseTodoSearch(search), result.todos.length, result.totalCount);
-    if (lastPage !== undefined) {
-        throw replace(listPath(listId) + stringifySearch({ ...search, page: lastPage || undefined }));
-    }
-
-    return result;
+export function ListPage() {
+    const { listId } = useRouteParams(listRoute);
+    // a fresh page per list (e.g. the form), the todos of the previous list aren't shown while the list is loading
+    return <ListView key={listId} listId={listId} />;
 }
 
-export function ListPage() {
-    const { list, todos, totalCount } = useLoaderResult<typeof listLoader>();
-    const lists = useLists();
-    const { revalidate } = useRevalidator();
+function ListView({ listId }: { listId: string }) {
+    const search = useRouteSearch(listRoute);
+    // while the todos for new search params are loading, the grid shows the previous ones (with a loading indicator)
+    const { data, isPlaceholderData } = useApiQuery(trpc.todos.list.queryOptions({ listId, ...search }, { placeholderData: keepPreviousData }));
+    const lists = useLists() ?? [];
     const showError = useShowError();
-    const mutate = useMutate();
+    const mutate = useMutate(invalidateTodos);
     const today = useToday();
     const { updateSearch, gridProps } = useServerGrid({
-        validateSearch: validateGridSearch,
+        search,
         fields: todoFields,
-        rowCount: totalCount,
+        result: data && { rowsOnPage: data.todos.length, rowCount: data.totalCount },
+        loading: isPlaceholderData,
         dateOnlyFields: ["dueDate"],
     });
-    usePageTitle(list.name);
+    usePageTitle(data?.list.name);
+
+    if (!data) {
+        return <PageLoading />;
+    }
+    const { list, todos } = data;
 
     const columns: GridColDef<Todo>[] = [
         {
@@ -148,7 +148,7 @@ export function ListPage() {
         <Container sx={{ py: 4 }}>
             <Stack spacing={2}>
                 <ListHeader list={list} />
-                <CreateTodoForm key={list.id} listId={list.id} onCreated={() => void revalidate()} />
+                <CreateTodoForm key={list.id} listId={list.id} onCreated={() => void invalidateTodos()} />
                 <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
                     <Button
                         startIcon={<Warning />}
@@ -181,7 +181,7 @@ export function ListPage() {
                             };
                             if (Object.keys(changes).length > 0) {
                                 await api.todos.update.mutate({ id: newRow.id, ...changes });
-                                void revalidate();
+                                void invalidateTodos();
                             }
                             return { ...newRow, title };
                         }}
@@ -197,7 +197,6 @@ export function ListPage() {
 }
 
 function ListHeader({ list }: { list: { id: string; name: string } }) {
-    const { revalidate } = useRevalidator();
     const navigate = useNavigate();
 
     return (
@@ -209,16 +208,16 @@ function ListHeader({ list }: { list: { id: string; name: string } }) {
             onRename={async (name) => {
                 const result = await api.lists.rename.mutate({ id: list.id, name });
                 if (result.error === null) {
-                    await revalidate();
+                    await invalidateTodos();
                 }
                 return result.error;
             }}
             onDelete={async () => {
                 await api.lists.delete.mutate({ id: list.id });
-                // redirects to the first remaining list (or creates a new one)
-                await navigate("/lists", { replace: true });
-                // the sidebar's lists aren't reloaded by the navigation (the layout route's loader data is reused)
-                await revalidate();
+                // redirects to the first remaining list (or creates a new one) and reloads the lists in the sidebar
+                await navigate(defaultListRoute.href(), { replace: true });
+                // not reloaded now (the page is being left), but when it is shown again (e.g. browser back: 404)
+                await queryClient.invalidateQueries({ ...trpc.todos.list.queryFilter({ listId: list.id }), refetchType: "none" });
             }}
         />
     );

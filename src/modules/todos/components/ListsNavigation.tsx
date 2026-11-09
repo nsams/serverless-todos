@@ -4,12 +4,12 @@ import { api } from "~/api/client";
 import { NavigationList } from "~/components/NavigationList";
 
 import { maxListNameLength } from "../limits";
-import { useLists } from "../navigation";
-import { listPath } from "../paths";
+import { listRoute } from "../paths";
+import { invalidateLists, useLists } from "../queries";
 
 // The user's lists in the app's sidebar
 export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
-    const lists = useLists();
+    const lists = useLists() ?? [];
     const navigate = useNavigate();
 
     return (
@@ -17,7 +17,7 @@ export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
             items={lists.map((list) => ({
                 id: list.id,
                 name: list.name,
-                path: listPath(list.id),
+                path: listRoute.href({ listId: list.id }),
                 count: list.openCount,
                 countLabel: `${list.openCount} open`,
             }))}
@@ -26,7 +26,9 @@ export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
             onCreate={async (name) => {
                 const result = await api.lists.create.mutate({ name });
                 if (result.id !== null) {
-                    await navigate(listPath(result.id));
+                    await navigate(listRoute.href({ listId: result.id }));
+                    // the new list in the sidebar
+                    await invalidateLists();
                 }
                 return result.error;
             }}

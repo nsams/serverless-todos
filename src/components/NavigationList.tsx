@@ -1,14 +1,14 @@
 import { Add } from "@dextinity/admin-icons";
 import { Divider, List, ListItemButton, ListItemIcon, ListItemText, Typography } from "@mui/material";
 import { useState } from "react";
-import { Link, useMatch, useRevalidator } from "react-router";
+import { Link, useMatch } from "react-router";
 
 import { NameDialog } from "./NameDialog";
 
 export type NavigationItem = {
     id: string;
     name: string;
-    // the item's page, e.g. listPath(listId)
+    // the item's page, e.g. listRoute.href({ listId })
     path: string;
     // shown next to the name if > 0, e.g. the number of open todos
     count?: number;
@@ -21,7 +21,7 @@ type Props = {
     // e.g. "New list": button and dialog title
     createLabel: string;
     maxNameLength: number;
-    // creates an item and navigates to it; returns an error message, or null on success
+    // creates an item, reloads the sidebar's data and navigates to the item; returns an error message, or null on success
     onCreate: (name: string) => Promise<string | null>;
     // closes the sidebar on small screens
     onNavigate: () => void;
@@ -29,7 +29,6 @@ type Props = {
 
 // A module's items in the app's sidebar (e.g. the todo lists, the notebooks) with a button to create one
 export function NavigationList({ items, createLabel, maxNameLength, onCreate, onNavigate }: Props) {
-    const { revalidate } = useRevalidator();
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
     const handleCreate = async (name: string) => {
@@ -37,8 +36,6 @@ export function NavigationList({ items, createLabel, maxNameLength, onCreate, on
         if (error === null) {
             setCreateDialogOpen(false);
             onNavigate();
-            // the new item: the sidebar's data isn't reloaded by the navigation (the layout route's loader data is reused)
-            await revalidate();
         }
         return error;
     };

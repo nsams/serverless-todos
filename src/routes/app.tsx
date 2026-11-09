@@ -1,24 +1,17 @@
 import { Chatbot, Hamburger, Logout } from "@dextinity/admin-icons";
 import { AppBar, Box, CircularProgress, Divider, Drawer, IconButton, ListSubheader, Toolbar, Typography } from "@mui/material";
 import { Fragment, lazy, Suspense, useState } from "react";
-import { Outlet, type ShouldRevalidateFunctionArgs } from "react-router";
+import { Outlet } from "react-router";
 
-import { api } from "~/api/client";
+import { trpc } from "~/api/client";
 import { appName } from "~/app";
-import { appModules, loadNavigationData } from "~/modules/registry";
-import { useLoaderResult } from "~/routing";
+import { appModules } from "~/modules/registry";
+import { useApiQuery } from "~/routing";
 
-// Layout of the app pages: app bar and the navigation of the modules in a sidebar (route id appRouteId, src/modules/navigation.ts)
-export async function appLoader() {
-    const [user, navigation] = await Promise.all([api.user.query(), loadNavigationData()]);
-    return { user, navigation };
-}
+import { RouteErrorBoundary } from "./root";
 
-// The navigation data (e.g. the sidebar's lists) is reloaded when the page data is reloaded explicitly (useRevalidator, e.g. after a change),
-// not on every change of the search params (e.g. a grid's filter)
-export function shouldRevalidateApp({ currentUrl, nextUrl, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {
-    return currentUrl.href === nextUrl.href && defaultShouldRevalidate;
-}
+// Layout of the app pages: app bar and the navigation of the modules in a sidebar. The sidebar's data is loaded by the modules'
+// navigation components (cached, so not reloaded on every page or change of the search params; reloaded after changes by invalidation)
 
 const drawerWidth = 260;
 const chatWidth = 420;
@@ -27,7 +20,7 @@ const chatWidth = 420;
 const ChatPanel = lazy(() => import("~/components/ChatPanel"));
 
 export function AppLayout() {
-    const { user } = useLoaderResult<typeof appLoader>();
+    const user = useApiQuery(trpc.user.queryOptions()).data;
     const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
     const [chatOpen, setChatOpen] = useState(false);
     // stays mounted once opened, so the conversation (and a running answer) survives closing the panel
@@ -73,7 +66,7 @@ export function AppLayout() {
                     <Typography variant="h6" sx={{ flexGrow: 1 }}>
                         {appName}
                     </Typography>
-                    <Typography sx={{ mr: 1, display: { xs: "none", sm: "block" } }}>{user.email}</Typography>
+                    <Typography sx={{ mr: 1, display: { xs: "none", sm: "block" } }}>{user?.email}</Typography>
                     <IconButton color="inherit" aria-label="Assistant" aria-pressed={chatOpen} onClick={toggleChat}>
                         <Chatbot />
                     </IconButton>
@@ -99,7 +92,10 @@ export function AppLayout() {
             {/* on wide screens the open chat takes space from the page instead of covering it */}
             <Box component="main" sx={{ flexGrow: 1, minWidth: 0, mr: { lg: chatOpen ? `${chatWidth}px` : 0 } }}>
                 <Toolbar />
-                <Outlet />
+                {/* errors of the pages (e.g. 404) are shown within the layout */}
+                <RouteErrorBoundary>
+                    <Outlet />
+                </RouteErrorBoundary>
             </Box>
             <Drawer anchor="right" variant="persistent" open={chatOpen} sx={{ "& .MuiDrawer-paper": { width: { xs: "100%", sm: chatWidth } } }}>
                 {/* space for the app bar */}
