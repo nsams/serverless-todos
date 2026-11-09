@@ -1,22 +1,26 @@
 import type { ComponentType } from "react";
+import type { RouteObject } from "react-router";
 import type { z } from "zod";
 
 import type { ChatPage } from "~/chat/chat";
 
 // The app consists of a core (app shell, authentication, chat assistant, MCP server, database connection) and feature modules.
-// Everything that belongs to a module lives in its folder src/modules/<module>/: database schema, repositories, server functions,
-// routes, components, AI tools. The core only knows the modules through the registries (src/modules/registry.ts, registry.server.ts)
+// Everything that belongs to a module lives in its folder src/modules/<module>/: database schema, repositories, REST API,
+// routes (pages), components, AI tools. The core only knows the modules through the registries (src/modules/registry.ts, registry.server.ts)
 // and the interfaces below.
 
-// The part of a module the app shell uses (browser and server rendering)
+// The part of a module the app shell uses (browser)
 export type AppModule = {
     // unique; key of the module's navigation data
     id: string;
+    // the module's pages (React Router), rendered in the app layout (src/client/AppLayout.tsx). Their ids are their paths
+    // (e.g. "/lists/:listId"): the chat assistant gets the id of the page shown, see ServerModule.chatContext.
+    routes: RouteObject[];
     // shown in the app's sidebar
     navigation?: {
         // heading of the module's section in the sidebar
         title: string;
-        // loaded by the app layout (src/routes/_app.tsx) for every page; the module reads it with useNavigationData
+        // loaded by the app layout (src/client/AppLayout.tsx), reloaded after changes; the module reads it with useNavigationData
         loader: () => Promise<unknown>;
         // onNavigate: closes the sidebar on small screens
         Component: ComponentType<{ onNavigate: () => void }>;
@@ -29,7 +33,7 @@ export type AppModule = {
     };
 };
 
-// The part of a module the server uses (chat assistant, MCP server)
+// The part of a module the server uses (chat assistant, MCP server). Its REST API is mounted by src/modules/registry.server.ts.
 export type ServerModule = {
     // the module's tools for the AI assistants, scoped to the authenticated user (userId is never chosen by the model)
     createTools(userId: string): Record<string, AppTool>;

@@ -9,61 +9,61 @@ import {
     GridActionsCellItem,
     type GridColDef,
 } from "@mui/x-data-grid-pro";
-import { createFileRoute, redirect, useNavigate, useRouter } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
+import { type InferRequestType, parseResponse } from "hono/client";
 import { type FormEvent, useState } from "react";
+import { generatePath, type LoaderFunctionArgs, replace, useLoaderData, useNavigate, useRevalidator } from "react-router";
 
-import { appName } from "~/app";
+import { api, loadResponse } from "~/api/client";
+import { pathParam } from "~/client/params";
 import { CollectionHeader } from "~/components/CollectionHeader";
 import { useShowError } from "~/components/ErrorSnackbar";
+import { useDocumentTitle } from "~/components/useDocumentTitle";
 import { useMutate } from "~/components/useMutate";
 import { useServerGrid } from "~/components/useServerGrid";
 import { fromDateString, toDateString, useToday } from "~/dates";
 import { lastPageWithRows, supportedOperators, validateGridSearch } from "~/gridSearch";
+import { readSearch, stringifySearch, toQuery } from "~/searchParams";
 
-import type { Todo } from "../db/todos.server";
 import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "../limits";
-import { deleteList, renameList } from "../lists.functions";
 import { useLists } from "../navigation";
 import { isOverdue } from "../overdue";
-import { createTodo, deleteTodo, listTodos, updateTodo } from "../todos.functions";
+import { listPath, listsPath } from "../paths";
 import { parseTodoSearch, todoFields } from "../todoSearch";
 
-export const Route = createFileRoute("/_app/lists/$listId")({
-    validateSearch: validateGridSearch,
-    loaderDeps: ({ search }) => search,
-    loader: async ({ params: { listId }, deps }) => {
-        const result = await listTodos({ data: { listId, ...deps } });
+// The todos of a list in a grid (pagination, sorting, filtering on the server, state in the URL)
+export async function listLoader({ params, request }: LoaderFunctionArgs) {
+    const listId = pathParam(params, "listId");
+    const search = readSearch(new URL(request.url).search, validateGridSearch);
+    const result = await loadResponse(api.lists[":listId"].todos.$get({ param: { listId }, query: toQuery(search) }));
 
-        // e.g. after deleting the last todo of the last page
-        const lastPage = lastPageWithRows(parseTodoSearch(deps), result.todos.length, result.totalCount);
-        if (lastPage !== undefined) {
-            throw redirect({ to: "/lists/$listId", params: { listId }, search: { ...deps, page: lastPage || undefined } });
-        }
+    // e.g. after deleting the last todo of the last page
+    const lastPage = lastPageWithRows(parseTodoSearch(search), result.todos.length, result.totalCount);
+    if (lastPage !== undefined) {
+        throw replace(generatePath(listPath, { listId }) + stringifySearch({ ...search, page: lastPage || undefined }));
+    }
 
-        return result;
-    },
-    head: ({ loaderData }) => ({ meta: [{ title: loaderData ? `${loaderData.list.name} – ${appName}` : appName }] }),
-    component: Todos,
-});
+    return result;
+}
 
-function Todos() {
-    const { list, todos, totalCount } = Route.useLoaderData();
+type Todo = Awaited<ReturnType<typeof listLoader>>["todos"][number];
+
+export function ListPage() {
+    const { list, todos, totalCount } = useLoaderData<typeof listLoader>();
     const lists = useLists();
-    const navigate = Route.useNavigate();
-    const router = useRouter();
-    const updateTodoFn = useServerFn(updateTodo);
-    const deleteTodoFn = useServerFn(deleteTodo);
+    const { revalidate } = useRevalidator();
     const showError = useShowError();
     const mutate = useMutate();
     const today = useToday();
     const { updateSearch, gridProps } = useServerGrid({
         validateSearch: validateGridSearch,
         fields: todoFields,
-        navigate: (search, { replace }) => void navigate({ search, replace, resetScroll: false }),
         rowCount: totalCount,
         dateOnlyFields: ["dueDate"],
     });
+    useDocumentTitle(list.name);
+
+    const updateTodo = (todoId: string, changes: InferRequestType<(typeof api.todos)[":todoId"]["$patch"]>["json"]) =>
+        parseResponse(api.todos[":todoId"].$patch({ param: { todoId }, json: changes }));
 
     const columns: GridColDef<Todo>[] = [
         {
@@ -75,7 +75,7 @@ function Todos() {
             renderCell: ({ row }) => (
                 <Checkbox
                     checked={row.done}
-                    onChange={(event) => void mutate(updateTodoFn({ data: { id: row.id, done: event.target.checked } }))}
+                    onChange={(event) => void mutate(updateTodo(row.id, { done: event.target.checked }))}
                     slotProps={{ input: { "aria-label": `Mark “${row.title}” as ${row.done ? "open" : "done"}` } }}
                 />
             ),
@@ -124,6 +124,8 @@ function Todos() {
             type: "dateTime",
             width: 180,
             filterOperators: supportedOperators(getGridDateOperators(true), todoFields.createdAt.operators),
+            // an ISO string in the API's JSON
+            valueGetter: (value: string) => new Date(value),
         },
         {
             field: "actions",
@@ -133,7 +135,7 @@ function Todos() {
                     key="delete"
                     icon={<Delete />}
                     label="Delete"
-                    onClick={() => void mutate(deleteTodoFn({ data: { id: row.id } }))}
+                    onClick={() => void mutate(parseResponse(api.todos[":todoId"].$delete({ param: { todoId: row.id } })))}
                 />,
                 ...lists
                     .filter((otherList) => otherList.id !== list.id)
@@ -143,7 +145,7 @@ function Todos() {
                             icon={<Move />}
                             label={`Move to “${otherList.name}”`}
                             showInMenu
-                            onClick={() => void mutate(updateTodoFn({ data: { id: row.id, listId: otherList.id } }))}
+                            onClick={() => void mutate(updateTodo(row.id, { listId: otherList.id }))}
                         />
                     )),
             ],
@@ -154,15 +156,12 @@ function Todos() {
         <Container sx={{ py: 4 }}>
             <Stack spacing={2}>
                 <ListHeader list={list} />
-                <CreateTodoForm key={list.id} listId={list.id} onCreated={() => void router.invalidate()} />
+                <CreateTodoForm key={list.id} listId={list.id} onCreated={() => void revalidate()} />
                 <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
                     <Button
                         startIcon={<Warning />}
                         color="error"
-                        disabled={today === null}
-                        onClick={() =>
-                            today !== null && updateSearch({ filter: [`dueDate:before:${today}`, "done:is:false"], filterLogic: undefined })
-                        }
+                        onClick={() => updateSearch({ filter: [`dueDate:before:${today}`, "done:is:false"], filterLogic: undefined })}
                     >
                         Show overdue
                     </Button>
@@ -189,8 +188,8 @@ function Todos() {
                                 ...(newRow.dueDate !== oldRow.dueDate && { dueDate: newRow.dueDate }),
                             };
                             if (Object.keys(changes).length > 0) {
-                                await updateTodoFn({ data: { id: newRow.id, ...changes } });
-                                void router.invalidate();
+                                await updateTodo(newRow.id, changes);
+                                void revalidate();
                             }
                             return { ...newRow, title };
                         }}
@@ -206,10 +205,8 @@ function Todos() {
 }
 
 function ListHeader({ list }: { list: { id: string; name: string } }) {
-    const router = useRouter();
+    const { revalidate } = useRevalidator();
     const navigate = useNavigate();
-    const renameListFn = useServerFn(renameList);
-    const deleteListFn = useServerFn(deleteList);
 
     return (
         <CollectionHeader
@@ -218,25 +215,26 @@ function ListHeader({ list }: { list: { id: string; name: string } }) {
             deleteText={`“${list.name}” and all its todos will be deleted.`}
             maxNameLength={maxListNameLength}
             onRename={async (name) => {
-                const result = await renameListFn({ data: { id: list.id, name } });
-                if (result.error === null) {
-                    await router.invalidate();
+                const response = await api.lists[":listId"].$patch({ param: { listId: list.id }, json: { name } });
+                if (response.status === 422) {
+                    return (await response.json()).error;
                 }
-                return result.error;
+                await parseResponse(response);
+                await revalidate();
+                return null;
             }}
             onDelete={async () => {
-                await deleteListFn({ data: { id: list.id } });
+                await parseResponse(api.lists[":listId"].$delete({ param: { listId: list.id } }));
                 // redirects to the first remaining list (or creates a new one)
-                await navigate({ to: "/lists", replace: true });
-                // the sidebar's lists aren't reloaded by the navigation (the layout route's loader data is reused)
-                await router.invalidate();
+                await navigate(listsPath, { replace: true });
+                // the sidebar's lists aren't reloaded by the navigation (the app layout's loader data is reused)
+                await revalidate();
             }}
         />
     );
 }
 
 function CreateTodoForm({ listId, onCreated }: { listId: string; onCreated: () => void }) {
-    const createTodoFn = useServerFn(createTodo);
     const [pending, setPending] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -246,19 +244,22 @@ function CreateTodoForm({ listId, onCreated }: { listId: string; onCreated: () =
         const formData = new FormData(form);
         setPending(true);
         try {
-            const result = await createTodoFn({
-                data: {
-                    listId,
+            const response = await api.lists[":listId"].todos.$post({
+                param: { listId },
+                json: {
                     title: String(formData.get("title") ?? ""),
                     description: String(formData.get("description") ?? ""),
                     dueDate: String(formData.get("dueDate") ?? "") || null,
                 },
             });
-            setError(result.error);
-            if (result.error === null) {
-                form.reset();
-                onCreated();
+            if (response.status === 422) {
+                setError((await response.json()).error);
+                return;
             }
+            await parseResponse(response);
+            setError(null);
+            form.reset();
+            onCreated();
         } catch (error) {
             console.error(error);
             setError("Saving failed, please try again.");

@@ -1,16 +1,16 @@
 import { cloudflare } from "@cloudflare/vite-plugin";
-import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 import { cloudflareAiDevProxy } from "./cloudflareAiDevProxy";
 
+// The app (index.html, src/client/main.tsx) is built as single-page application into static assets, the worker (src/server.ts: REST API,
+// chat, MCP server) by the Cloudflare plugin; both are served by the dev server, the worker in the Workers runtime (workerd)
 export default defineConfig({
     plugins: [
         // before the Cloudflare plugin, which handles all other requests
         cloudflareAiDevProxy(),
         cloudflare({
-            viteEnvironment: { name: "ssr" },
             config: () => ({
                 // Local simulation of Cloudflare Access (sets `ctx.access` on every request), configured in .env/.env.local; not set in production builds
                 ...(process.env.DEV_USER_EMAIL && process.env.ACCESS_AUD
@@ -35,8 +35,6 @@ export default defineConfig({
             // calls the model through cloudflareAiDevProxy instead (see src/chat/model.server.ts)
             remoteBindings: false,
         }),
-        // the routes of the modules live in their module folders, see src/routes.ts
-        tanstackStart({ router: { virtualRouteConfig: "./src/routes.ts" } }),
         viteReact(),
     ],
     server: {
