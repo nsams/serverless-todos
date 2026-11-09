@@ -9,18 +9,19 @@
     },
     "main": "src/server.ts",
     // served on workers.dev, protected by Cloudflare Access (see README); preview URLs would need their own Access setup
+    // (keep in sync with terraform/worker.tf, like `observability`)
     "workers_dev": true,
     "preview_urls": false,
     // overridden locally by .env
     "vars": {
         // https://<team-name>.cloudflareaccess.com (public; used to verify the Access JWT)
         "ACCESS_TEAM_DOMAIN": "https://vivid-planet-sandbox.cloudflareaccess.com",
-        // Application Audience (AUD) Tag of the Access application (public, part of every Access JWT)
+        // Application Audience (AUD) Tag of the Access application (public, part of every Access JWT; Terraform output `access_aud`)
         "ACCESS_AUD": "dcacc8dc414027c9cafbca4e91f53dcacd16c652f18fee944fd50b646850a67d",
         // Model of the chat assistant: a Workers AI model with function calling (https://developers.cloudflare.com/ai/models/),
         // e.g. "@cf/zai-org/glm-4.7-flash" or the larger "@cf/moonshotai/kimi-k2.6"
         "AI_MODEL": "@cf/zai-org/glm-4.7-flash",
-        // AI Gateway the model requests go through (logs, spend limits); "default" is created on first use
+        // AI Gateway the model requests go through (logs, spend limits), managed by Terraform (terraform/ai_gateway.tf)
         "AI_GATEWAY_ID": "default",
     },
     // Workers AI / AI Gateway (no provider API keys: billed through the Cloudflare account). Always remote, also in local development.
@@ -39,8 +40,9 @@
     "d1_databases": [
         {
             "binding": "DB",
-            // no database_id: `wrangler deploy` creates the database on first deploy (or connects to an existing one with this name)
+            // the database is managed by Terraform (terraform/, output `d1_database_id`)
             "database_name": "serverless-todos",
+            "database_id": "f4c2f1bc-c042-4aac-9246-0ae08b4e34d1",
             "migrations_dir": "drizzle",
         },
     ],

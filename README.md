@@ -90,10 +90,10 @@ The assistant (chat panel, robot button in the app bar) works with the tools of 
 - **Agent** (`src/chat/agent.server.ts`): an `AIChatAgent` ([Cloudflare Agents SDK](https://developers.cloudflare.com/agents/)), a Durable Object per user (instance name = user id). It keeps the chat history in its SQLite storage, streams the answers over a WebSocket (resumed after reconnects, in sync across tabs) and calls the model with the [AI SDK](https://ai-sdk.dev) (`streamText`).
 - **Tools** (`AppTool` of the modules, e.g. `src/modules/todos/tools.server.ts`, as AI SDK tools in `src/chat/tools.server.ts`): e.g. list/create/rename/delete lists, find/create/update/delete todos, find/read/create/update notes, directly on the repositories (the agent runs in the same worker, it doesn't go through the MCP server). The user id comes from the authentication, never from the model. Deleting needs the user's confirmation in the chat (`needsApproval`). The client sends its local date and the current page (route and params) with every message (`src/chat/chat.ts`), for relative due dates; the modules turn the page into context for the system prompt (`ServerModule.chatContext`), e.g. the current list as default list for new todos, or the open note.
 - **Routing/auth** (`src/server.ts`): the client connects to `/chat-agent`; the worker authenticates the request like any other (Cloudflare Access), rejects foreign origins (WebSockets aren't protected by CORS) and forwards it to the agent of the authenticated user. The Agents SDK's default routes (`/agents/...`) are not exposed.
-- **Model** (`src/chat/model.server.ts`, `AI_MODEL` in `wrangler.jsonc`, default `@cf/zai-org/glm-4.7-flash`): a [Workers AI](https://developers.cloudflare.com/workers-ai/) model with function calling ([catalog](https://developers.cloudflare.com/ai/models/), e.g. also `@cf/moonshotai/kimi-k2.6`): run by Cloudflare, billed through the Cloudflare account (Workers AI pricing), no provider API key. Via the AI binding (`createAI` from `agents/models/ai-sdk`); in development via the AI Gateway REST API (see [Development](#development)). Requests go through the AI Gateway `AI_GATEWAY_ID` (default `default`, created on first use): logs, spend limits, rate limits.
+- **Model** (`src/chat/model.server.ts`, `AI_MODEL` in `wrangler.jsonc`, default `@cf/zai-org/glm-4.7-flash`): a [Workers AI](https://developers.cloudflare.com/workers-ai/) model with function calling ([catalog](https://developers.cloudflare.com/ai/models/), e.g. also `@cf/moonshotai/kimi-k2.6`): run by Cloudflare, billed through the Cloudflare account (Workers AI pricing), no provider API key. Via the AI binding (`createAI` from `agents/models/ai-sdk`); in development via the AI Gateway REST API (see [Development](#development)). Requests go through the AI Gateway `AI_GATEWAY_ID` (default `default`, managed by Terraform, see [Cloudflare infrastructure](#cloudflare-infrastructure-terraform)): logs, spend limits, rate limits.
 - **UI** (`src/components/ChatPanel.tsx`): [MUI X Chat](https://mui.com/x/react-chat/) (`ChatBox`, alpha) renders the conversation of `useAgentChat`: its messages are controlled by `useAgentChat`, its adapter forwards sending, stopping and tool approvals. After a tool changed data (`AppModule.chat.mutatingToolNames`) the page data is reloaded (`router.invalidate()`).
 
-Setup (once per Cloudflare account): set a spend limit on the AI Gateway (dashboard → AI → AI Gateway). Some Workers AI models need the Workers Paid plan.
+Setup: set a spend limit on the AI Gateway (`ai_spend_limit_usd` in `terraform/terraform.tfvars`). Some Workers AI models need the Workers Paid plan.
 
 ## MCP server (external AI clients)
 
@@ -102,12 +102,7 @@ The same tools as the chat assistant are available to external AI clients (Claud
 - **Server** (`src/mcp/mcp.server.ts`): an `McpServer` of the [MCP TypeScript SDK](https://ts.sdk.modelcontextprotocol.io/v2/) (v2) with the tools of the modules, served stateless over Streamable HTTP with `createMcpHandler` of the Agents SDK (no Durable Object, no MCP session; current and 2025 protocol versions). Read-only tools are annotated as such, deleting tools as destructive: MCP clients ask the user for confirmation depending on their settings.
 - **Login**: with Cloudflare Access [managed OAuth](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/), Access is the OAuth authorization server for MCP clients (discovery, dynamic client registration, tokens): the client opens the browser, the user signs in with Entra ID like in the app (same Access policies), the client gets an OAuth token. Access verifies the token on every request and forwards it with the Access JWT of the user, like a browser session. So the app has no OAuth code of its own: `src/server.ts` authenticates `/mcp` requests like all others (`src/auth.server.ts`), rejects foreign origins and passes the user to the MCP server; every tool is scoped to that user.
 
-Setup (once, Zero Trust dashboard → Access controls → Applications → the application of the worker → Edit → Advanced settings):
-
-1. Turn on **Managed OAuth**.
-2. **Allowed redirect URIs**: `https://claude.ai/api/mcp/auth_callback` and `https://claude.com/api/mcp/auth_callback` (Claude Desktop and claude.ai connect through Anthropic's servers), plus the redirect URIs of other web-based MCP clients.
-3. **Allow localhost clients** and **Allow loopback clients** for local clients like Claude Code or the MCP Inspector.
-4. Recommended: **Access token lifetime** 15 minutes, **Grant session duration** e.g. 2 weeks (the client refreshes the token in the background, Access re-evaluates its policies on each refresh; afterwards the user signs in again).
+Setup: managed OAuth is configured on the Access application by Terraform (`oauth_configuration` in `terraform/access.tf`): dynamic client registration with the redirect URIs of Claude Desktop and claude.ai (`https://claude.ai/api/mcp/auth_callback`, `https://claude.com/api/mcp/auth_callback`; they connect through Anthropic's servers; more web-based MCP clients in `mcp_oauth_allowed_redirect_uris`), localhost and loopback clients allowed (Claude Code, MCP Inspector), access token lifetime 15 minutes, grant session duration 2 weeks (the client refreshes the token in the background, Access re-evaluates its policies on each refresh; afterwards the user signs in again).
 
 Browser users aren't affected: Access only answers non-browser clients with `401` and OAuth discovery instead of the redirect to the login page.
 
@@ -139,11 +134,44 @@ Migrations are applied before the new code is deployed (`npm run deploy`), so th
 
 Deploy with `npm run deploy` (build, apply pending D1 migrations, deploy), either locally or with [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/) (Git integration): leave the build command empty and set the deploy command to `npm run deploy`.
 
-1. The D1 database doesn't need to be created manually: `wrangler.jsonc` has no `database_id`, so the first `wrangler deploy` creates a database named `serverless-todos` (or connects to an existing one with that name). As `npm run deploy` applies the migrations before deploying, the very first deployment (no database yet) is done with `npm run build && npx wrangler deploy`, followed by `npm run deploy`.
-2. Set up Cloudflare Access (Zero Trust dashboard):
-    1. Add Microsoft Entra ID as identity provider (Settings → Authentication → Login methods), see the [Cloudflare docs](https://developers.cloudflare.com/cloudflare-one/identity/idp-integration/entra-id/).
-    2. Protect the `workers.dev` URL: Workers & Pages → serverless-todos → Settings → Domains & Routes → `workers.dev` → Enable Cloudflare Access. This creates an Access application for the URL (preview URLs are disabled in `wrangler.jsonc`).
-    3. Edit that Access application (Zero Trust → Access → Applications): use Entra ID as the only login method and a policy that allows the intended users (e.g. an Entra group or email domain).
-    4. For the MCP server: turn on managed OAuth on that Access application, see [MCP server](#mcp-server-external-ai-clients).
-    5. Set `ACCESS_TEAM_DOMAIN` (`https://<team-name>.cloudflareaccess.com`, see Zero Trust → Settings → Team name and domain) and `ACCESS_AUD` (the Application Audience (AUD) Tag on the application's overview) in `wrangler.jsonc`.
-3. Deploy: `npm run deploy`
+The code is deployed by wrangler, the infrastructure around it is managed by Terraform (see below). In a new account: `terraform apply` first (creates the Worker, the database, Access, the AI Gateway), set `ACCESS_AUD` (output `access_aud`) and `database_id` (output `d1_database_id`) in `wrangler.jsonc`, then `npm run deploy`.
+
+## Cloudflare infrastructure (Terraform)
+
+`terraform/` manages everything around the code in the Cloudflare account ([Cloudflare provider](https://registry.terraform.io/providers/cloudflare/cloudflare/latest/docs) v5):
+
+- `worker.tf`: the Worker itself (`cloudflare_worker`: name, `workers.dev` URL on, preview URLs off, Workers Logs). Its versions (code, bindings, vars, Durable Object migrations) are deployed by wrangler from `wrangler.jsonc`; Terraform only tracks that the Worker exists. `workers_dev`, `preview_urls` and `observability` are applied by both, keep them in sync.
+- `d1.tf`: the D1 database (its schema is migrated by wrangler, `drizzle/`)
+- `access.tf`: Cloudflare Access: Microsoft Entra ID as identity provider, a reusable policy (who may use the app: email domains, single emails, Entra groups), the Access application that protects the Worker (on all its hostnames, Entra ID as the only login method) with managed OAuth for the MCP server
+- `ai_gateway.tf`: the AI Gateway of the chat assistant, with an optional spend limit
+
+Not managed: the Zero Trust organization (team name and domain, account-wide settings), the account's `workers.dev` subdomain, the Entra ID app registration itself (Entra admin center, see the [Cloudflare docs](https://developers.cloudflare.com/cloudflare-one/identity/idp-integration/entra-id/)).
+
+`prevent_destroy` protects the Worker (its Durable Objects hold the chat histories), the database and the identity provider (account-wide) from being deleted by Terraform.
+
+Setup:
+
+1. Install [Terraform](https://developer.hashicorp.com/terraform/install) (>= 1.7) or [OpenTofu](https://opentofu.org).
+2. Create a Cloudflare API token (dashboard → Manage account → Account API tokens) with the permissions _Account > Workers Scripts > Edit_, _Account > D1 > Edit_, _Account > AI Gateway > Edit_, _Account > Access: Apps and Policies > Edit_, _Account > Access: Organizations, Identity Providers, and Groups > Edit_ and set it as `CLOUDFLARE_API_TOKEN` in the shell that runs Terraform (only there: wrangler would use it for deploying too).
+3. `cp terraform/terraform.tfvars.example terraform/terraform.tfvars` and fill it in (Entra ID app registration, who may use the app, spend limit).
+
+```bash
+cd terraform
+terraform init
+terraform plan
+terraform apply
+```
+
+The state (`terraform.tfstate`) is local and not committed; it contains the Entra ID client secret. For a team, configure a remote backend in `terraform/versions.tf`. Commit `.terraform.lock.hcl`.
+
+### Taking over the existing resources
+
+The resources in the account were created before by wrangler and in the dashboard. Before the first `terraform apply`, import them, otherwise Terraform tries to create them again:
+
+```bash
+cd terraform
+./generate-imports.sh > imports.tf  # needs CLOUDFLARE_API_TOKEN, curl, jq; finds the existing resources via the API
+terraform plan
+```
+
+Review `imports.tf` (where several candidates exist, e.g. Access policies, uncomment the right one) and the plan: it shows the differences between the configuration in the dashboard and the `.tf` files. Adjust `terraform.tfvars` (e.g. the allowed users) until the plan only contains intended changes, then `terraform apply`. Afterwards `imports.tf` can be deleted. The AUD tag of the imported Access application stays the same.
