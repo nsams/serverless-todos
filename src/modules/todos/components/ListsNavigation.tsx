@@ -1,35 +1,37 @@
-import { linkOptions, useNavigate } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
+import { parseResponse } from "hono/client";
+import { generatePath, useNavigate } from "react-router";
 
+import { api } from "~/api/client";
 import { NavigationList } from "~/components/NavigationList";
 
 import { maxListNameLength } from "../limits";
-import { createList } from "../lists.functions";
 import { useLists } from "../navigation";
+import { listPath } from "../paths";
 
 // The user's lists in the app's sidebar
 export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
     const lists = useLists();
     const navigate = useNavigate();
-    const createListFn = useServerFn(createList);
 
     return (
         <NavigationList
             items={lists.map((list) => ({
                 id: list.id,
                 name: list.name,
-                link: linkOptions({ to: "/lists/$listId", params: { listId: list.id } }),
+                link: generatePath(listPath, { listId: list.id }),
                 count: list.openCount,
                 countLabel: `${list.openCount} open`,
             }))}
             createLabel="New list"
             maxNameLength={maxListNameLength}
             onCreate={async (name) => {
-                const result = await createListFn({ data: { name } });
-                if (result.id !== null) {
-                    await navigate({ to: "/lists/$listId", params: { listId: result.id } });
+                const response = await api.lists.$post({ json: { name } });
+                if (response.status === 422) {
+                    return (await response.json()).error;
                 }
-                return result.error;
+                const { id } = await parseResponse(response);
+                await navigate(generatePath(listPath, { listId: id }));
+                return null;
             }}
             onNavigate={onNavigate}
         />
