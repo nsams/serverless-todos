@@ -35,6 +35,7 @@ The local D1 database can be browsed and queried in the Cloudflare Local Explore
 ```bash
 npx wrangler d1 execute DB --local --command "SELECT * FROM todos"
 npm run db:reset  # delete the local database and re-apply all migrations
+npm run db:seed   # insert test data (scripts/fixtures.ts) for DEV_USER_EMAIL
 ```
 
 ## Structure
@@ -53,6 +54,7 @@ Core:
 - `src/chat/`: chat assistant (see [Chat assistant](#chat-assistant)), `src/components/ChatPanel.tsx`: its UI
 - `src/mcp/`: MCP server (see [MCP server](#mcp-server-external-ai-clients))
 - `src/db/db.server.ts`: database connection; `src/dates.ts`: calendar dates (`YYYY-MM-DD`) without time zone, the user's local date; `src/searchParams.ts`: search params serialization; `src/gridSearch.ts`, `src/db/filters.server.ts`, `src/components/useServerGrid.ts`: DataGrids with server-side pagination, sorting and filtering, their state in the URL (search params parsing, server function input, the grid's props, the SQL for sorting and filtering); `src/components/`: shared components and hooks used by the modules (e.g. `NavigationList` for the sidebar, `CollectionHeader` (heading with rename and delete), `ConfirmDeleteDialog`, `NameDialog`, `useMutate`)
+- `scripts/`: Node scripts (run with Node's TypeScript support, no build step): test data (`fixtures.ts`, `seed.ts`) and Preview deployments (`preview.ts`)
 
 Todos module (`src/modules/todos/`):
 
@@ -137,13 +139,42 @@ Migrations are applied before the new code is deployed (`npm run deploy`), so th
 
 ## Deployment (Cloudflare)
 
-Deploy with `npm run deploy` (build, apply pending D1 migrations, deploy), either locally or with [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/) (Git integration): leave the build command empty and set the deploy command to `npm run deploy`.
+Deploy with `npm run deploy` (build, apply pending D1 migrations, deploy, [delete databases of deleted Previews](#preview-deployments)), either locally or with [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/) (Git integration): leave the build command empty and set the deploy command to `npm run deploy`.
 
 1. The D1 database doesn't need to be created manually: `wrangler.jsonc` has no `database_id`, so the first `wrangler deploy` creates a database named `serverless-todos` (or connects to an existing one with that name). As `npm run deploy` applies the migrations before deploying, the very first deployment (no database yet) is done with `npm run build && npx wrangler deploy`, followed by `npm run deploy`.
 2. Set up Cloudflare Access (Zero Trust dashboard):
     1. Add Microsoft Entra ID as identity provider (Settings → Authentication → Login methods), see the [Cloudflare docs](https://developers.cloudflare.com/cloudflare-one/identity/idp-integration/entra-id/).
-    2. Protect the `workers.dev` URL: Workers & Pages → serverless-todos → Settings → Domains & Routes → `workers.dev` → Enable Cloudflare Access. This creates an Access application for the URL (preview URLs are disabled in `wrangler.jsonc`).
+    2. Protect the `workers.dev` URL: Workers & Pages → serverless-todos → Settings → Domains & Routes → `workers.dev` → Enable Cloudflare Access. This creates an Access application for the URL (Preview URLs get their own, see [Preview deployments](#preview-deployments)).
     3. Edit that Access application (Zero Trust → Access → Applications): use Entra ID as the only login method and a policy that allows the intended users (e.g. an Entra group or email domain).
     4. For the MCP server: turn on managed OAuth on that Access application, see [MCP server](#mcp-server-external-ai-clients).
     5. Set `ACCESS_TEAM_DOMAIN` (`https://<team-name>.cloudflareaccess.com`, see Zero Trust → Settings → Team name and domain) and `ACCESS_AUD` (the Application Audience (AUD) Tag on the application's overview) in `wrangler.jsonc`.
 3. Deploy: `npm run deploy`
+
+## Preview deployments
+
+Every branch (and so every pull request) gets its own [Worker Preview](https://developers.cloudflare.com/workers/previews/) with its own D1 database filled with test data, created by Workers Builds (no GitHub Actions or secrets in GitHub). The Cloudflare GitHub app comments the Preview URL (`https://<branch>-serverless-todos.<subdomain>.workers.dev`) on the pull request.
+
+How it works (`scripts/preview.ts`):
+
+- On every push to a branch other than `main`, Workers Builds runs `npm run preview:deploy`:
+    1. Creates the D1 database `serverless-todos-preview-<branch>-<hash>` if it doesn't exist yet. The branch is stored in a table `_preview` in the database (not part of the Drizzle schema).
+    2. Applies the pending migrations, like `npm run deploy` does in production. The database is kept between pushes, so testers' data survives a push and the migrations are tested on existing data.
+    3. Inserts the test data (`scripts/fixtures.ts`) for every email in the build variable `PREVIEW_FIXTURE_USERS`, once per database. Data belongs to the Access user's email, so these are the emails of the people testing Previews.
+    4. Builds with the database in the `previews` config (`vite.config.ts`) and deploys the Preview with `wrangler preview --name <branch>`. Previews use the `previews` block of `wrangler.jsonc`, not the production settings: new bindings and vars have to be added there too.
+- The chat assistant works in Previews too (same model and AI Gateway as production, costs go to the same account). Every Preview gets its own Durable Object namespace from Cloudflare, so chat histories are separate per Preview and deleted with it.
+- When the branch is deleted (GitHub deletes it after merging the pull request, see setup), Workers Builds deletes its Preview. Cloudflare doesn't delete the D1 database with it, so `npm run preview:cleanup` deletes the databases whose Preview no longer exists. As a safety net for branches that are never deleted, it also deletes Previews not deployed for 30 days (build variable `PREVIEW_TTL_DAYS`) together with their database; a later push to the branch creates them again, with fresh test data.
+- Cleanup runs after every production deploy (= after every merge) and every Preview deploy, so nothing is cleaned up while there are no builds. It never fails the deployment, keeps a database whenever it can't tell whether its Preview exists, and skips databases created less than an hour ago (their Preview may not exist yet). It checks Previews with the Cloudflare API if `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are set, otherwise with `wrangler preview secret list` (fails with "was not found" for a deleted Preview); the log says which one is used.
+
+To reset a Preview's database, delete it (`npx wrangler d1 list` shows the name, `npx wrangler d1 delete <name>`) and retry the Preview's latest build in the dashboard.
+
+A pull request closed without merging keeps its Preview and database until its branch is deleted (GitHub offers to delete it when closing the pull request) or the Preview expires.
+
+### Setup
+
+1. Protect the Preview URLs with Cloudflare Access: Workers & Pages → serverless-todos → Settings → Domains & Routes → Preview URLs → Enable Cloudflare Access. Configure that Access application like the production one (Entra ID, allowed users) and set its Application Audience (AUD) Tag as `previews.vars.ACCESS_AUD` in `wrangler.jsonc`. Without it the app rejects every request to a Preview (403). To use the MCP server of a Preview (`https://<branch>-serverless-todos.<subdomain>.workers.dev/mcp`), turn on managed OAuth on that Access application too (see [MCP server](#mcp-server-external-ai-clients)).
+2. Workers Builds (Workers & Pages → serverless-todos → Settings → Build):
+    1. Branch control: enable Preview builds. Workers connected to Builds before Worker Previews show a "Set up Worker Previews" banner first: the switch can't be undone.
+    2. Preview command: `npm run preview:deploy` (build command stays empty).
+    3. Variables and secrets: add `PREVIEW_FIXTURE_USERS` with the testers' emails (comma separated). Optionally `PREVIEW_TTL_DAYS` (default 30).
+    4. The build token needs permission to edit D1 (it already applies the production migrations in `npm run deploy`).
+3. GitHub (repository settings → General → Pull Requests): enable "Automatically delete head branches", so merging a pull request deletes its branch and with it the Preview.
