@@ -1,15 +1,17 @@
+import { type QueryClient, queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { parseResponse } from "hono/client";
 
 import { api } from "~/api/client";
-import { useNavigationData } from "~/modules/navigation";
 
 export const notesModuleId = "notes";
 
-// The user's notebooks with their number of notes: the navigation data of the module, loaded by the app layout
-export function loadNotebooks() {
-    return parseResponse(api.notebooks.$get());
+// The user's notebooks with their number of notes: the navigation data of the module, loaded by the app layout's loader
+const notebooksQueryOptions = queryOptions({ queryKey: ["notebooks"], queryFn: () => parseResponse(api.notebooks.$get()) });
+
+export function loadNotebooks(queryClient: QueryClient) {
+    return queryClient.fetchQuery(notebooksQueryOptions);
 }
 
 export function useNotebooks() {
-    return useNavigationData(notesModuleId) as Awaited<ReturnType<typeof loadNotebooks>>;
+    return useSuspenseQuery(notebooksQueryOptions).data;
 }

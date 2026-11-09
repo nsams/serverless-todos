@@ -1,27 +1,25 @@
+import type { QueryClient } from "@tanstack/react-query";
 import type { ComponentType } from "react";
-import type { RouteObject } from "react-router";
 import type { z } from "zod";
 
 import type { ChatPage } from "~/chat/chat";
 
 // The app consists of a core (app shell, authentication, chat assistant, MCP server, database connection) and feature modules.
 // Everything that belongs to a module lives in its folder src/modules/<module>/: database schema, repositories, REST API,
-// routes (pages), components, AI tools. The core only knows the modules through the registries (src/modules/registry.ts, registry.server.ts)
-// and the interfaces below.
+// routes (pages, mounted into the app layout by src/client/routes.ts), components, AI tools. The core only knows the modules through
+// the registries (src/modules/registry.ts, registry.server.ts, src/client/routes.ts) and the interfaces below.
 
 // The part of a module the app shell uses (browser)
 export type AppModule = {
-    // unique; key of the module's navigation data
+    // unique
     id: string;
-    // the module's pages (React Router), rendered in the app layout (src/client/AppLayout.tsx). Their ids are their paths
-    // (e.g. "/lists/:listId"): the chat assistant gets the id of the page shown, see ServerModule.chatContext.
-    routes: RouteObject[];
     // shown in the app's sidebar
     navigation?: {
         // heading of the module's section in the sidebar
         title: string;
-        // loaded by the app layout (src/client/AppLayout.tsx), reloaded after changes; the module reads it with useNavigationData
-        loader: () => Promise<unknown>;
+        // loads the navigation data into the query cache (e.g. queryClient.fetchQuery), called by the app layout's loader
+        // (src/client/routes/_app.tsx), again after changes (useRevalidate); the module's Component reads it with useSuspenseQuery
+        loader: (queryClient: QueryClient) => Promise<unknown>;
         // onNavigate: closes the sidebar on small screens
         Component: ComponentType<{ onNavigate: () => void }>;
     };

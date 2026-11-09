@@ -1,12 +1,11 @@
+import { linkOptions, useNavigate } from "@tanstack/react-router";
 import { parseResponse } from "hono/client";
-import { generatePath, useNavigate } from "react-router";
 
 import { api } from "~/api/client";
 import { NavigationList } from "~/components/NavigationList";
 
 import { maxListNameLength } from "../limits";
 import { useLists } from "../navigation";
-import { listPath } from "../paths";
 
 // The user's lists in the app's sidebar
 export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
@@ -18,7 +17,7 @@ export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
             items={lists.map((list) => ({
                 id: list.id,
                 name: list.name,
-                link: generatePath(listPath, { listId: list.id }),
+                link: linkOptions({ to: "/lists/$listId", params: { listId: list.id } }),
                 count: list.openCount,
                 countLabel: `${list.openCount} open`,
             }))}
@@ -30,7 +29,7 @@ export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
                     return (await response.json()).error;
                 }
                 const { id } = await parseResponse(response);
-                await navigate(generatePath(listPath, { listId: id }));
+                await navigate({ to: "/lists/$listId", params: { listId: id } });
                 return null;
             }}
             onNavigate={onNavigate}

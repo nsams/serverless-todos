@@ -1,4 +1,5 @@
 import { cloudflare } from "@cloudflare/vite-plugin";
+import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -34,6 +35,14 @@ export default defineConfig({
             // No remote bindings (they'd need `wrangler login`): the AI binding (remote-only) isn't used in development, the chat assistant
             // calls the model through cloudflareAiDevProxy instead (see src/chat/model.server.ts)
             remoteBindings: false,
+        }),
+        // generates the route tree (src/client/routeTree.gen.ts) from the route files; the routes of the modules live in their module
+        // folders, see src/client/routes.ts
+        tanstackRouter({
+            target: "react",
+            virtualRouteConfig: "./src/client/routes.ts",
+            routesDirectory: "./src/client/routes",
+            generatedRouteTree: "./src/client/routeTree.gen.ts",
         }),
         viteReact(),
     ],

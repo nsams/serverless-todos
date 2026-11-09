@@ -8,3 +8,6 @@ node_modules
 # Cloudflare
 .wrangler
 worker-configuration.d.ts
+
+# TanStack Router plugin (temporary files)
+/.tanstack/

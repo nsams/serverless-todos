@@ -2,13 +2,15 @@ import "@fontsource-variable/roboto-flex";
 
 import { CssBaseline } from "@mui/material";
 import { ThemeProvider } from "@mui/material/styles";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { RouterProvider } from "react-router/dom";
 
 import { ErrorSnackbarProvider } from "~/components/ErrorSnackbar";
 import { theme } from "~/theme";
 
+import { queryClient } from "./queryClient";
 import { router } from "./router";
 
 // Entry of the app in the browser (index.html): a single-page application, its data comes from the REST API (src/api/)
@@ -18,7 +20,9 @@ createRoot(document.getElementById("root")!).render(
         <ThemeProvider theme={theme}>
             <CssBaseline />
             <ErrorSnackbarProvider>
-                <RouterProvider router={router} />
+                <QueryClientProvider client={queryClient}>
+                    <RouterProvider router={router} />
+                </QueryClientProvider>
             </ErrorSnackbarProvider>
         </ThemeProvider>
     </StrictMode>,

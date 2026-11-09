@@ -1,12 +1,15 @@
 import { type DataGridProProps, type GridFilterModel, GridLogicOperator, type GridSortModel } from "@mui/x-data-grid-pro";
-import { useLocation, useNavigate, useNavigation } from "react-router";
+import { useMatch, useRouterState } from "@tanstack/react-router";
+import { useState } from "react";
 
 import { type GridFieldConfig, type GridSearch, pageSizeOptions, parseGridSearch, serializeFilterValue } from "~/gridSearch";
-import { readSearch, stringifySearch } from "~/searchParams";
 
 type Options<Search extends GridSearch> = {
-    // the page's validateSearch
+    // the route's validateSearch
     validateSearch: (search: unknown) => Search;
+    // changes the route's search params (keeping the scroll position), e.g. with the route's useNavigate:
+    // (search, { replace }) => void navigate({ search, replace, resetScroll: false })
+    navigate: (search: Search, options: { replace: boolean }) => void;
     // the sortable and filterable fields
     fields: Record<string, GridFieldConfig>;
     // the number of rows on the server (with the filters applied)
@@ -16,30 +19,35 @@ type Options<Search extends GridSearch> = {
 };
 
 // A DataGrid with server-side pagination, sorting and filtering whose state lives in the URL (see src/gridSearch.ts):
-// gridProps connect the grid to the URL, the page's loader loads the rows for it from the API (parseGridSearch on the server).
-export function useServerGrid<Search extends GridSearch>({ validateSearch, fields, rowCount, dateOnlyFields = [] }: Options<Search>) {
-    const location = useLocation();
-    const navigation = useNavigation();
-    const navigate = useNavigate();
-    // Use the pending location while loading, otherwise the grid would show the old state until the loader is done (e.g. reset a filter value while typing)
-    const pendingLocation = navigation.location?.pathname === location.pathname ? navigation.location : location;
-    const search = readSearch(pendingLocation.search, validateSearch);
-    const loading = navigation.state === "loading";
+// gridProps connect the grid to the URL, the route's loader loads the rows for it from the API (parseGridSearch on the server).
+export function useServerGrid<Search extends GridSearch>({ validateSearch, fields, navigate, rowCount, dateOnlyFields = [] }: Options<Search>) {
+    // the page's route match (the nearest one), e.g. /lists/$listId with its search params
+    const match = useMatch({ strict: false });
+    // Use the pending location's search params while loading, otherwise the grid would show the old state until the loader is done
+    // (e.g. reset a filter value while typing); not while leaving the page (another path)
+    const search = validateSearch(
+        useRouterState({ select: ({ location }) => (location.pathname === match.pathname ? location.search : match.search) }),
+    );
+    // Only while the grid's state changes, not while the page itself is loading (initially or coming from another page)
+    const loading = useRouterState({
+        select: ({ status, location, resolvedLocation }) =>
+            status === "pending" &&
+            resolvedLocation?.pathname === match.pathname &&
+            location.pathname === match.pathname &&
+            location.href !== resolvedLocation.href,
+    });
     const { page, pageSize, sort, filter, filterItems } = parseGridSearch(search, fields);
 
-    // Changes the page's search params; keeps the scroll position
-    const navigateToSearch = (newSearch: Search, { replace }: { replace: boolean }) =>
-        void navigate({ search: stringifySearch(newSearch) }, { replace, preventScrollReset: true });
-
-    const sortModel: GridSortModel = sort.map(({ field, direction }) => ({ field, sort: direction }));
-    const filterModel: GridFilterModel = {
+    // The DataGrid compares its models by reference: a new but equal model is applied again and counts as a change (the grid then
+    // goes back to the first page, e.g. right after going to the next page), so they only change when the URL's state does
+    const sortModel: GridSortModel = useStableValue(sort.map(({ field, direction }) => ({ field, sort: direction })));
+    const filterModel: GridFilterModel = useStableValue({
         items: filterItems.map((item, index) => ({ id: index, ...item })),
         logicOperator: filter.logicOperator === "or" ? GridLogicOperator.Or : GridLogicOperator.And,
-    };
+    });
 
     // Changes search params, e.g. a search field next to the grid (also goes back to the first page)
-    const updateSearch = (values: Partial<Search>, { replace = false } = {}) =>
-        navigateToSearch({ ...search, page: undefined, ...values }, { replace });
+    const updateSearch = (values: Partial<Search>, { replace = false } = {}) => navigate({ ...search, page: undefined, ...values }, { replace });
 
     const gridProps = {
         pagination: true,
@@ -50,13 +58,13 @@ export function useServerGrid<Search extends GridSearch>({ validateSearch, field
         loading,
         pageSizeOptions,
         paginationModel: { page, pageSize },
-        onPaginationModelChange: (model) => navigateToSearch({ ...search, page: model.page, pageSize: model.pageSize }, { replace: false }),
+        onPaginationModelChange: (model) => navigate({ ...search, page: model.page, pageSize: model.pageSize }, { replace: false }),
         sortModel,
         onSortModelChange: (model) =>
-            navigateToSearch({ ...search, page: undefined, sort: model.map((item) => `${item.field}:${item.sort}`) }, { replace: false }),
+            navigate({ ...search, page: undefined, sort: model.map((item) => `${item.field}:${item.sort}`) }, { replace: false }),
         filterModel,
         onFilterModelChange: (model) =>
-            navigateToSearch(
+            navigate(
                 {
                     ...search,
                     page: undefined,
@@ -73,4 +81,14 @@ export function useServerGrid<Search extends GridSearch>({ validateSearch, field
 
     // search: the current search params; hasFilter: whether the filters filter (e.g. for the text of an empty grid)
     return { search, hasFilter: filter.items.length > 0, updateSearch, gridProps };
+}
+
+// The previous value as long as the new one is equal (JSON values)
+function useStableValue<Value>(value: Value) {
+    const [stableValue, setStableValue] = useState(value);
+    if (JSON.stringify(value) !== JSON.stringify(stableValue)) {
+        setStableValue(value);
+        return value;
+    }
+    return stableValue;
 }

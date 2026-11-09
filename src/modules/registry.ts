@@ -1,17 +1,16 @@
+import type { QueryClient } from "@tanstack/react-query";
+
 import { notesModule } from "./notes/module";
 import { todosModule } from "./todos/module";
 import type { AppModule } from "./types";
 
-// The modules of the app (app shell part: pages, navigation, chat). Server part: registry.server.ts.
+// The modules of the app (app shell part: navigation, chat). Server part: registry.server.ts; pages: src/client/routes.ts.
 export const appModules: AppModule[] = [todosModule, notesModule];
 
 // The start page ("/") redirects here
 export const startPath = "/lists";
 
-// Navigation data of all modules by module id, loaded by the app layout (src/client/AppLayout.tsx), read by the modules with useNavigationData
-export async function loadNavigationData() {
-    const entries = await Promise.all(
-        appModules.map(async ({ id, navigation }) => [id, navigation ? await navigation.loader() : undefined] as const),
-    );
-    return Object.fromEntries(entries);
+// Loads the navigation data of all modules into the query cache, called by the app layout's loader (src/client/routes/_app.tsx)
+export async function loadNavigationData(queryClient: QueryClient) {
+    await Promise.all(appModules.map(({ navigation }) => navigation?.loader(queryClient)));
 }

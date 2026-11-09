@@ -1,12 +1,11 @@
+import { linkOptions, useNavigate } from "@tanstack/react-router";
 import { parseResponse } from "hono/client";
-import { generatePath, useNavigate } from "react-router";
 
 import { api } from "~/api/client";
 import { NavigationList } from "~/components/NavigationList";
 
 import { maxNotebookNameLength } from "../limits";
 import { useNotebooks } from "../navigation";
-import { notebookPath } from "../paths";
 
 // The user's notebooks in the app's sidebar
 export function NotebooksNavigation({ onNavigate }: { onNavigate: () => void }) {
@@ -18,7 +17,7 @@ export function NotebooksNavigation({ onNavigate }: { onNavigate: () => void }) 
             items={notebooks.map((notebook) => ({
                 id: notebook.id,
                 name: notebook.name,
-                link: generatePath(notebookPath, { notebookId: notebook.id }),
+                link: linkOptions({ to: "/notes/$notebookId", params: { notebookId: notebook.id } }),
                 count: notebook.noteCount,
                 countLabel: `${notebook.noteCount} notes`,
             }))}
@@ -30,7 +29,7 @@ export function NotebooksNavigation({ onNavigate }: { onNavigate: () => void }) 
                     return (await response.json()).error;
                 }
                 const { id } = await parseResponse(response);
-                await navigate(generatePath(notebookPath, { notebookId: id }));
+                await navigate({ to: "/notes/$notebookId", params: { notebookId: id } });
                 return null;
             }}
             onNavigate={onNavigate}

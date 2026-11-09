@@ -1,15 +1,18 @@
 import { Add } from "@dextinity/admin-icons";
 import { Divider, List, ListItemButton, ListItemIcon, ListItemText, Typography } from "@mui/material";
+import { createLink, type LinkOptions } from "@tanstack/react-router";
 import { useState } from "react";
-import { Link, useMatch, useRevalidator } from "react-router";
 
 import { NameDialog } from "./NameDialog";
+import { useRevalidate } from "./useRevalidate";
+
+const ListItemLink = createLink(ListItemButton);
 
 export type NavigationItem = {
     id: string;
     name: string;
-    // path of the item's page, e.g. generatePath(listPath, { listId })
-    link: string;
+    // the item's page, e.g. linkOptions({ to: "/lists/$listId", params: { listId } }) (typed by the route tree)
+    link: LinkOptions;
     // shown next to the name if > 0, e.g. the number of open todos
     count?: number;
     // accessible name of the count, e.g. "3 open"
@@ -29,7 +32,7 @@ type Props = {
 
 // A module's items in the app's sidebar (e.g. the todo lists, the notebooks) with a button to create one
 export function NavigationList({ items, createLabel, maxNameLength, onCreate, onNavigate }: Props) {
-    const { revalidate } = useRevalidator();
+    const revalidate = useRevalidate();
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
     const handleCreate = async (name: string) => {
@@ -37,7 +40,7 @@ export function NavigationList({ items, createLabel, maxNameLength, onCreate, on
         if (error === null) {
             setCreateDialogOpen(false);
             onNavigate();
-            // the new item: the sidebar's data isn't reloaded by the navigation (the app layout's loader data is reused)
+            // the new item: the sidebar's data isn't reloaded by the navigation (the app layout's loader doesn't run again)
             await revalidate();
         }
         return error;
@@ -72,16 +75,20 @@ export function NavigationList({ items, createLabel, maxNameLength, onCreate, on
 }
 
 function NavigationListItem({ item, onNavigate }: { item: NavigationItem; onNavigate: () => void }) {
-    // also active on the item's sub pages (e.g. a note of a notebook)
-    const active = useMatch({ path: item.link, end: false }) !== null;
     return (
-        <ListItemButton component={Link} to={item.link} selected={active} onClick={onNavigate}>
+        <ListItemLink
+            {...item.link}
+            // also active on the item's sub pages (e.g. a note of a notebook) and with search params (e.g. a grid's filters)
+            activeOptions={{ includeSearch: false }}
+            activeProps={{ selected: true }}
+            onClick={onNavigate}
+        >
             <ListItemText primary={item.name} slotProps={{ primary: { noWrap: true } }} />
             {item.count !== undefined && item.count > 0 && (
                 <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }} aria-label={item.countLabel}>
                     {item.count}
                 </Typography>
             )}
-        </ListItemButton>
+        </ListItemLink>
     );
 }

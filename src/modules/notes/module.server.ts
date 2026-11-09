@@ -1,16 +1,20 @@
+import type { FileRoutesById } from "~/client/routeTree.gen";
 import type { ServerModule } from "~/modules/types";
 
 import { getNotebookRepository } from "./db/notebooks.server";
 import { getNoteRepository } from "./db/notes.server";
-import { notebookPath, notePath } from "./paths";
 import { createNoteTools, noteToolsInstructions } from "./tools.server";
+
+// The pages of a notebook and of a note (the chat assistant gets the route id of the page shown, src/chat/chat.ts)
+const notebookRouteId: keyof FileRoutesById = "/_app/notes/$notebookId/";
+const noteRouteId: keyof FileRoutesById = "/_app/notes/$notebookId/$noteId";
 
 // The notes module (notebooks and Markdown notes), server part (REST API: api.server.ts). App shell part: module.ts.
 export const notesServerModule: ServerModule = {
     createTools: createNoteTools,
     instructions: noteToolsInstructions,
     chatContext: async (userId, page) => {
-        if (page?.routeId === notePath && page.params.noteId) {
+        if (page?.routeId === noteRouteId && page.params.noteId) {
             const note = await getNoteRepository().get(userId, page.params.noteId);
             if (note) {
                 return [
@@ -18,7 +22,7 @@ export const notesServerModule: ServerModule = {
                 ];
             }
         }
-        if ((page?.routeId === notebookPath || page?.routeId === notePath) && page.params.notebookId) {
+        if ((page?.routeId === notebookRouteId || page?.routeId === noteRouteId) && page.params.notebookId) {
             const notebook = await getNotebookRepository().get(userId, page.params.notebookId);
             if (notebook) {
                 return [

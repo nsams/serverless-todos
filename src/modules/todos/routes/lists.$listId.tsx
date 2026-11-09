@@ -9,54 +9,72 @@ import {
     GridActionsCellItem,
     type GridColDef,
 } from "@mui/x-data-grid-pro";
+import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { type InferRequestType, parseResponse } from "hono/client";
 import { type FormEvent, useState } from "react";
-import { generatePath, type LoaderFunctionArgs, replace, useLoaderData, useNavigate, useRevalidator } from "react-router";
 
 import { api, loadResponse } from "~/api/client";
-import { pathParam } from "~/client/params";
+import { PageNotFound } from "~/client/errors";
 import { CollectionHeader } from "~/components/CollectionHeader";
 import { useShowError } from "~/components/ErrorSnackbar";
 import { useDocumentTitle } from "~/components/useDocumentTitle";
 import { useMutate } from "~/components/useMutate";
+import { useRevalidate } from "~/components/useRevalidate";
 import { useServerGrid } from "~/components/useServerGrid";
 import { fromDateString, toDateString, useToday } from "~/dates";
-import { lastPageWithRows, supportedOperators, validateGridSearch } from "~/gridSearch";
-import { readSearch, stringifySearch, toQuery } from "~/searchParams";
+import { type GridSearch, lastPageWithRows, supportedOperators, validateGridSearch } from "~/gridSearch";
+import { toQuery } from "~/searchParams";
 
 import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "../limits";
 import { useLists } from "../navigation";
 import { isOverdue } from "../overdue";
-import { listPath, listsPath } from "../paths";
 import { parseTodoSearch, todoFields } from "../todoSearch";
 
 // The todos of a list in a grid (pagination, sorting, filtering on the server, state in the URL)
-export async function listLoader({ params, request }: LoaderFunctionArgs) {
-    const listId = pathParam(params, "listId");
-    const search = readSearch(new URL(request.url).search, validateGridSearch);
-    const result = await loadResponse(api.lists[":listId"].todos.$get({ param: { listId }, query: toQuery(search) }));
+export const Route = createFileRoute("/_app/lists/$listId")({
+    validateSearch: validateGridSearch,
+    loaderDeps: ({ search }) => search,
+    loader: async ({ context: { queryClient }, params: { listId }, deps }) => {
+        const result = await queryClient.fetchQuery(todosQueryOptions(listId, deps));
 
-    // e.g. after deleting the last todo of the last page
-    const lastPage = lastPageWithRows(parseTodoSearch(search), result.todos.length, result.totalCount);
-    if (lastPage !== undefined) {
-        throw replace(generatePath(listPath, { listId }) + stringifySearch({ ...search, page: lastPage || undefined }));
-    }
+        // e.g. after deleting the last todo of the last page
+        const lastPage = lastPageWithRows(parseTodoSearch(deps), result.todos.length, result.totalCount);
+        if (lastPage !== undefined) {
+            throw redirect({ to: "/lists/$listId", params: { listId }, search: { ...deps, page: lastPage || undefined }, replace: true });
+        }
+    },
+    // e.g. a list that doesn't exist (anymore)
+    notFoundComponent: PageNotFound,
+    component: ListPage,
+});
 
-    return result;
+// The list and one page of its todos (search: the grid state); loaded by the route's loader, read by the page
+function todosQueryOptions(listId: string, search: GridSearch) {
+    return queryOptions({ queryKey: ["lists", listId, "todos", search], queryFn: () => loadTodos(listId, search) });
 }
 
-type Todo = Awaited<ReturnType<typeof listLoader>>["todos"][number];
+function loadTodos(listId: string, search: GridSearch) {
+    return loadResponse(api.lists[":listId"].todos.$get({ param: { listId }, query: toQuery(search) }));
+}
 
-export function ListPage() {
-    const { list, todos, totalCount } = useLoaderData<typeof listLoader>();
+type Todo = Awaited<ReturnType<typeof loadTodos>>["todos"][number];
+
+function ListPage() {
+    const { listId } = Route.useParams();
+    const {
+        data: { list, todos, totalCount },
+    } = useSuspenseQuery(todosQueryOptions(listId, Route.useLoaderDeps()));
     const lists = useLists();
-    const { revalidate } = useRevalidator();
+    const navigate = Route.useNavigate();
+    const revalidate = useRevalidate();
     const showError = useShowError();
     const mutate = useMutate();
     const today = useToday();
     const { updateSearch, gridProps } = useServerGrid({
         validateSearch: validateGridSearch,
         fields: todoFields,
+        navigate: (search, { replace }) => void navigate({ search, replace, resetScroll: false }),
         rowCount: totalCount,
         dateOnlyFields: ["dueDate"],
     });
@@ -205,7 +223,7 @@ export function ListPage() {
 }
 
 function ListHeader({ list }: { list: { id: string; name: string } }) {
-    const { revalidate } = useRevalidator();
+    const revalidate = useRevalidate();
     const navigate = useNavigate();
 
     return (
@@ -226,8 +244,8 @@ function ListHeader({ list }: { list: { id: string; name: string } }) {
             onDelete={async () => {
                 await parseResponse(api.lists[":listId"].$delete({ param: { listId: list.id } }));
                 // redirects to the first remaining list (or creates a new one)
-                await navigate(listsPath, { replace: true });
-                // the sidebar's lists aren't reloaded by the navigation (the app layout's loader data is reused)
+                await navigate({ to: "/lists", replace: true });
+                // the sidebar's lists aren't reloaded by the navigation (the app layout's loader doesn't run again)
                 await revalidate();
             }}
         />
