@@ -1,20 +1,24 @@
 import { Chatbot, Hamburger, Logout } from "@dextinity/admin-icons";
 import { AppBar, Box, CircularProgress, Divider, Drawer, IconButton, ListSubheader, Toolbar, Typography } from "@mui/material";
-import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { Fragment, lazy, Suspense, useState } from "react";
+import { Outlet, type ShouldRevalidateFunctionArgs } from "react-router";
 
+import { api } from "~/api/client";
 import { appName } from "~/app";
 import { appModules, loadNavigationData } from "~/modules/registry";
-import { getCurrentUser } from "~/user.functions";
+import { useLoaderResult } from "~/routing";
 
-// Layout of the app pages: app bar and the navigation of the modules in a sidebar
-export const Route = createFileRoute("/_app")({
-    loader: async () => {
-        const [user, navigation] = await Promise.all([getCurrentUser(), loadNavigationData()]);
-        return { user, navigation };
-    },
-    component: AppLayout,
-});
+// Layout of the app pages: app bar and the navigation of the modules in a sidebar (route id appRouteId, src/modules/navigation.ts)
+export async function appLoader() {
+    const [user, navigation] = await Promise.all([api.user.query(), loadNavigationData()]);
+    return { user, navigation };
+}
+
+// The navigation data (e.g. the sidebar's lists) is reloaded when the page data is reloaded explicitly (useRevalidator, e.g. after a change),
+// not on every change of the search params (e.g. a grid's filter)
+export function shouldRevalidateApp({ currentUrl, nextUrl, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {
+    return currentUrl.href === nextUrl.href && defaultShouldRevalidate;
+}
 
 const drawerWidth = 260;
 const chatWidth = 420;
@@ -22,8 +26,8 @@ const chatWidth = 420;
 // loaded on first open: the chat (MUI X Chat, Agents SDK client) is only needed in the browser
 const ChatPanel = lazy(() => import("~/components/ChatPanel"));
 
-function AppLayout() {
-    const { user } = Route.useLoaderData();
+export function AppLayout() {
+    const { user } = useLoaderResult<typeof appLoader>();
     const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
     const [chatOpen, setChatOpen] = useState(false);
     // stays mounted once opened, so the conversation (and a running answer) survives closing the panel

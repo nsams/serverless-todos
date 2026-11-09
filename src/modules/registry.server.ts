@@ -7,6 +7,16 @@ import type { AppTool, ServerModule } from "./types";
 // The modules of the app (server part). App shell part: registry.ts.
 const serverModules: ServerModule[] = [todosServerModule, notesServerModule];
 
+// The API procedures of all modules, part of the app's API (src/api/router.server.ts). Spread explicitly (not from serverModules),
+// so the types of the procedures are kept for the client.
+export const moduleApis = { ...todosServerModule.api, ...notesServerModule.api };
+
+for (const name of new Set(serverModules.flatMap((module) => Object.keys(module.api)))) {
+    if (serverModules.filter((module) => Object.hasOwn(module.api, name)).length > 1) {
+        throw new Error(`API ${name} is defined by more than one module`);
+    }
+}
+
 // The tools of all modules for the AI assistants, scoped to the user
 export function createTools(userId: string): Record<string, AppTool> {
     const tools: Record<string, AppTool> = {};
