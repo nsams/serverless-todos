@@ -1,29 +1,18 @@
-import { Add, Chatbot, Hamburger, Logout } from "@dextinity/admin-icons";
-import {
-    AppBar,
-    Box,
-    CircularProgress,
-    Divider,
-    Drawer,
-    IconButton,
-    List,
-    ListItemButton,
-    ListItemIcon,
-    ListItemText,
-    Toolbar,
-    Typography,
-} from "@mui/material";
-import { createFileRoute, createLink, Outlet, useNavigate } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
-import { lazy, Suspense, useState } from "react";
+import { Chatbot, Hamburger, Logout } from "@dextinity/admin-icons";
+import { AppBar, Box, CircularProgress, Divider, Drawer, IconButton, ListSubheader, Toolbar, Typography } from "@mui/material";
+import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { Fragment, lazy, Suspense, useState } from "react";
 
-import { NameDialog } from "~/components/NameDialog";
-import { maxListNameLength } from "~/limits";
-import { createList, listLists } from "~/lists.functions";
+import { appName } from "~/app";
+import { appModules, loadNavigationData } from "~/modules/registry";
+import { getCurrentUser } from "~/user.functions";
 
-// Layout of the app pages: app bar and the user's lists in a sidebar
+// Layout of the app pages: app bar and the navigation of the modules in a sidebar
 export const Route = createFileRoute("/_app")({
-    loader: () => listLists(),
+    loader: async () => {
+        const [user, navigation] = await Promise.all([getCurrentUser(), loadNavigationData()]);
+        return { user, navigation };
+    },
     component: AppLayout,
 });
 
@@ -33,14 +22,9 @@ const chatWidth = 420;
 // loaded on first open: the chat (MUI X Chat, Agents SDK client) is only needed in the browser
 const ChatPanel = lazy(() => import("~/components/ChatPanel"));
 
-const ListItemLink = createLink(ListItemButton);
-
 function AppLayout() {
-    const { user, lists } = Route.useLoaderData();
-    const navigate = useNavigate();
-    const createListFn = useServerFn(createList);
+    const { user } = Route.useLoaderData();
     const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
-    const [createDialogOpen, setCreateDialogOpen] = useState(false);
     const [chatOpen, setChatOpen] = useState(false);
     // stays mounted once opened, so the conversation (and a running answer) survives closing the panel
     const [chatMounted, setChatMounted] = useState(false);
@@ -50,47 +34,22 @@ function AppLayout() {
         setChatOpen((open) => !open);
     };
 
-    const handleCreateList = async (name: string) => {
-        const result = await createListFn({ data: { name } });
-        if (result.id !== null) {
-            setCreateDialogOpen(false);
-            setMobileDrawerOpen(false);
-            await navigate({ to: "/lists/$listId", params: { listId: result.id } });
-        }
-        return result.error;
-    };
-
     const drawerContent = (
         <>
             {/* space for the app bar */}
             <Toolbar />
-            <List>
-                {lists.map((list) => (
-                    <ListItemLink
-                        key={list.id}
-                        to="/lists/$listId"
-                        params={{ listId: list.id }}
-                        activeProps={{ selected: true }}
-                        onClick={() => setMobileDrawerOpen(false)}
-                    >
-                        <ListItemText primary={list.name} slotProps={{ primary: { noWrap: true } }} />
-                        {list.openCount > 0 && (
-                            <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }} aria-label={`${list.openCount} open`}>
-                                {list.openCount}
-                            </Typography>
-                        )}
-                    </ListItemLink>
-                ))}
-            </List>
-            <Divider />
-            <List>
-                <ListItemButton onClick={() => setCreateDialogOpen(true)}>
-                    <ListItemIcon>
-                        <Add />
-                    </ListItemIcon>
-                    <ListItemText primary="New list" />
-                </ListItemButton>
-            </List>
+            {appModules.map(
+                ({ id, navigation }, index) =>
+                    navigation && (
+                        <Fragment key={id}>
+                            {index > 0 && <Divider />}
+                            <ListSubheader component="h2" disableSticky sx={{ pt: 1, lineHeight: 2.5 }}>
+                                {navigation.title}
+                            </ListSubheader>
+                            <navigation.Component onNavigate={() => setMobileDrawerOpen(false)} />
+                        </Fragment>
+                    ),
+            )}
         </>
     );
 
@@ -101,14 +60,14 @@ function AppLayout() {
                     <IconButton
                         color="inherit"
                         edge="start"
-                        aria-label="Open lists"
+                        aria-label="Open navigation"
                         onClick={() => setMobileDrawerOpen(true)}
                         sx={{ mr: 1, display: { md: "none" } }}
                     >
                         <Hamburger />
                     </IconButton>
                     <Typography variant="h6" sx={{ flexGrow: 1 }}>
-                        Todos
+                        {appName}
                     </Typography>
                     <Typography sx={{ mr: 1, display: { xs: "none", sm: "block" } }}>{user.email}</Typography>
                     <IconButton color="inherit" aria-label="Assistant" aria-pressed={chatOpen} onClick={toggleChat}>
@@ -120,7 +79,7 @@ function AppLayout() {
                     </IconButton>
                 </Toolbar>
             </AppBar>
-            <Box component="nav" sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }} aria-label="Lists">
+            <Box component="nav" sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }} aria-label="Navigation">
                 <Drawer
                     variant="temporary"
                     open={mobileDrawerOpen}
@@ -153,14 +112,6 @@ function AppLayout() {
                     </Suspense>
                 )}
             </Drawer>
-            <NameDialog
-                open={createDialogOpen}
-                title="New list"
-                submitLabel="Create"
-                maxLength={maxListNameLength}
-                onClose={() => setCreateDialogOpen(false)}
-                onSubmit={handleCreateList}
-            />
         </Box>
     );
 }

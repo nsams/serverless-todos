@@ -15,6 +15,13 @@
       "when": 1793948413852,
       "tag": "0001_lists_description_due_date",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1794166787793,
+      "tag": "0002_notes",
+      "breakpoints": true
     }
   ]
 }

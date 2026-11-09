@@ -1,12 +1,10 @@
 import { drizzle } from "drizzle-orm/sqlite-proxy";
 
-import { lists, todos } from "../src/db/schema.ts";
+import { notebooks, notes } from "../src/modules/notes/db/schema.ts";
+import { lists, todos } from "../src/modules/todos/db/schema.ts";
 
-// Test data for Worker Previews and local development (`npm run db:seed`): a few lists with todos for each given user.
+// Test data for Worker Previews and local development (`npm run db:seed`): lists with todos and notebooks with notes for each given user.
 // Due dates are relative to today, so there are always overdue, due and upcoming todos.
-
-type NewList = typeof lists.$inferInsert;
-type NewTodo = typeof todos.$inferInsert;
 
 type FixtureList = { name: string; todos: Array<{ title: string; description?: string; dueInDays?: number; done?: boolean }> };
 
@@ -39,6 +37,71 @@ const fixtureLists: FixtureList[] = [
     },
 ];
 
+type FixtureNotebook = { name: string; notes: Array<{ title: string; body: string; updatedDaysAgo?: number }> };
+
+const fixtureNotebooks: FixtureNotebook[] = [
+    {
+        name: "Notes",
+        notes: [
+            {
+                title: "Team offsite",
+                body: [
+                    "## Ideas",
+                    "",
+                    "- Hiking in the Alps",
+                    "- Cooking class",
+                    "- Escape room",
+                    "",
+                    "## Open questions",
+                    "",
+                    "1. Budget per person?",
+                    "2. One or two days?",
+                    "",
+                    "Ask **everyone** for dietary restrictions before booking.",
+                ].join("\n"),
+            },
+            {
+                title: "Meeting notes 1:1",
+                body: [
+                    "Discussed the roadmap for next quarter.",
+                    "",
+                    "### Action items",
+                    "",
+                    "- [ ] Write the proposal",
+                    "- [ ] Schedule a follow-up",
+                ].join("\n"),
+                updatedDaysAgo: 3,
+            },
+            {
+                title: "Useful links",
+                body: "- [Cloudflare Workers docs](https://developers.cloudflare.com/workers/)\n- [Drizzle ORM](https://orm.drizzle.team)",
+                updatedDaysAgo: 20,
+            },
+            { title: "Empty note", body: "" },
+        ],
+    },
+    {
+        name: "Recipes",
+        notes: [
+            {
+                title: "Pancakes",
+                body: [
+                    "## Ingredients",
+                    "",
+                    "- 200 g flour",
+                    "- 2 eggs",
+                    "- 300 ml milk",
+                    "- a pinch of salt",
+                    "",
+                    "## Steps",
+                    "",
+                    "Whisk everything, rest 10 minutes, fry.",
+                ].join("\n"),
+            },
+        ],
+    },
+];
+
 const dayInMs = 24 * 60 * 60 * 1000;
 
 // YYYY-MM-DD (UTC) of today + days
@@ -46,9 +109,14 @@ function dateInDays(days: number, now: Date) {
     return new Date(now.getTime() + days * dayInMs).toISOString().slice(0, 10);
 }
 
-export function createFixtures(userId: string, now = new Date()): { lists: NewList[]; todos: NewTodo[] } {
-    const result: { lists: NewList[]; todos: NewTodo[] } = { lists: [], todos: [] };
-    // ascending createdAt, so lists and todos keep the order above (both are sorted by createdAt by default)
+export function createFixtures(userId: string, now = new Date()) {
+    const result = {
+        lists: [] as Array<typeof lists.$inferInsert>,
+        todos: [] as Array<typeof todos.$inferInsert>,
+        notebooks: [] as Array<typeof notebooks.$inferInsert>,
+        notes: [] as Array<typeof notes.$inferInsert>,
+    };
+    // ascending createdAt, so lists and todos keep the order above (sorted by createdAt by default); notes with updatedDaysAgo are older
     let createdAt = now.getTime() - 60 * 60 * 1000;
     for (const fixtureList of fixtureLists) {
         const listId = crypto.randomUUID();
@@ -63,6 +131,22 @@ export function createFixtures(userId: string, now = new Date()): { lists: NewLi
                 dueDate: todo.dueInDays !== undefined ? dateInDays(todo.dueInDays, now) : null,
                 done: todo.done ?? false,
                 createdAt: new Date(createdAt++),
+            });
+        }
+    }
+    for (const fixtureNotebook of fixtureNotebooks) {
+        const notebookId = crypto.randomUUID();
+        result.notebooks.push({ id: notebookId, userId, name: fixtureNotebook.name, createdAt: new Date(createdAt++) });
+        for (const note of fixtureNotebook.notes) {
+            const noteCreatedAt = createdAt++ - (note.updatedDaysAgo ?? 0) * dayInMs;
+            result.notes.push({
+                id: crypto.randomUUID(),
+                userId,
+                notebookId,
+                title: note.title,
+                body: note.body,
+                createdAt: new Date(noteCreatedAt),
+                updatedAt: new Date(noteCreatedAt),
             });
         }
     }
@@ -103,9 +187,9 @@ export function createFixturesSql(emails: string[]) {
     for (const email of emails) {
         const fixtures = createFixtures(email.trim().toLowerCase());
         statements.push(toPlainSql(db.insert(lists).values(fixtures.lists).toSQL()));
-        if (fixtures.todos.length > 0) {
-            statements.push(toPlainSql(db.insert(todos).values(fixtures.todos).toSQL()));
-        }
+        statements.push(toPlainSql(db.insert(todos).values(fixtures.todos).toSQL()));
+        statements.push(toPlainSql(db.insert(notebooks).values(fixtures.notebooks).toSQL()));
+        statements.push(toPlainSql(db.insert(notes).values(fixtures.notes).toSQL()));
     }
     return statements.join("\n");
 }

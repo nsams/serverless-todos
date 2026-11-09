@@ -5,7 +5,7 @@ import { getUser } from "./auth.server";
 import { chatAgentPath } from "./chat/chat";
 import { handleMcpRequest, mcpPath } from "./mcp/mcp.server";
 
-export { TodoChatAgent } from "./chat/agent.server";
+export { ChatAgent } from "./chat/agent.server";
 
 // Custom worker entry:
 // - passes Cloudflare Access (`ctx.access`, set by the runtime on requests that matched an Access application) to the app
@@ -45,7 +45,7 @@ async function handleChatRequest(request: Request, env: Env, access: CloudflareA
         return new Response("Forbidden", { status: 403 });
     }
     // one agent per user: the instance is chosen by the authenticated user, never by the client
-    const agent = await getAgentByName(env.TodoChatAgent, user.id);
+    const agent = await getAgentByName(env.ChatAgent, user.id);
     return agent.fetch(request);
 }
 

@@ -2,19 +2,20 @@ import { notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-import { dateStringSchema } from "./dates";
+import { dateStringSchema } from "~/dates";
+import { gridInputSchema, validateGridSearch } from "~/gridSearch";
+
 import { getListRepository } from "./db/lists.server";
 import { getTodoRepository } from "./db/todos.server";
 import { maxTodoDescriptionLength, maxTodoTitleLength } from "./limits";
-import { parseTodoSearch, validateTodoSearch } from "./todoSearch";
+import { parseTodoSearch } from "./todoSearch";
 
 const descriptionSchema = z.string().trim().max(maxTodoDescriptionLength);
 // null: no due date
 const dueDateSchema = dateStringSchema.nullable();
 
 export const listTodos = createServerFn()
-    // the search params are normalized leniently (invalid values are dropped), like in the route's validateSearch
-    .validator(z.looseObject({ listId: z.string() }).transform(({ listId, ...search }) => ({ listId, ...validateTodoSearch(search) })))
+    .validator(gridInputSchema({ listId: z.string() }, validateGridSearch))
     .handler(async ({ data: { listId, ...search }, context: { user } }) => {
         const list = await getListRepository().get(user.id, listId);
         if (!list) {

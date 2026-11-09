@@ -1,6 +1,9 @@
-import { and, asc, desc, eq, gt, gte, isNull, lt, lte, or, type SQL, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, isNull, lt, lte, or, type SQL } from "drizzle-orm";
 
-import { getDb } from "./db.server";
+import { getDb } from "~/db/db.server";
+import { dateTimeCondition, filterModelCondition, sortOrder, textCondition } from "~/db/filters.server";
+import type { DateTimeOperator, TextOperator } from "~/gridSearch";
+
 import { getListRepository } from "./lists.server";
 import { todos } from "./schema";
 
@@ -8,14 +11,12 @@ export type Todo = typeof todos.$inferSelect;
 
 export type TodoSort = { field: "title" | "description" | "dueDate" | "done" | "createdAt"; direction: "asc" | "desc" };
 
-type TextOperator = "contains" | "equals" | "startsWith" | "endsWith";
-
 export type TodoFilter =
     | { field: "title"; operator: TextOperator; value: string }
     | { field: "description"; operator: TextOperator; value: string }
     | { field: "dueDate"; operator: "is" | "after" | "onOrAfter" | "before" | "onOrBefore"; value: string /* YYYY-MM-DD */ }
     | { field: "done"; operator: "is"; value: boolean }
-    | { field: "createdAt"; operator: "after" | "onOrAfter" | "before" | "onOrBefore"; value: Date };
+    | { field: "createdAt"; operator: DateTimeOperator; value: Date };
 
 export type TodoFilterModel = { items: TodoFilter[]; logicOperator: "and" | "or" };
 
@@ -43,23 +44,13 @@ export function getTodoRepository(): TodoRepository {
     const listExists = async (userId: string, listId: string) => (await getListRepository().get(userId, listId)) !== undefined;
     return {
         list: async (userId, listId, { offset, limit, sort, filter }) => {
-            const filterConditions = filter.items.map((item) => filterCondition(item));
-            const where = and(
-                eq(todos.userId, userId),
-                eq(todos.listId, listId),
-                filter.logicOperator === "or" ? or(...filterConditions) : and(...filterConditions),
-            );
+            const where = and(eq(todos.userId, userId), eq(todos.listId, listId), filterModelCondition(filter, filterCondition));
             const orderBy = sort.flatMap(({ field, direction }) => {
-                const order = direction === "asc" ? asc : desc;
-                if (field === "title" || field === "description") {
-                    // case-insensitive (SQLite compares binary by default)
-                    return [order(sql`lower(${todos[field]})`)];
-                }
                 if (field === "dueDate") {
                     // todos without due date last in both directions
-                    return [asc(isNull(todos.dueDate)), order(todos.dueDate)];
+                    return [asc(isNull(todos.dueDate)), sortOrder(todos.dueDate, direction)];
                 }
-                return [order(todos[field])];
+                return [sortOrder(todos[field], direction, { caseInsensitive: field === "title" || field === "description" })];
             });
             const [rows, totalCount] = await Promise.all([
                 db
@@ -126,12 +117,8 @@ export function getTodoRepository(): TodoRepository {
 function filterCondition(filter: TodoFilter): SQL | undefined {
     switch (filter.field) {
         case "title":
-        case "description": {
-            // case-insensitive (no ILIKE in SQLite), wildcards in the value are matched literally
-            const value = filter.value.toLowerCase().replace(/[\\%_]/g, "\\$&");
-            const pattern = { contains: `%${value}%`, equals: value, startsWith: `${value}%`, endsWith: `%${value}` }[filter.operator];
-            return sql`lower(${todos[filter.field]}) like ${pattern} escape '\\'`;
-        }
+        case "description":
+            return textCondition(todos[filter.field], filter.operator, filter.value);
         case "dueDate":
             // YYYY-MM-DD strings compare like dates; todos without due date never match
             return {
@@ -143,17 +130,7 @@ function filterCondition(filter: TodoFilter): SQL | undefined {
             }[filter.operator];
         case "done":
             return eq(todos.done, filter.value);
-        case "createdAt": {
-            // minute precision, like the DataGrid's dateTime filter
-            const minute = new Date(filter.value);
-            minute.setSeconds(0, 0);
-            const nextMinute = new Date(minute.getTime() + 60_000);
-            return {
-                after: gte(todos.createdAt, nextMinute),
-                onOrAfter: gte(todos.createdAt, minute),
-                before: lt(todos.createdAt, minute),
-                onOrBefore: lt(todos.createdAt, nextMinute),
-            }[filter.operator];
-        }
+        case "createdAt":
+            return dateTimeCondition(todos.createdAt, filter.operator, filter.value);
     }
 }
