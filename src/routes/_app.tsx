@@ -1,7 +1,7 @@
 import { Chatbot, Hamburger, Logout } from "@dextinity/admin-icons";
-import { AppBar, Box, CircularProgress, Drawer, IconButton, Toolbar, Typography } from "@mui/material";
+import { AppBar, Box, CircularProgress, Divider, Drawer, IconButton, ListSubheader, Toolbar, Typography } from "@mui/material";
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { lazy, Suspense, useState } from "react";
+import { Fragment, lazy, Suspense, useState } from "react";
 
 import { appName } from "~/app";
 import { appModules, loadNavigationData } from "~/modules/registry";
@@ -38,7 +38,18 @@ function AppLayout() {
         <>
             {/* space for the app bar */}
             <Toolbar />
-            {appModules.map(({ id, navigation }) => navigation && <navigation.Component key={id} onNavigate={() => setMobileDrawerOpen(false)} />)}
+            {appModules.map(
+                ({ id, navigation }, index) =>
+                    navigation && (
+                        <Fragment key={id}>
+                            {index > 0 && <Divider />}
+                            <ListSubheader component="h2" disableSticky sx={{ pt: 1, lineHeight: 2.5 }}>
+                                {navigation.title}
+                            </ListSubheader>
+                            <navigation.Component onNavigate={() => setMobileDrawerOpen(false)} />
+                        </Fragment>
+                    ),
+            )}
         </>
     );
 

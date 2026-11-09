@@ -8,5 +8,7 @@ export const routes = rootRoute("__root.tsx", [
     layout("_app.tsx", [
         // src/modules/todos/routes/: /lists, /lists/$listId
         physical("../modules/todos/routes"),
+        // src/modules/notes/routes/: /notes, /notes/$notebookId, /notes/$notebookId/$noteId
+        physical("../modules/notes/routes"),
     ]),
 ]);

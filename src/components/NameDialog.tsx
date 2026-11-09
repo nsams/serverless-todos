@@ -5,6 +5,8 @@ type Props = {
     open: boolean;
     title: string;
     submitLabel: string;
+    // label of the field
+    label?: string;
     initialName?: string;
     maxLength: number;
     onClose: () => void;
@@ -12,8 +14,8 @@ type Props = {
     onSubmit: (name: string) => Promise<string | null>;
 };
 
-// Dialog with a single name field, e.g. to create or rename a list
-export function NameDialog({ open, title, submitLabel, initialName = "", maxLength, onClose, onSubmit }: Props) {
+// Dialog with a single name field, e.g. to create or rename a list, or the title of a new note
+export function NameDialog({ open, title, submitLabel, label = "Name", initialName = "", maxLength, onClose, onSubmit }: Props) {
     const [pending, setPending] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -39,7 +41,7 @@ export function NameDialog({ open, title, submitLabel, initialName = "", maxLeng
                     <TextField
                         key={String(open)}
                         name="name"
-                        label="Name"
+                        label={label}
                         defaultValue={initialName}
                         autoFocus
                         fullWidth
