@@ -53,7 +53,7 @@
         "vars": {
             "ACCESS_TEAM_DOMAIN": "https://vivid-planet-sandbox.cloudflareaccess.com",
             // AUD tag of the Access application protecting the Preview URLs (not the production one), see README
-            "ACCESS_AUD": "TODO-set-aud-of-preview-access-application",
+            "ACCESS_AUD": "dcacc8dc414027c9cafbca4e91f53dcacd16c652f18fee944fd50b646850a67d",
             "AI_MODEL": "@cf/zai-org/glm-4.7-flash",
             "AI_GATEWAY_ID": "default",
         },
