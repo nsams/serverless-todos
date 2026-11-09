@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { createRemoteJWKSet, decodeJwt, errors, jwtVerify } from "jose";
 
 // Authentication is done by Cloudflare Access in front of the worker. Requests that bypassed Access (or matched another Access application) are rejected.
 //
@@ -51,6 +51,11 @@ async function getEmailFromAccessJwt(request: Request) {
         }
         return payload.email;
     } catch (error) {
+        if (error instanceof errors.JWTClaimValidationFailed && error.claim === "aud") {
+            // e.g. ACCESS_AUD not set to the AUD tag of the Access application in front of this URL (the AUD tag is not secret, it's part of every Access JWT)
+            console.warn(`Access denied: Access JWT audience ${JSON.stringify(decodeJwt(token).aud)} doesn't match ACCESS_AUD ${env.ACCESS_AUD}`);
+            return undefined;
+        }
         console.warn("Access denied: invalid Access JWT", error);
         return undefined;
     }
