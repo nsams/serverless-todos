@@ -7,7 +7,7 @@ import { dateStringSchema } from "~/dates";
 // Path the client connects to (WebSocket and HTTP); the server picks the agent instance of the authenticated user (src/server.ts)
 export const chatAgentPath = "chat-agent";
 
-// The page currently shown in the app: the route (TanStack Router route id, e.g. "/_app/lists/$listId") and its params.
+// The page currently shown in the app: the route (React Router route id, e.g. "todos/list", see src/modules/todos/paths.ts) and its params.
 // The modules tell the assistant what the user is looking at (ServerModule.chatContext), e.g. the current list as default list for new todos.
 const chatPageSchema = z.object({ routeId: z.string(), params: z.record(z.string(), z.string()) });
 

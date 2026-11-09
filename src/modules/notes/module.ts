@@ -1,16 +1,18 @@
+import { api } from "~/api/client";
 import type { AppModule } from "~/modules/types";
 
 import { NotebooksNavigation } from "./components/NotebooksNavigation";
 import { notesModuleId } from "./navigation";
-import { listNotebooks } from "./notebooks.functions";
+import { notesRoutes } from "./routes";
 
 // The notes module (notebooks and Markdown notes), app shell part. Server part: module.server.ts;
-// routes: routes/ (/notes, /notes/$notebookId, /notes/$notebookId/$noteId).
+// pages: routes.tsx (/notes, /notes/:notebookId, /notes/:notebookId/:noteId).
 export const notesModule: AppModule = {
     id: notesModuleId,
+    routes: notesRoutes,
     navigation: {
         title: "Notes",
-        loader: () => listNotebooks(),
+        loader: () => api.notebooks.list.query(),
         Component: NotebooksNavigation,
     },
     chat: {

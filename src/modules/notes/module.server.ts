@@ -1,15 +1,15 @@
 import type { ServerModule } from "~/modules/types";
-import type { FileRoutesById } from "~/routeTree.gen";
 
 import { getNotebookRepository } from "./db/notebooks.server";
 import { getNoteRepository } from "./db/notes.server";
+import { notebooksApi } from "./notebooks.api.server";
+import { notesApi } from "./notes.api.server";
+import { notebookRouteId, noteRouteId } from "./paths";
 import { createNoteTools, noteToolsInstructions } from "./tools.server";
 
-const notebookRouteId: keyof FileRoutesById = "/_app/notes/$notebookId/";
-const noteRouteId: keyof FileRoutesById = "/_app/notes/$notebookId/$noteId";
-
 // The notes module (notebooks and Markdown notes), server part. App shell part: module.ts.
-export const notesServerModule: ServerModule = {
+export const notesServerModule = {
+    api: { notebooks: notebooksApi, notes: notesApi },
     createTools: createNoteTools,
     instructions: noteToolsInstructions,
     chatContext: async (userId, page) => {
@@ -31,4 +31,4 @@ export const notesServerModule: ServerModule = {
         }
         return [];
     },
-};
+} satisfies ServerModule;

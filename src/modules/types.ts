@@ -1,22 +1,26 @@
+import type { AnyRouter } from "@trpc/server";
 import type { ComponentType } from "react";
+import type { RouteObject } from "react-router";
 import type { z } from "zod";
 
 import type { ChatPage } from "~/chat/chat";
 
 // The app consists of a core (app shell, authentication, chat assistant, MCP server, database connection) and feature modules.
-// Everything that belongs to a module lives in its folder src/modules/<module>/: database schema, repositories, server functions,
+// Everything that belongs to a module lives in its folder src/modules/<module>/: database schema, repositories, API procedures,
 // routes, components, AI tools. The core only knows the modules through the registries (src/modules/registry.ts, registry.server.ts)
 // and the interfaces below.
 
-// The part of a module the app shell uses (browser and server rendering)
+// The part of a module the app shell uses (browser)
 export type AppModule = {
     // unique; key of the module's navigation data
     id: string;
+    // the module's pages (React Router route objects), mounted into the app layout (src/router.tsx)
+    routes: RouteObject[];
     // shown in the app's sidebar
     navigation?: {
         // heading of the module's section in the sidebar
         title: string;
-        // loaded by the app layout (src/routes/_app.tsx) for every page; the module reads it with useNavigationData
+        // loaded by the app layout (src/routes/app.tsx) for every page; the module reads it with useNavigationData
         loader: () => Promise<unknown>;
         // onNavigate: closes the sidebar on small screens
         Component: ComponentType<{ onNavigate: () => void }>;
@@ -29,8 +33,12 @@ export type AppModule = {
     };
 };
 
-// The part of a module the server uses (chat assistant, MCP server)
+// The part of a module the server uses (API, chat assistant, MCP server)
 export type ServerModule = {
+    // the module's API procedures (tRPC routers by name, e.g. { lists: listsApi, todos: todosApi }), part of the app's API
+    // (src/api/router.server.ts); the names must be unique across the modules. Define the module with `satisfies ServerModule`
+    // (not as type annotation), so the client gets the types of the procedures.
+    api: Record<string, AnyRouter>;
     // the module's tools for the AI assistants, scoped to the authenticated user (userId is never chosen by the model)
     createTools(userId: string): Record<string, AppTool>;
     // guidance for the model: what the tools manage and how to use them (system prompt of the chat assistant, instructions of the MCP server)

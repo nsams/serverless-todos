@@ -27,11 +27,7 @@ function subscribeToDateChange(onChange: () => void) {
     return () => clearInterval(interval);
 }
 
-// The user's local date (YYYY-MM-DD). null while rendering on the server (and during hydration), as the server doesn't know the user's time zone.
+// The user's local date (YYYY-MM-DD); the server doesn't know the user's time zone
 export function useToday() {
-    return useSyncExternalStore(
-        subscribeToDateChange,
-        () => toDateString(new Date()),
-        () => null,
-    );
+    return useSyncExternalStore(subscribeToDateChange, () => toDateString(new Date()));
 }
