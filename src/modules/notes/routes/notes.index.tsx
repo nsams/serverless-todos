@@ -2,15 +2,14 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 
 import { defaultCollectionId } from "~/collections";
 
-import { getDefaultNotebook } from "../notebooks.functions";
-import { notebooksQuery } from "../queries";
+import { notesApi } from "../api";
 
 // The user's first notebook (created if the user has none yet)
 export const Route = createFileRoute("/_app/notes/")({
     loader: async ({ context: { queryClient }, preload }) => {
         const notebookId = await defaultCollectionId(queryClient, {
-            collectionsQuery: notebooksQuery,
-            createDefault: () => getDefaultNotebook(),
+            collectionsQuery: notesApi.listNotebooks.queryOptions({}),
+            createDefault: () => notesApi.getDefaultNotebook.mutate({}),
             preload,
         });
         if (notebookId) {

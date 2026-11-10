@@ -1,54 +1,24 @@
-import robotoFlexCss from "@fontsource-variable/roboto-flex?url";
-import { Container, CssBaseline, Typography } from "@mui/material";
-import { ThemeProvider } from "@mui/material/styles";
-import { createRootRouteWithContext, type ErrorComponentProps, HeadContent, Scripts } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { createRootRouteWithContext, HeadContent, Outlet } from "@tanstack/react-router";
 
-import { appName } from "~/app";
+import { pageHead } from "~/app";
 import { ChatPageProvider } from "~/chat/useChatPage";
-import { ErrorSnackbarProvider } from "~/components/ErrorSnackbar";
 import type { RouterContext } from "~/router";
-import { theme } from "~/theme";
 
+// Root route of the app (src/routes.ts); the providers (theme, error snackbar, query client) are set up in src/main.tsx
 export const Route = createRootRouteWithContext<RouterContext>()({
-    head: () => ({
-        meta: [{ charSet: "utf-8" }, { name: "viewport", content: "width=device-width, initial-scale=1" }, { title: appName }],
-        links: [{ rel: "stylesheet", href: robotoFlexCss }],
-    }),
-    shellComponent: RootDocument,
-    errorComponent: ErrorComponent,
-    notFoundComponent: () => <ErrorMessage message="404" details="The requested page could not be found." />,
+    head: () => pageHead(undefined),
+    component: Root,
 });
 
-function RootDocument({ children }: { children: ReactNode }) {
+function Root() {
     return (
-        <html lang="en">
-            <head>
-                <HeadContent />
-            </head>
-            <body>
-                <ThemeProvider theme={theme}>
-                    <CssBaseline />
-                    <ErrorSnackbarProvider>
-                        {/* the pages report what they show to the chat panel (useChatPage) */}
-                        <ChatPageProvider>{children}</ChatPageProvider>
-                    </ErrorSnackbarProvider>
-                </ThemeProvider>
-                <Scripts />
-            </body>
-        </html>
-    );
-}
-
-function ErrorComponent({ error }: ErrorComponentProps) {
-    return <ErrorMessage message="Error" details={import.meta.env.DEV && error instanceof Error ? error.message : "An unexpected error occurred."} />;
-}
-
-function ErrorMessage({ message, details }: { message: string; details: string }) {
-    return (
-        <Container sx={{ py: 4 }}>
-            <Typography variant="h4">{message}</Typography>
-            <Typography>{details}</Typography>
-        </Container>
+        <>
+            {/* the head tags of the current routes (the page title); React moves them into the document's head */}
+            <HeadContent />
+            {/* the pages report what they show to the chat panel (useChatPage) */}
+            <ChatPageProvider>
+                <Outlet />
+            </ChatPageProvider>
+        </>
     );
 }

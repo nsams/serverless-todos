@@ -3,7 +3,6 @@ import { defineConfig, globalIgnores } from "eslint/config";
 
 export default defineConfig([
     globalIgnores([
-        ".tanstack/**",
         ".wrangler/**",
         "dist/**",
         "src/routeTree.gen.ts",

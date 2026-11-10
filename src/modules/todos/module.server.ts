@@ -1,6 +1,7 @@
 import { defineChatContext } from "~/chat/chatPage";
 import type { ServerModule } from "~/modules/types";
 
+import { todosRouter } from "./api.server";
 import { todosChatPage } from "./chatPage";
 import { getListRepository } from "./db/lists.server";
 import { todosModuleId } from "./moduleId";
@@ -10,6 +11,7 @@ import { todoInstructions, todoOperations } from "./operations.server";
 export const serverModule: ServerModule = {
     id: todosModuleId,
     operations: todoOperations,
+    api: todosRouter,
     instructions: todoInstructions,
     chatContext: defineChatContext(todosChatPage, async (userId, page) => {
         const currentList = page ? await getListRepository().get(userId, page.listId) : undefined;

@@ -1,15 +1,15 @@
 import type { AppModule } from "~/modules/types";
 
+import { todosApi } from "./api";
 import { ListsNavigation } from "./components/ListsNavigation";
 import { todosModuleId } from "./moduleId";
-import { listsQuery } from "./queries";
 
 // The todos module (todo lists and todos), app shell part. Server part: module.server.ts; routes: routes/ (/lists, /lists/$listId).
 export const todosModule: AppModule = {
     id: todosModuleId,
     navigation: {
         title: "Todo lists",
-        prefetch: (queryClient) => queryClient.prefetchQuery(listsQuery),
+        prefetch: (queryClient) => queryClient.prefetchQuery(todosApi.listLists.queryOptions({})),
         Component: ListsNavigation,
     },
     chat: {

@@ -2,36 +2,35 @@ import { Add, Delete, Move, Warning } from "@dextinity/admin-icons";
 import { Box, Button, Checkbox, Container, Paper, Stack, TextField } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import { DataGridPro, getGridBooleanOperators, getGridDateOperators, getGridStringOperators, GridActionsCellItem } from "@mui/x-data-grid-pro";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { createFileRoute, linkOptions } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 
 import { pageHead } from "~/app";
 import { useChatPage } from "~/chat/useChatPage";
+import { useCollectionHeaderActions } from "~/collections";
 import { CollectionHeader } from "~/components/CollectionHeader";
 import { useShowError } from "~/components/ErrorSnackbar";
 import { useMutate } from "~/components/useMutate";
 import { useServerGrid } from "~/components/useServerGrid";
 import { fromDateString, toDateString, useToday } from "~/dates";
 import { errorMessage } from "~/errors";
-import { type GridColumns, supportedOperators, validateGridSearch } from "~/gridSearch";
-import { useInvalidateModule, usePageQuery } from "~/moduleQueries";
-import type { OperationInput } from "~/operations";
+import { filterParam, type GridColumns, supportedOperators, validateGridSearch } from "~/gridSearch";
+import { loadPageQuery, useInvalidateModule, usePageQuery } from "~/moduleQueries";
 
+import { todosApi, type TodosApiInputs } from "../api";
 import { todosChatPage } from "../chatPage";
 import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "../limits";
-import { deleteList, renameList } from "../lists.functions";
 import { todosModuleId } from "../moduleId";
-import type { todoOperations, TodoView } from "../operations.server";
+import type { TodoView } from "../operations.server";
 import { isOverdue } from "../overdue";
-import { todosQuery, useLists } from "../queries";
-import { createTodo, deleteTodo, updateTodo } from "../todos.functions";
 import { todoFields } from "../todoSearch";
 
 export const Route = createFileRoute("/_app/lists/$listId")({
     validateSearch: validateGridSearch,
     loaderDeps: ({ search }) => search,
     loader: async ({ context: { queryClient }, params: { listId }, deps }) => {
-        const { list } = await queryClient.fetchQuery(todosQuery({ listId, ...deps }));
+        const { list } = await loadPageQuery(queryClient, todosApi.listTodos.queryOptions({ ...deps, listId }));
         return { title: list.name };
     },
     head: ({ loaderData }) => pageHead(loaderData?.title),
@@ -40,8 +39,9 @@ export const Route = createFileRoute("/_app/lists/$listId")({
 
 function Todos() {
     const { listId } = Route.useParams();
-    const { list, todos, totalCount } = usePageQuery(todosQuery({ ...Route.useSearch(), listId }));
-    const lists = useLists();
+    const { list, todos, totalCount } = usePageQuery(todosApi.listTodos.queryOptions({ ...Route.useSearch(), listId }));
+    // for the "move to" menu: empty while loading, the page doesn't wait for them
+    const lists = useQuery(todosApi.listLists.queryOptions({})).data ?? [];
     const navigate = Route.useNavigate();
     const invalidate = useInvalidateModule(todosModuleId);
     const showError = useShowError();
@@ -69,7 +69,7 @@ function Todos() {
             renderCell: ({ row }) => (
                 <Checkbox
                     checked={row.done}
-                    onChange={(event) => void mutate(updateTodo({ data: { id: row.id, done: event.target.checked } }))}
+                    onChange={(event) => void mutate(todosApi.updateTodo.mutate({ id: row.id, done: event.target.checked }))}
                     slotProps={{ input: { "aria-label": `Mark “${row.title}” as ${row.done ? "open" : "done"}` } }}
                 />
             ),
@@ -127,7 +127,7 @@ function Todos() {
                     key="delete"
                     icon={<Delete />}
                     label="Delete"
-                    onClick={() => void mutate(deleteTodo({ data: { id: row.id } }))}
+                    onClick={() => void mutate(todosApi.deleteTodo.mutate({ id: row.id }))}
                 />,
                 ...lists
                     .filter((otherList) => otherList.id !== list.id)
@@ -137,7 +137,7 @@ function Todos() {
                             icon={<Move />}
                             label={`Move to “${otherList.name}”`}
                             showInMenu
-                            onClick={() => void mutate(updateTodo({ data: { id: row.id, listId: otherList.id } }))}
+                            onClick={() => void mutate(todosApi.updateTodo.mutate({ id: row.id, listId: otherList.id }))}
                         />
                     )),
             ],
@@ -153,7 +153,12 @@ function Todos() {
                     <Button
                         startIcon={<Warning />}
                         color="error"
-                        onClick={() => updateSearch({ filter: [`dueDate:before:${today}`, "done:is:false"], filterLogic: undefined })}
+                        onClick={() =>
+                            updateSearch({
+                                filter: [filterParam(todoFields, "dueDate", "before", today), filterParam(todoFields, "done", "is", "false")],
+                                filterLogic: undefined,
+                            })
+                        }
                     >
                         Show overdue
                     </Button>
@@ -179,9 +184,9 @@ function Todos() {
                                 title: title !== oldRow.title ? title : undefined,
                                 description: newRow.description !== oldRow.description ? newRow.description : undefined,
                                 dueDate: newRow.dueDate !== oldRow.dueDate ? newRow.dueDate : undefined,
-                            } satisfies OperationInput<typeof todoOperations.updateTodo>;
+                            } satisfies TodosApiInputs["updateTodo"];
                             if (changes.title !== undefined || changes.description !== undefined || changes.dueDate !== undefined) {
-                                await updateTodo({ data: changes });
+                                await todosApi.updateTodo.mutate(changes);
                                 void invalidate();
                             }
                             return { ...newRow, title };
@@ -195,8 +200,12 @@ function Todos() {
 }
 
 function ListHeader({ list }: { list: { id: string; name: string } }) {
-    const navigate = useNavigate();
-    const invalidate = useInvalidateModule(todosModuleId);
+    const actions = useCollectionHeaderActions(todosModuleId, {
+        rename: (name) => todosApi.renameList.mutate({ listId: list.id, name }),
+        delete: () => todosApi.deleteList.mutate({ listId: list.id }),
+        // redirects to the first remaining list (or creates a new one)
+        index: linkOptions({ to: "/lists" }),
+    });
 
     return (
         <CollectionHeader
@@ -204,16 +213,7 @@ function ListHeader({ list }: { list: { id: string; name: string } }) {
             kind="list"
             deleteText={`“${list.name}” and all its todos will be deleted.`}
             maxNameLength={maxListNameLength}
-            onRename={async (name) => {
-                await renameList({ data: { listId: list.id, name } });
-                await invalidate();
-            }}
-            onDelete={async () => {
-                await deleteList({ data: { listId: list.id } });
-                // redirects to the first remaining list (or creates a new one); reloaded afterwards, so the deleted list isn't reloaded
-                await navigate({ to: "/lists", replace: true });
-                void invalidate();
-            }}
+            {...actions}
         />
     );
 }
@@ -228,13 +228,11 @@ function CreateTodoForm({ listId, onCreated }: { listId: string; onCreated: () =
         const formData = new FormData(form);
         setPending(true);
         try {
-            await createTodo({
-                data: {
-                    listId,
-                    title: String(formData.get("title") ?? ""),
-                    description: String(formData.get("description") ?? ""),
-                    dueDate: String(formData.get("dueDate") ?? "") || null,
-                },
+            await todosApi.createTodo.mutate({
+                listId,
+                title: String(formData.get("title") ?? ""),
+                description: String(formData.get("description") ?? ""),
+                dueDate: String(formData.get("dueDate") ?? "") || null,
             });
             setError(null);
             form.reset();
