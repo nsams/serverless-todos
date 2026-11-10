@@ -1,36 +1,32 @@
+import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 
-import { api } from "~/api/client";
 import { NavigationList } from "~/components/NavigationList";
 
+import { todosApi } from "../api";
 import { maxListNameLength } from "../limits";
-import { listRoute } from "../paths";
-import { invalidateLists, useLists } from "../queries";
+import { listRoute } from "../routes";
 
 // The user's lists in the app's sidebar
 export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
-    const lists = useLists() ?? [];
+    const { data: lists } = useSuspenseQuery(todosApi.listLists.queryOptions({}));
     const navigate = useNavigate();
+    // opens the new list (the lists are reloaded afterwards)
+    const createList = useMutation(todosApi.createList.mutationOptions({ onSuccess: ({ id }) => navigate(listRoute.href({ listId: id })) }));
 
     return (
         <NavigationList
             items={lists.map((list) => ({
                 id: list.id,
                 name: list.name,
-                path: listRoute.href({ listId: list.id }),
+                link: listRoute.link({ listId: list.id }),
                 count: list.openCount,
                 countLabel: `${list.openCount} open`,
             }))}
             createLabel="New list"
             maxNameLength={maxListNameLength}
             onCreate={async (name) => {
-                const result = await api.lists.create.mutate({ name });
-                if (result.id !== null) {
-                    await navigate(listRoute.href({ listId: result.id }));
-                    // the new list in the sidebar
-                    await invalidateLists();
-                }
-                return result.error;
+                await createList.mutateAsync({ name });
             }}
             onNavigate={onNavigate}
         />

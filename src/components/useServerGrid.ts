@@ -1,72 +1,87 @@
-import { type DataGridProProps, type GridFilterModel, GridLogicOperator, type GridSortModel } from "@mui/x-data-grid-pro";
-import { useEffect } from "react";
+import { type DataGridProProps, type GridFilterModel, GridLogicOperator, type GridSortModel, type GridValidRowModel } from "@mui/x-data-grid-pro";
+import { useEffect, useOptimistic, useState, useTransition } from "react";
 import { useNavigate } from "react-router";
 
-import { type GridFieldConfig, type GridSearch, lastPageWithRows, pageSizeOptions, parseGridSearch, serializeFilterValue } from "~/gridSearch";
+import { type GridFields, type GridSearch, lastPageWithRows, pageSizeOptions, parseGridSearch, serializeFilterValue } from "~/gridSearch";
 import { stringifySearch } from "~/searchParams";
 
-type Options<Search extends GridSearch> = {
-    // the current search params (useRouteSearch), the page's query loads the rows for them
+type Options<Row extends GridValidRowModel, Search extends GridSearch, Fields extends GridFields> = {
+    // the current search params (route.useSearch()); the page's query loads the rows for them
     search: Search;
     // the sortable and filterable fields
-    fields: Record<string, GridFieldConfig>;
-    // the query's result: the number of rows on the page and on the server (with the filters applied); undefined before the first result
-    result: { rowsOnPage: number; rowCount: number } | undefined;
-    // the rows for the current search params are loading (the previous result is shown meanwhile: placeholderData: keepPreviousData)
-    loading: boolean;
+    fields: Fields;
+    // the rows of the page and the number of rows on the server (with the filters applied)
+    rows: Row[];
+    rowCount: number;
     // fields with calendar date filters (YYYY-MM-DD), e.g. a due date
-    dateOnlyFields?: string[];
+    dateOnlyFields?: (keyof Fields & string)[];
 };
 
 // A DataGrid with server-side pagination, sorting and filtering whose state lives in the URL (see src/gridSearch.ts):
 // gridProps connect the grid to the URL, the page's query loads the rows for it (parseGridSearch on the server).
-// The grid shows a new state (e.g. a filter value while typing) right away, with a loading indicator until its rows are loaded.
-export function useServerGrid<Search extends GridSearch>({ search, fields, result, loading, dateOnlyFields = [] }: Options<Search>) {
+export function useServerGrid<Row extends GridValidRowModel, Search extends GridSearch, Fields extends GridFields>({
+    search,
+    fields,
+    rows,
+    rowCount,
+    dateOnlyFields = [],
+}: Options<Row, Search, Fields>) {
     const routerNavigate = useNavigate();
-    const { page, pageSize, sort, filter, filterItems } = parseGridSearch(search, fields);
+    // The page's query suspends while the rows for new search params are loading; the navigation is a transition, so the grid keeps
+    // showing the previous rows meanwhile (with a loading indicator), but the new state right away (e.g. a filter value while typing)
+    const [loading, startTransition] = useTransition();
+    const [shownSearch, setShownSearch] = useOptimistic(search);
+    const { page, pageSize, sort, filter, filterItems } = parseGridSearch(shownSearch, fields);
 
-    // changes the search params of this page
+    // changes the search params of this page (keeps the scroll position)
     const navigate = (newSearch: Search, { replace }: { replace: boolean }) =>
-        void routerNavigate({ search: stringifySearch(newSearch) }, { replace });
+        startTransition(() => {
+            setShownSearch(newSearch);
+            void routerNavigate({ search: stringifySearch(newSearch) }, { replace, preventScrollReset: true });
+        });
 
     // e.g. after deleting the last row of the last page: go to the last page with rows
-    const lastPage = result && !loading ? lastPageWithRows({ page, pageSize }, result.rowsOnPage, result.rowCount) : undefined;
+    const lastPage = loading ? undefined : lastPageWithRows({ page, pageSize }, rows.length, rowCount);
     useEffect(() => {
         if (lastPage !== undefined) {
-            navigate({ ...search, page: lastPage || undefined }, { replace: true });
+            navigate({ ...shownSearch, page: lastPage || undefined }, { replace: true });
         }
-        // only when the result is in
+        // only when another page is needed
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [lastPage]);
 
-    const sortModel: GridSortModel = sort.map(({ field, direction }) => ({ field, sort: direction }));
-    const filterModel: GridFilterModel = {
+    // Stable references: the grid treats a new sort model object as a changed sort and goes back to the first page
+    // (e.g. a grid opened on ?page=1 ended up on the first page)
+    const sortModel: GridSortModel = useStableValue(sort.map(({ field, direction }) => ({ field, sort: direction })));
+    const filterModel: GridFilterModel = useStableValue({
         items: filterItems.map((item, index) => ({ id: index, ...item })),
         logicOperator: filter.logicOperator === "or" ? GridLogicOperator.Or : GridLogicOperator.And,
-    };
+    });
+    // the last page with rows right away, the grid would go to the first page itself otherwise
+    const paginationModel = useStableValue({ page: lastPage ?? page, pageSize });
 
     // Changes search params, e.g. a search field next to the grid (also goes back to the first page)
-    const updateSearch = (values: Partial<Search>, { replace = false } = {}) => navigate({ ...search, page: undefined, ...values }, { replace });
+    const updateSearch = (values: Partial<Search>, { replace = false } = {}) => navigate({ ...shownSearch, page: undefined, ...values }, { replace });
 
     const gridProps = {
         pagination: true,
         paginationMode: "server",
         sortingMode: "server",
         filterMode: "server",
-        rowCount: result?.rowCount ?? 0,
+        rows,
+        rowCount,
         loading,
         pageSizeOptions,
-        // the last page with rows right away, the grid would go to the first page itself otherwise
-        paginationModel: { page: lastPage ?? page, pageSize },
-        onPaginationModelChange: (model) => navigate({ ...search, page: model.page || undefined, pageSize: model.pageSize }, { replace: false }),
+        paginationModel,
+        onPaginationModelChange: (model) => navigate({ ...shownSearch, page: model.page || undefined, pageSize: model.pageSize }, { replace: false }),
         sortModel,
         onSortModelChange: (model) =>
-            navigate({ ...search, page: undefined, sort: model.map((item) => `${item.field}:${item.sort}`) }, { replace: false }),
+            navigate({ ...shownSearch, page: undefined, sort: model.map((item) => `${item.field}:${item.sort}`) }, { replace: false }),
         filterModel,
         onFilterModelChange: (model) =>
             navigate(
                 {
-                    ...search,
+                    ...shownSearch,
                     page: undefined,
                     filter: model.items.map(
                         (item) =>
@@ -79,6 +94,17 @@ export function useServerGrid<Search extends GridSearch>({ search, fields, resul
             ),
     } satisfies Partial<DataGridProProps>;
 
-    // search: the current search params; hasFilter: whether the filters filter (e.g. for the text of an empty grid)
-    return { search, hasFilter: filter.items.length > 0, updateSearch, gridProps };
+    // search: the search params shown (also while their rows are loading); hasFilter: whether the filters filter (e.g. for the text
+    // of an empty grid)
+    return { search: shownSearch, hasFilter: filter.items.length > 0, updateSearch, gridProps };
+}
+
+// The previous value as long as it is equal (as JSON) to the new one
+function useStableValue<T>(value: T): T {
+    const [stable, setStable] = useState(value);
+    if (JSON.stringify(value) === JSON.stringify(stable)) {
+        return stable;
+    }
+    setStable(value);
+    return value;
 }

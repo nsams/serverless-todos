@@ -1,21 +1,24 @@
-import { Container, Typography } from "@mui/material";
+import { Box, CircularProgress, Container, Typography } from "@mui/material";
+import { useQueryErrorResetBoundary } from "@tanstack/react-query";
 import { Component, type ReactNode, useEffect } from "react";
 import { useLocation } from "react-router";
 
-import { isNotFoundError } from "~/api/client";
+import { NotFoundError } from "~/errors";
 import { usePageTitle } from "~/routing";
 
-// Error handling and scrolling of the routes (src/router.tsx)
+// Loading, error handling and scrolling of the routes (src/router.tsx)
 
 type ErrorBoundaryProps = {
-    // the error is reset when this changes (e.g. the path: another page is shown)
+    // the error is reset when this changes (e.g. the location: another page or other search params are shown)
     resetKey: unknown;
+    onReset: () => void;
     fallback: (error: unknown) => ReactNode;
     children: ReactNode;
 };
 
-// Catches the errors thrown while rendering its children (e.g. by useApiQuery in src/routing.tsx) and shows the fallback instead
-export class ErrorBoundary extends Component<ErrorBoundaryProps, { error: { value: unknown } | null }> {
+// Catches the errors thrown while rendering its children (e.g. a page whose data wasn't found, see useData in src/routing.tsx) and
+// shows the fallback instead. React has error boundaries only as class components.
+class ErrorBoundary extends Component<ErrorBoundaryProps, { error: { value: unknown } | null }> {
     state: { error: { value: unknown } | null } = { error: null };
 
     static getDerivedStateFromError(error: unknown) {
@@ -24,6 +27,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, { error: { valu
 
     componentDidUpdate(previousProps: ErrorBoundaryProps) {
         if (this.state.error && previousProps.resetKey !== this.props.resetKey) {
+            this.props.onReset();
             this.setState({ error: null });
         }
     }
@@ -33,19 +37,21 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, { error: { valu
     }
 }
 
-// The error boundary of the pages: 404 (NOT_FOUND of the API) or an error page instead of the page, until another page is shown
+// The error boundary of the pages: 404 (NotFoundError of the API, e.g. a list that doesn't exist (anymore)) or an error page instead of
+// the page, until another location is shown. The failed queries are loaded again then (QueryErrorResetBoundary).
 export function RouteErrorBoundary({ children }: { children: ReactNode }) {
-    const { pathname } = useLocation();
+    const { pathname, search } = useLocation();
+    const { reset } = useQueryErrorResetBoundary();
     return (
-        <ErrorBoundary resetKey={pathname} fallback={(error) => <RouteError error={error} />}>
+        <ErrorBoundary resetKey={pathname + search} onReset={reset} fallback={(error) => <RouteError error={error} />}>
             {children}
         </ErrorBoundary>
     );
 }
 
-// 404 (e.g. a list that doesn't exist (anymore)) and unexpected errors (logged by onCaughtError in src/main.tsx)
-export function RouteError({ error }: { error: unknown }) {
-    if (isNotFoundError(error)) {
+// 404 and unexpected errors (logged by onCaughtError in src/main.tsx)
+function RouteError({ error }: { error: unknown }) {
+    if (error instanceof NotFoundError) {
         return <NotFound />;
     }
     return <ErrorMessage message="Error" details={import.meta.env.DEV && error instanceof Error ? error.message : "An unexpected error occurred."} />;
@@ -63,6 +69,15 @@ function ErrorMessage({ message, details }: { message: string; details: string }
             <Typography variant="h4">{message}</Typography>
             <Typography>{details}</Typography>
         </Container>
+    );
+}
+
+// Shown while the first page (its code and data) is loading; later navigations keep showing the previous page meanwhile
+export function PageLoading() {
+    return (
+        <Box sx={{ display: "flex", justifyContent: "center", p: 8 }}>
+            <CircularProgress />
+        </Box>
     );
 }
 

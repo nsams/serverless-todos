@@ -3,13 +3,15 @@ import { Divider, List, ListItemButton, ListItemIcon, ListItemText, Typography }
 import { useState } from "react";
 import { Link, useMatch } from "react-router";
 
+import { linkProps, type RouteLink } from "~/routing";
+
 import { NameDialog } from "./NameDialog";
 
 export type NavigationItem = {
     id: string;
     name: string;
-    // the item's page, e.g. listRoute.href({ listId })
-    path: string;
+    // the item's page, e.g. listRoute.link({ listId }) (preloaded on hover)
+    link: RouteLink;
     // shown next to the name if > 0, e.g. the number of open todos
     count?: number;
     // accessible name of the count, e.g. "3 open"
@@ -21,8 +23,8 @@ type Props = {
     // e.g. "New list": button and dialog title
     createLabel: string;
     maxNameLength: number;
-    // creates an item, reloads the sidebar's data and navigates to the item; returns an error message, or null on success
-    onCreate: (name: string) => Promise<string | null>;
+    // creates an item, navigates to it and reloads the items; throws a ValidationError with a message for the user, e.g. for an empty name
+    onCreate: (name: string) => Promise<void>;
     // closes the sidebar on small screens
     onNavigate: () => void;
 };
@@ -32,12 +34,9 @@ export function NavigationList({ items, createLabel, maxNameLength, onCreate, on
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
     const handleCreate = async (name: string) => {
-        const error = await onCreate(name);
-        if (error === null) {
-            setCreateDialogOpen(false);
-            onNavigate();
-        }
-        return error;
+        await onCreate(name);
+        setCreateDialogOpen(false);
+        onNavigate();
     };
 
     return (
@@ -70,9 +69,9 @@ export function NavigationList({ items, createLabel, maxNameLength, onCreate, on
 
 function NavigationListItem({ item, onNavigate }: { item: NavigationItem; onNavigate: () => void }) {
     // also active on the item's sub pages and with search params (e.g. a grid's filters)
-    const active = useMatch({ path: item.path, end: false }) !== null;
+    const active = useMatch({ path: item.link.href, end: false }) !== null;
     return (
-        <ListItemButton component={Link} to={item.path} selected={active} aria-current={active ? "page" : undefined} onClick={onNavigate}>
+        <ListItemButton component={Link} {...linkProps(item.link)} selected={active} aria-current={active ? "page" : undefined} onClick={onNavigate}>
             <ListItemText primary={item.name} slotProps={{ primary: { noWrap: true } }} />
             {item.count !== undefined && item.count > 0 && (
                 <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }} aria-label={item.countLabel}>

@@ -6,8 +6,9 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router";
 
-import { isNotFoundError, queryClient } from "./api/client";
+import { queryClient } from "./api/client";
 import { ErrorSnackbarProvider } from "./components/ErrorSnackbar";
+import { NotFoundError } from "./errors";
 import { AppRoutes } from "./router";
 import { RouteErrorBoundary } from "./routes/root";
 import { theme } from "./theme";
@@ -20,7 +21,7 @@ if (!root) {
 createRoot(root, {
     // errors shown by an error boundary (src/routes/root.tsx); a 404 isn't an error of the app
     onCaughtError: (error, { componentStack }) => {
-        if (!isNotFoundError(error)) {
+        if (!(error instanceof NotFoundError)) {
             console.error(error, componentStack);
         }
     },
