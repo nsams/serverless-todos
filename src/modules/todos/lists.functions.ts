@@ -1,45 +1,28 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
 
-import { getListRepository } from "./db/lists.server";
-import { maxListNameLength } from "./limits";
+import { operationInput, runOperation } from "~/operations";
 
-// Empty names are reported to the user (see the handlers), invalid input otherwise throws
-const nameSchema = z.string().trim().max(maxListNameLength);
+import { todoOperations } from "./operations.server";
+
+// Server functions of the lists: thin adapters over the module's operations (operations.server.ts), which validate the input
+// and do the checks. Errors are mapped in src/start.ts (NotFoundError → not found, ValidationError → shown in the form).
 
 // The user's lists with their number of open todos: the module's navigation data (sidebar), see navigation.ts
-export const listLists = createServerFn().handler(async ({ context: { user } }) => {
-    return getListRepository().list(user.id);
-});
+export const listLists = createServerFn().handler(({ context }) => runOperation(todoOperations.listLists, { userId: context.user.id }, {}));
 
 // The list shown on /lists, created if the user has none yet (POST: it may create a list)
-export const getDefaultList = createServerFn({ method: "POST" }).handler(async ({ context: { user } }) => {
-    const { id } = await getListRepository().getOrCreateDefault(user.id);
-    return { id };
-});
+export const getDefaultList = createServerFn({ method: "POST" }).handler(({ context }) =>
+    runOperation(todoOperations.getDefaultList, { userId: context.user.id }, {}),
+);
 
 export const createList = createServerFn({ method: "POST" })
-    .validator(z.object({ name: nameSchema }))
-    .handler(async ({ data: { name }, context: { user } }) => {
-        if (!name) {
-            return { error: "Name is required", id: null };
-        }
-        const { id } = await getListRepository().create(user.id, name);
-        return { error: null, id };
-    });
+    .validator(operationInput<typeof todoOperations.createList>)
+    .handler(({ data, context }) => runOperation(todoOperations.createList, { userId: context.user.id }, data));
 
 export const renameList = createServerFn({ method: "POST" })
-    .validator(z.object({ id: z.string(), name: nameSchema }))
-    .handler(async ({ data: { id, name }, context: { user } }) => {
-        if (!name) {
-            return { error: "Name is required" };
-        }
-        await getListRepository().rename(user.id, id, name);
-        return { error: null };
-    });
+    .validator(operationInput<typeof todoOperations.renameList>)
+    .handler(({ data, context }) => runOperation(todoOperations.renameList, { userId: context.user.id }, data));
 
 export const deleteList = createServerFn({ method: "POST" })
-    .validator(z.object({ id: z.string() }))
-    .handler(async ({ data: { id }, context: { user } }) => {
-        await getListRepository().delete(user.id, id);
-    });
+    .validator(operationInput<typeof todoOperations.deleteList>)
+    .handler(({ data, context }) => runOperation(todoOperations.deleteList, { userId: context.user.id }, data));

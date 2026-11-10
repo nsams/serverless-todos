@@ -1,45 +1,28 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
 
-import { getNotebookRepository } from "./db/notebooks.server";
-import { maxNotebookNameLength } from "./limits";
+import { operationInput, runOperation } from "~/operations";
 
-// Empty names are reported to the user (see the handlers), invalid input otherwise throws
-const nameSchema = z.string().trim().max(maxNotebookNameLength);
+import { noteOperations } from "./operations.server";
+
+// Server functions of the notebooks: thin adapters over the module's operations (operations.server.ts), which validate the input
+// and do the checks. Errors are mapped in src/start.ts (NotFoundError → not found, ValidationError → shown in the form).
 
 // The user's notebooks with their number of notes: the module's navigation data (sidebar), see navigation.ts
-export const listNotebooks = createServerFn().handler(async ({ context: { user } }) => {
-    return getNotebookRepository().list(user.id);
-});
+export const listNotebooks = createServerFn().handler(({ context }) => runOperation(noteOperations.listNotebooks, { userId: context.user.id }, {}));
 
 // The notebook shown on /notes, created if the user has none yet (POST: it may create a notebook)
-export const getDefaultNotebook = createServerFn({ method: "POST" }).handler(async ({ context: { user } }) => {
-    const { id } = await getNotebookRepository().getOrCreateDefault(user.id);
-    return { id };
-});
+export const getDefaultNotebook = createServerFn({ method: "POST" }).handler(({ context }) =>
+    runOperation(noteOperations.getDefaultNotebook, { userId: context.user.id }, {}),
+);
 
 export const createNotebook = createServerFn({ method: "POST" })
-    .validator(z.object({ name: nameSchema }))
-    .handler(async ({ data: { name }, context: { user } }) => {
-        if (!name) {
-            return { error: "Name is required", id: null };
-        }
-        const { id } = await getNotebookRepository().create(user.id, name);
-        return { error: null, id };
-    });
+    .validator(operationInput<typeof noteOperations.createNotebook>)
+    .handler(({ data, context }) => runOperation(noteOperations.createNotebook, { userId: context.user.id }, data));
 
 export const renameNotebook = createServerFn({ method: "POST" })
-    .validator(z.object({ id: z.string(), name: nameSchema }))
-    .handler(async ({ data: { id, name }, context: { user } }) => {
-        if (!name) {
-            return { error: "Name is required" };
-        }
-        await getNotebookRepository().rename(user.id, id, name);
-        return { error: null };
-    });
+    .validator(operationInput<typeof noteOperations.renameNotebook>)
+    .handler(({ data, context }) => runOperation(noteOperations.renameNotebook, { userId: context.user.id }, data));
 
 export const deleteNotebook = createServerFn({ method: "POST" })
-    .validator(z.object({ id: z.string() }))
-    .handler(async ({ data: { id }, context: { user } }) => {
-        await getNotebookRepository().delete(user.id, id);
-    });
+    .validator(operationInput<typeof noteOperations.deleteNotebook>)
+    .handler(({ data, context }) => runOperation(noteOperations.deleteNotebook, { userId: context.user.id }, data));

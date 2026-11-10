@@ -25,11 +25,8 @@ export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
             createLabel="New list"
             maxNameLength={maxListNameLength}
             onCreate={async (name) => {
-                const result = await createListFn({ data: { name } });
-                if (result.id !== null) {
-                    await navigate({ to: "/lists/$listId", params: { listId: result.id } });
-                }
-                return result.error;
+                const list = await createListFn({ data: { name } });
+                await navigate({ to: "/lists/$listId", params: { listId: list.id } });
             }}
             onNavigate={onNavigate}
         />

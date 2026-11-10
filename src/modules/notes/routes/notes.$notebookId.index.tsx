@@ -1,6 +1,6 @@
 import { Add, Delete, Move, Search } from "@dextinity/admin-icons";
 import { Box, Button, Container, InputAdornment, Link as MuiLink, Paper, Stack, TextField, Typography } from "@mui/material";
-import { DataGridPro, getGridDateOperators, getGridStringOperators, GridActionsCellItem, type GridColDef } from "@mui/x-data-grid-pro";
+import { DataGridPro, getGridDateOperators, getGridStringOperators, GridActionsCellItem } from "@mui/x-data-grid-pro";
 import { createFileRoute, createLink, redirect, useNavigate, useRouter } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
@@ -11,9 +11,8 @@ import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { NameDialog } from "~/components/NameDialog";
 import { useMutate } from "~/components/useMutate";
 import { useServerGrid } from "~/components/useServerGrid";
-import { lastPageWithRows, supportedOperators } from "~/gridSearch";
+import { type GridColumns, lastPageWithRows, supportedOperators } from "~/gridSearch";
 
-import type { Notebook } from "../db/notebooks.server";
 import type { NoteSummary } from "../db/notes.server";
 import { plainExcerpt } from "../excerpt";
 import { maxNotebookNameLength, maxNoteTitleLength } from "../limits";
@@ -62,7 +61,7 @@ function NotebookPage() {
 
     const openNote = (noteId: string) => void navigate({ to: "/notes/$notebookId/$noteId", params: { notebookId: notebook.id, noteId }, search });
 
-    const columns: GridColDef<NoteSummary>[] = [
+    const columns: GridColumns<NoteSummary, typeof noteFields> = [
         {
             field: "title",
             headerName: "Title",
@@ -208,14 +207,11 @@ function NewNoteButton({ notebookId }: { notebookId: string }) {
     const [dialogOpen, setDialogOpen] = useState(false);
 
     const handleCreate = async (title: string) => {
-        const result = await createNoteFn({ data: { notebookId, title } });
-        if (result.id !== null) {
-            setDialogOpen(false);
-            await navigate({ to: "/notes/$notebookId/$noteId", params: { notebookId, noteId: result.id } });
-            // the sidebar's note counts aren't reloaded by the navigation (the layout route's loader data is reused)
-            await router.invalidate();
-        }
-        return result.error;
+        const { created } = await createNoteFn({ data: { notebookId, title } });
+        setDialogOpen(false);
+        await navigate({ to: "/notes/$notebookId/$noteId", params: { notebookId, noteId: created.id } });
+        // the sidebar's note counts aren't reloaded by the navigation (the layout route's loader data is reused)
+        await router.invalidate();
     };
 
     return (
@@ -236,7 +232,7 @@ function NewNoteButton({ notebookId }: { notebookId: string }) {
     );
 }
 
-function NotebookHeader({ notebook }: { notebook: Notebook }) {
+function NotebookHeader({ notebook }: { notebook: { id: string; name: string } }) {
     const router = useRouter();
     const navigate = useNavigate();
     const renameNotebookFn = useServerFn(renameNotebook);
@@ -249,14 +245,11 @@ function NotebookHeader({ notebook }: { notebook: Notebook }) {
             deleteText={`“${notebook.name}” and all its notes will be deleted.`}
             maxNameLength={maxNotebookNameLength}
             onRename={async (name) => {
-                const result = await renameNotebookFn({ data: { id: notebook.id, name } });
-                if (result.error === null) {
-                    await router.invalidate();
-                }
-                return result.error;
+                await renameNotebookFn({ data: { notebookId: notebook.id, name } });
+                await router.invalidate();
             }}
             onDelete={async () => {
-                await deleteNotebookFn({ data: { id: notebook.id } });
+                await deleteNotebookFn({ data: { notebookId: notebook.id } });
                 // redirects to the first remaining notebook (or creates a new one)
                 await navigate({ to: "/notes", replace: true });
                 // the sidebar's notebooks aren't reloaded by the navigation (the layout route's loader data is reused)

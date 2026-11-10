@@ -9,11 +9,11 @@ import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { useShowError } from "~/components/ErrorSnackbar";
 
 import { MarkdownPreview } from "../components/MarkdownPreview";
-import type { Note } from "../db/notes.server";
 import { maxNoteBodyLength, maxNoteTitleLength } from "../limits";
 import { useNotebooks } from "../navigation";
 import { deleteNote, getNote, updateNote } from "../notes.functions";
 import { validateNoteSearch } from "../noteSearch";
+import type { NoteView } from "../operations.server";
 
 // A note in the editor. The search params are the state of the notebook's grid (notes.$notebookId.index.tsx), kept for the back link.
 export const Route = createFileRoute("/_app/notes/$notebookId/$noteId")({
@@ -85,7 +85,7 @@ const autosaveDelay = 1000;
 
 type Values = { title: string; body: string };
 
-function NoteEditor({ note }: { note: Note }) {
+function NoteEditor({ note }: { note: NoteView }) {
     const router = useRouter();
     const navigate = useNavigate();
     const updateNoteFn = useServerFn(updateNote);
@@ -122,8 +122,8 @@ function NoteEditor({ note }: { note: Note }) {
         saveQueue.current = saveQueue.current.then(async () => {
             setStatus("saving");
             try {
-                const { updatedAt } = await updateNoteFn({ data: { id: note.id, ...values } });
-                setSaved({ ...values, updatedAt: updatedAt.getTime() });
+                const { updated } = await updateNoteFn({ data: { id: note.id, ...values } });
+                setSaved({ ...values, updatedAt: updated.updatedAt.getTime() });
                 setStatus("saved");
                 // the title and excerpt in the notes list
                 void router.invalidate();

@@ -1,14 +1,7 @@
 import { Add, Delete, Move, Warning } from "@dextinity/admin-icons";
 import { Box, Button, Checkbox, Container, Paper, Stack, TextField } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import {
-    DataGridPro,
-    getGridBooleanOperators,
-    getGridDateOperators,
-    getGridStringOperators,
-    GridActionsCellItem,
-    type GridColDef,
-} from "@mui/x-data-grid-pro";
+import { DataGridPro, getGridBooleanOperators, getGridDateOperators, getGridStringOperators, GridActionsCellItem } from "@mui/x-data-grid-pro";
 import { createFileRoute, redirect, useNavigate, useRouter } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { type FormEvent, useState } from "react";
@@ -19,12 +12,13 @@ import { useShowError } from "~/components/ErrorSnackbar";
 import { useMutate } from "~/components/useMutate";
 import { useServerGrid } from "~/components/useServerGrid";
 import { fromDateString, toDateString, useToday } from "~/dates";
-import { lastPageWithRows, supportedOperators, validateGridSearch } from "~/gridSearch";
+import { errorMessage } from "~/errors";
+import { type GridColumns, lastPageWithRows, supportedOperators, validateGridSearch } from "~/gridSearch";
 
-import type { Todo } from "../db/todos.server";
 import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "../limits";
 import { deleteList, renameList } from "../lists.functions";
 import { useLists } from "../navigation";
+import type { TodoView } from "../operations.server";
 import { isOverdue } from "../overdue";
 import { createTodo, deleteTodo, listTodos, updateTodo } from "../todos.functions";
 import { parseTodoSearch, todoFields } from "../todoSearch";
@@ -65,7 +59,7 @@ function Todos() {
         dateOnlyFields: ["dueDate"],
     });
 
-    const columns: GridColDef<Todo>[] = [
+    const columns: GridColumns<TodoView, typeof todoFields> = [
         {
             field: "done",
             headerName: "Done",
@@ -218,14 +212,11 @@ function ListHeader({ list }: { list: { id: string; name: string } }) {
             deleteText={`“${list.name}” and all its todos will be deleted.`}
             maxNameLength={maxListNameLength}
             onRename={async (name) => {
-                const result = await renameListFn({ data: { id: list.id, name } });
-                if (result.error === null) {
-                    await router.invalidate();
-                }
-                return result.error;
+                await renameListFn({ data: { listId: list.id, name } });
+                await router.invalidate();
             }}
             onDelete={async () => {
-                await deleteListFn({ data: { id: list.id } });
+                await deleteListFn({ data: { listId: list.id } });
                 // redirects to the first remaining list (or creates a new one)
                 await navigate({ to: "/lists", replace: true });
                 // the sidebar's lists aren't reloaded by the navigation (the layout route's loader data is reused)
@@ -246,7 +237,7 @@ function CreateTodoForm({ listId, onCreated }: { listId: string; onCreated: () =
         const formData = new FormData(form);
         setPending(true);
         try {
-            const result = await createTodoFn({
+            await createTodoFn({
                 data: {
                     listId,
                     title: String(formData.get("title") ?? ""),
@@ -254,14 +245,11 @@ function CreateTodoForm({ listId, onCreated }: { listId: string; onCreated: () =
                     dueDate: String(formData.get("dueDate") ?? "") || null,
                 },
             });
-            setError(result.error);
-            if (result.error === null) {
-                form.reset();
-                onCreated();
-            }
+            setError(null);
+            form.reset();
+            onCreated();
         } catch (error) {
-            console.error(error);
-            setError("Saving failed, please try again.");
+            setError(errorMessage(error));
         } finally {
             setPending(false);
         }

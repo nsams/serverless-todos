@@ -25,11 +25,8 @@ export function NotebooksNavigation({ onNavigate }: { onNavigate: () => void }) 
             createLabel="New notebook"
             maxNameLength={maxNotebookNameLength}
             onCreate={async (name) => {
-                const result = await createNotebookFn({ data: { name } });
-                if (result.id !== null) {
-                    await navigate({ to: "/notes/$notebookId", params: { notebookId: result.id } });
-                }
-                return result.error;
+                const notebook = await createNotebookFn({ data: { name } });
+                await navigate({ to: "/notes/$notebookId", params: { notebookId: notebook.id } });
             }}
             onNavigate={onNavigate}
         />
