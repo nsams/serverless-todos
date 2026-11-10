@@ -34,14 +34,17 @@ type RouteArgs<Path extends string, Search> = { params: PathParams<Path>; search
 // The route's mount point for the router (AppModule.routes)
 export type AppRoute = { path: string; Component: ComponentType };
 
-type RouteDefinition<Path extends string, Search, Data, QueryError, Key extends QueryKey> = {
+// The page's data, e.g. `({ params: { listId }, search }) => todosApi.listTodos.queryOptions({ listId, ...search })`: loaded while the
+// page's code loads (no waterfall), when a link to the page is hovered (link), and read by the page with useData
+type RouteQuery<Path extends string, Search, Data, QueryError, Key extends QueryKey> = (
+    args: RouteArgs<Path, Search>,
+) => UseSuspenseQueryOptions<Data, QueryError, Data, Key>;
+
+type RouteDefinition<Path extends string, Search> = {
     // absolute path pattern, e.g. "/lists/:listId"
     path: Path;
     // reads the search params (untrusted input, invalid values are dropped), e.g. validateGridSearch; none by default
     validateSearch?: (search: unknown) => Search;
-    // The page's data, e.g. `({ params: { listId }, search }) => todosApi.listTodos.queryOptions({ listId, ...search })`: loaded while
-    // the page's code loads (no waterfall), when a link to the page is hovered (link), and read by the page with useData
-    query?: (args: RouteArgs<Path, Search>) => UseSuspenseQueryOptions<Data, QueryError, Data, Key>;
 } & (
     | {
           // the page, loaded with the route (code splitting): `() => import("./pages/list")` (the default export)
@@ -53,13 +56,38 @@ type RouteDefinition<Path extends string, Search, Data, QueryError, Key extends 
       }
 );
 
+// What defineRoute returns: the route's mount point (AppRoute) and what its page and links use
+type Route<Path extends string, Search> = AppRoute & {
+    path: Path;
+    // the URL of the page, e.g. listRoute.href({ listId }), with search params listRoute.href({ listId }, { page: 2 })
+    href: (...args: HrefArgs<Path, Search>) => Href;
+    // a link to the page that preloads its code and data, e.g. for NavigationList
+    link: (...args: HrefArgs<Path, Search>) => RouteLink;
+    // the params and search params of the page (only used by the route's own page, mounted at its path by the router)
+    useParams: () => PathParams<Path>;
+    useSearch: () => Search;
+};
+
+// A route with a query: its page reads the query's data with useData (only these routes have useData, so a page can't read data its
+// route doesn't load)
 export function defineRoute<
     const Path extends `/${string}`,
     Search = Record<never, never>,
-    Data = never,
+    Data = unknown,
     QueryError = Error,
     Key extends QueryKey = QueryKey,
->(definition: RouteDefinition<Path, Search, Data, QueryError, Key>) {
+>(
+    definition: RouteDefinition<Path, Search> & { query: RouteQuery<Path, Search, Data, QueryError, Key> },
+): Route<Path, Search> & {
+    // the page's data (query), loaded before the page is shown
+    useData: () => Data;
+};
+export function defineRoute<const Path extends `/${string}`, Search = Record<never, never>>(
+    definition: RouteDefinition<Path, Search> & { query?: undefined },
+): Route<Path, Search>;
+export function defineRoute<const Path extends `/${string}`, Search, Data, QueryError, Key extends QueryKey>(
+    definition: RouteDefinition<Path, Search> & { query?: RouteQuery<Path, Search, Data, QueryError, Key> },
+): Route<Path, Search> & { useData: () => Data } {
     const { path, query } = definition;
     // a route without search params gets an empty object
     const validateSearch = definition.validateSearch ?? (() => ({}) as Search);
@@ -67,7 +95,7 @@ export function defineRoute<
 
     const href = (...[params, search]: HrefArgs<Path, Search>) => (buildPath(path, params ?? {}) + stringifySearch(search ?? {})) as Href;
 
-    // the params and search params of the page (only used by the route's own page, mounted at its path by the router)
+    // the router mounts the page at its path
     function useRouteParams() {
         return useParams() as PathParams<Path>;
     }
@@ -82,7 +110,7 @@ export function defineRoute<
             throw new Error(`The route ${path} has no query`);
         }
         const { data, error } = useSuspenseQuery(query({ params: useRouteParams(), search: useSearch() }));
-        // e.g. deleted by the assistant while the page is open: the 404 page instead of the outdated data
+        // e.g. deleted by the assistant while the page is open: the 404 page (or the page's NotFoundBoundary) instead of the outdated data
         if (error instanceof NotFoundError) {
             throw error;
         }
@@ -100,10 +128,8 @@ export function defineRoute<
     return {
         path,
         Component: query ? withQuery(query) : Page,
-        // the URL of the page, e.g. listRoute.href({ listId }), with search params listRoute.href({ listId }, { page: 2 })
         href,
-        // a link to the page that preloads its code and data, e.g. for NavigationList
-        link: (...args: HrefArgs<Path, Search>): RouteLink => ({
+        link: (...args) => ({
             href: href(...args),
             preload: () => {
                 if ("page" in definition) {
@@ -117,7 +143,7 @@ export function defineRoute<
         }),
         useParams: useRouteParams,
         useSearch,
-        // the page's data (query), loaded before the page is shown
+        // only typed for routes with a query (see the overloads)
         useData,
     };
 }
