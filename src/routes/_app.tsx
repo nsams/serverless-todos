@@ -1,28 +1,45 @@
 import { Chatbot, Hamburger, Logout } from "@dextinity/admin-icons";
-import { AppBar, Box, CircularProgress, Divider, Drawer, IconButton, ListSubheader, Toolbar, Typography } from "@mui/material";
+import {
+    AppBar,
+    Box,
+    CircularProgress,
+    Divider,
+    Drawer,
+    IconButton,
+    LinearProgress,
+    ListSubheader,
+    Skeleton,
+    Toolbar,
+    Typography,
+} from "@mui/material";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { Fragment, lazy, Suspense, useState } from "react";
 
-import { trpc } from "~/api/query";
+import { api } from "~/api/client";
 import { appName } from "~/app";
-import { appModules, loadNavigationData } from "~/modules/registry";
+import { appModules } from "~/modules/registry";
 
 // Layout of the app pages: app bar and the navigation of the modules in a sidebar
 export const Route = createFileRoute("/_app")({
-    // Runs on every navigation (by default only when the layout is entered), in the background once the layout is shown: the query cache
-    // only loads the user and the navigation data (e.g. the sidebar's lists) if they are outdated, e.g. after a change (useRefresh)
-    // followed by a navigation to the created item
-    shouldReload: true,
-    loader: ({ context }) => Promise.all([context.queryClient.fetchQuery(context.trpc.user.queryOptions()), loadNavigationData(context)]),
+    loader: async ({ context: { queryClient }, cause }) => {
+        // Not awaited: the page doesn't wait for the sidebar, each module's navigation is shown when its data is there. Only when the
+        // app is opened: then the navigation queries keep themselves up to date (reloaded with their module's data, or when stale and
+        // shown again), so the loaders running again (e.g. after a change in one module) don't reload every module's navigation.
+        if (cause === "enter") {
+            for (const { navigation } of appModules) {
+                void navigation?.prefetch(queryClient);
+            }
+        }
+        await queryClient.ensureQueryData(userQuery);
+    },
     component: AppLayout,
     // while the first page is loading (later navigations keep showing the current page until the next one is loaded)
-    pendingComponent: () => (
-        <Box sx={{ display: "flex", justifyContent: "center", p: 8 }}>
-            <CircularProgress />
-        </Box>
-    ),
+    pendingComponent: () => <LinearProgress />,
 });
+
+// The authenticated user (doesn't change while the app is open)
+const userQuery = api.user.queryOptions(undefined, { staleTime: Infinity });
 
 const drawerWidth = 260;
 const chatWidth = 420;
@@ -31,7 +48,7 @@ const chatWidth = 420;
 const ChatPanel = lazy(() => import("~/components/ChatPanel"));
 
 function AppLayout() {
-    const { data: user } = useSuspenseQuery(trpc.user.queryOptions());
+    const { data: user } = useSuspenseQuery(userQuery);
     const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
     const [chatOpen, setChatOpen] = useState(false);
     // stays mounted once opened, so the conversation (and a running answer) survives closing the panel
@@ -54,7 +71,9 @@ function AppLayout() {
                             <ListSubheader component="h2" disableSticky sx={{ pt: 1, lineHeight: 2.5 }}>
                                 {navigation.title}
                             </ListSubheader>
-                            <navigation.Component onNavigate={() => setMobileDrawerOpen(false)} />
+                            <Suspense fallback={<NavigationSkeleton />}>
+                                <navigation.Component onNavigate={() => setMobileDrawerOpen(false)} />
+                            </Suspense>
                         </Fragment>
                     ),
             )}
@@ -120,6 +139,17 @@ function AppLayout() {
                     </Suspense>
                 )}
             </Drawer>
+        </Box>
+    );
+}
+
+// Shown while a module's navigation data is loading
+function NavigationSkeleton() {
+    return (
+        <Box sx={{ px: 2, py: 1 }}>
+            {[0, 1, 2].map((index) => (
+                <Skeleton key={index} height={40} />
+            ))}
         </Box>
     );
 }

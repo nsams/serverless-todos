@@ -6,7 +6,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { createRoot } from "react-dom/client";
 
-import { queryClient } from "./api/query";
+import { queryClient } from "./api/client";
 import { ErrorSnackbarProvider } from "./components/ErrorSnackbar";
 import { router } from "./router";
 import { theme } from "./theme";

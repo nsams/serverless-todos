@@ -1,73 +1,66 @@
 import { Add, Delete, Move, Search } from "@dextinity/admin-icons";
 import { Box, Button, Container, InputAdornment, Link as MuiLink, Paper, Stack, TextField, Typography } from "@mui/material";
-import { DataGridPro, getGridDateOperators, getGridStringOperators, GridActionsCellItem, type GridColDef } from "@mui/x-data-grid-pro";
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute, createLink, linkOptions, redirect, useNavigate } from "@tanstack/react-router";
+import { DataGridPro, getGridDateOperators, getGridStringOperators, GridActionsCellItem } from "@mui/x-data-grid-pro";
+import { useQuery } from "@tanstack/react-query";
+import { createFileRoute, createLink, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
-import { api } from "~/api/client";
-import { trpc } from "~/api/query";
+import { pageHead } from "~/app";
+import { useChatPage } from "~/chat/useChatPage";
 import { CollectionHeader } from "~/components/CollectionHeader";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { NameDialog } from "~/components/NameDialog";
 import { useMutate } from "~/components/useMutate";
 import { useServerGrid } from "~/components/useServerGrid";
-import { lastPageWithRows, supportedOperators } from "~/gridSearch";
-import { loadOrNotFound, pageTitle, useRefresh } from "~/routing";
+import { type GridColumns, supportedOperators } from "~/gridSearch";
+import { loadPageQuery, useInvalidateModule, usePageQuery } from "~/moduleQueries";
 
-import type { Notebook } from "../db/notebooks.server";
+import { notesApi } from "../api";
+import { notesChatPage } from "../chatPage";
 import type { NoteSummary } from "../db/notes.server";
 import { plainExcerpt } from "../excerpt";
 import { maxNotebookNameLength, maxNoteTitleLength } from "../limits";
-import { useNotebooks } from "../navigation";
-import { noteFields, parseNoteSearch, validateNoteSearch } from "../noteSearch";
+import { notesModuleId } from "../moduleId";
+import { noteFields, validateNoteSearch } from "../noteSearch";
 
-// /notes/$notebookId: the notes of a notebook in a grid (pagination, sorting, filtering on the server, state in the URL); a note opens
-// in the editor (notes.$notebookId.$noteId.tsx), which keeps the grid state for its back link
+// The notes of a notebook in a grid (pagination, sorting, filtering on the server, state in the URL); a note opens in the editor
+// (notes.$notebookId.$noteId.tsx), which keeps the grid state for its back link
 export const Route = createFileRoute("/_app/notes/$notebookId/")({
     validateSearch: validateNoteSearch,
-    // the loader runs again when the grid state or the search text changes
     loaderDeps: ({ search }) => search,
-    loader: async ({ context: { queryClient, trpc }, params: { notebookId }, deps }) => {
-        const result = await loadOrNotFound(queryClient.fetchQuery(trpc.notes.list.queryOptions({ ...deps, notebookId })));
-
-        // e.g. after deleting the last note of the last page
-        const lastPage = lastPageWithRows(parseNoteSearch(deps), result.notes.length, result.totalCount);
-        if (lastPage !== undefined) {
-            throw redirect({ to: "/notes/$notebookId", params: { notebookId }, search: { ...deps, page: lastPage || undefined }, replace: true });
-        }
-
-        return result;
+    loader: async ({ context: { queryClient }, params: { notebookId }, deps }) => {
+        const { notebook } = await loadPageQuery(queryClient, notesApi.listNotes.queryOptions({ ...deps, notebookId }));
+        return { title: notebook.name };
     },
-    head: ({ loaderData }) => pageTitle(loaderData?.notebook.name),
+    head: ({ loaderData }) => pageHead(loaderData?.title),
     component: NotebookPage,
 });
 
-// a MUI link that is a (typed) router link
 const LinkCell = createLink(MuiLink);
 
 function NotebookPage() {
     const { notebookId } = Route.useParams();
-    // loaded by the loader; updated in the cache after changes
-    const { notebook, notes, totalCount } = useSuspenseQuery(trpc.notes.list.queryOptions({ ...Route.useLoaderDeps(), notebookId })).data;
-    const notebooks = useNotebooks();
+    const { notebook, notes, totalCount } = usePageQuery(notesApi.listNotes.queryOptions({ ...Route.useSearch(), notebookId }));
+    // for the "move to" menu: empty while loading, the page doesn't wait for them
+    const notebooks = useQuery(notesApi.listNotebooks.queryOptions({})).data ?? [];
     const navigate = Route.useNavigate();
-    const refresh = useRefresh();
-    const mutate = useMutate();
+    const invalidate = useInvalidateModule(notesModuleId);
+    const mutate = useMutate(notesModuleId);
     const [noteToDelete, setNoteToDelete] = useState<NoteSummary | null>(null);
     const { search, hasFilter, updateSearch, gridProps } = useServerGrid({
         validateSearch: validateNoteSearch,
         fields: noteFields,
-        // keeps the scroll position
         navigate: (newSearch, { replace }) => void navigate({ search: newSearch, replace, resetScroll: false }),
+        rows: notes,
         rowCount: totalCount,
     });
 
-    // the note's editor keeps the grid state (and the search text) for its back link
-    const noteLink = (noteId: string) => linkOptions({ to: "/notes/$notebookId/$noteId", params: { notebookId: notebook.id, noteId }, search });
-    const openNote = (noteId: string) => void navigate(noteLink(noteId));
+    // what the assistant gets to know about the page
+    useChatPage(notesChatPage, { notebookId: notebook.id });
 
-    const columns: GridColDef<NoteSummary>[] = [
+    const openNote = (noteId: string) => void navigate({ to: "/notes/$notebookId/$noteId", params: { notebookId: notebook.id, noteId }, search });
+
+    const columns: GridColumns<NoteSummary, typeof noteFields> = [
         {
             field: "title",
             headerName: "Title",
@@ -76,7 +69,14 @@ function NotebookPage() {
             filterOperators: supportedOperators(getGridStringOperators(), noteFields.title.operators),
             // a real link: keyboard, open in a new tab
             renderCell: ({ row }) => (
-                <LinkCell {...noteLink(row.id)} underline="hover" color="inherit" sx={{ fontWeight: 500 }}>
+                <LinkCell
+                    to="/notes/$notebookId/$noteId"
+                    params={{ notebookId: notebook.id, noteId: row.id }}
+                    search={search}
+                    underline="hover"
+                    color="inherit"
+                    sx={{ fontWeight: 500 }}
+                >
                     {row.title}
                 </LinkCell>
             ),
@@ -126,7 +126,7 @@ function NotebookPage() {
                             onClick={() =>
                                 // also reloads the sidebar's note counts
                                 void mutate(
-                                    api.notes.update.mutate({ id: row.id, notebookId: otherNotebook.id }),
+                                    notesApi.updateNote.mutate({ id: row.id, notebookId: otherNotebook.id }),
                                     "Moving the note failed, please try again.",
                                 )
                             }
@@ -164,7 +164,6 @@ function NotebookPage() {
                 </Box>
                 <Paper>
                     <DataGridPro
-                        rows={notes}
                         columns={columns}
                         autoHeight
                         disableRowSelectionOnClick
@@ -189,9 +188,9 @@ function NotebookPage() {
                 onClose={() => setNoteToDelete(null)}
                 onDelete={async () => {
                     if (noteToDelete) {
-                        await api.notes.delete.mutate({ id: noteToDelete.id });
+                        await notesApi.deleteNote.mutate({ id: noteToDelete.id });
                         // also the sidebar's note counts
-                        await refresh();
+                        await invalidate();
                     }
                 }}
             />
@@ -200,18 +199,15 @@ function NotebookPage() {
 }
 
 function NewNoteButton({ notebookId }: { notebookId: string }) {
-    const refresh = useRefresh();
     const navigate = useNavigate();
+    const invalidate = useInvalidateModule(notesModuleId);
     const [dialogOpen, setDialogOpen] = useState(false);
 
     const handleCreate = async (title: string) => {
-        const result = await api.notes.create.mutate({ notebookId, title });
-        if (result.id !== null) {
-            setDialogOpen(false);
-            // the new note's page, with the sidebar's note counts loaded again
-            await refresh(() => navigate({ to: "/notes/$notebookId/$noteId", params: { notebookId, noteId: result.id } }));
-        }
-        return result.error;
+        const { created } = await notesApi.createNote.mutate({ notebookId, title });
+        setDialogOpen(false);
+        // e.g. the sidebar's note counts
+        await invalidate(() => navigate({ to: "/notes/$notebookId/$noteId", params: { notebookId, noteId: created.id } }));
     };
 
     return (
@@ -232,9 +228,9 @@ function NewNoteButton({ notebookId }: { notebookId: string }) {
     );
 }
 
-function NotebookHeader({ notebook }: { notebook: Notebook }) {
-    const refresh = useRefresh();
+function NotebookHeader({ notebook }: { notebook: { id: string; name: string } }) {
     const navigate = useNavigate();
+    const invalidate = useInvalidateModule(notesModuleId);
 
     return (
         <CollectionHeader
@@ -243,16 +239,13 @@ function NotebookHeader({ notebook }: { notebook: Notebook }) {
             deleteText={`“${notebook.name}” and all its notes will be deleted.`}
             maxNameLength={maxNotebookNameLength}
             onRename={async (name) => {
-                const result = await api.notebooks.rename.mutate({ id: notebook.id, name });
-                if (result.error === null) {
-                    await refresh();
-                }
-                return result.error;
+                await notesApi.renameNotebook.mutate({ notebookId: notebook.id, name });
+                await invalidate();
             }}
             onDelete={async () => {
-                await api.notebooks.delete.mutate({ id: notebook.id });
-                // redirects to the first remaining notebook (or creates a new one), with the sidebar's notebooks loaded again
-                await refresh(() => navigate({ to: "/notes", replace: true }));
+                await notesApi.deleteNotebook.mutate({ notebookId: notebook.id });
+                // redirects to the first remaining notebook (or creates a new one)
+                await invalidate(() => navigate({ to: "/notes", replace: true }));
             }}
         />
     );

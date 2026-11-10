@@ -14,9 +14,10 @@ type ListRepository = {
     // The user's first list, created if the user has none
     getOrCreateDefault(userId: string): Promise<List>;
     create(userId: string, name: string): Promise<List>;
-    rename(userId: string, id: string, name: string): Promise<void>;
-    // Deletes the list's todos too (ON DELETE CASCADE)
-    delete(userId: string, id: string): Promise<void>;
+    // The renamed list; undefined if it doesn't exist (or belongs to another user)
+    rename(userId: string, id: string, name: string): Promise<List | undefined>;
+    // Deletes the list's todos too (ON DELETE CASCADE). The deleted list; undefined if it doesn't exist (or belongs to another user)
+    delete(userId: string, id: string): Promise<List | undefined>;
 };
 
 export function getListRepository(): ListRepository {
@@ -53,13 +54,19 @@ export function getListRepository(): ListRepository {
             return list;
         },
         rename: async (userId, id, name) => {
-            await db
+            const [list] = await db
                 .update(lists)
                 .set({ name })
-                .where(and(eq(lists.id, id), eq(lists.userId, userId)));
+                .where(and(eq(lists.id, id), eq(lists.userId, userId)))
+                .returning();
+            return list;
         },
         delete: async (userId, id) => {
-            await db.delete(lists).where(and(eq(lists.id, id), eq(lists.userId, userId)));
+            const [list] = await db
+                .delete(lists)
+                .where(and(eq(lists.id, id), eq(lists.userId, userId)))
+                .returning();
+            return list;
         },
     };
     return repository;

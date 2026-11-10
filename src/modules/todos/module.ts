@@ -1,19 +1,18 @@
 import type { AppModule } from "~/modules/types";
 
+import { todosApi } from "./api";
 import { ListsNavigation } from "./components/ListsNavigation";
-import { todosModuleId } from "./navigation";
+import { todosModuleId } from "./moduleId";
 
-// The todos module (todo lists and todos), app shell part. Server part: module.server.ts; pages: routes/ (/lists, /lists/$listId).
+// The todos module (todo lists and todos), app shell part. Server part: module.server.ts; routes: routes/ (/lists, /lists/$listId).
 export const todosModule: AppModule = {
     id: todosModuleId,
     navigation: {
         title: "Todo lists",
-        loader: ({ queryClient, trpc }) => queryClient.fetchQuery(trpc.lists.list.queryOptions()),
+        prefetch: (queryClient) => queryClient.prefetchQuery(todosApi.listLists.queryOptions({})),
         Component: ListsNavigation,
     },
     chat: {
         suggestions: ["Add a todo “Buy milk”", "What is due this week?", "Which lists do I have?"],
-        // the tools with effect "write" or "delete" in tools.server.ts
-        mutatingToolNames: ["createList", "renameList", "deleteList", "createTodo", "updateTodo", "deleteTodo"],
     },
 };

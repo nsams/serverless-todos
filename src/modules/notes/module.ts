@@ -1,20 +1,19 @@
 import type { AppModule } from "~/modules/types";
 
+import { notesApi } from "./api";
 import { NotebooksNavigation } from "./components/NotebooksNavigation";
-import { notesModuleId } from "./navigation";
+import { notesModuleId } from "./moduleId";
 
 // The notes module (notebooks and Markdown notes), app shell part. Server part: module.server.ts;
-// pages: routes/ (/notes, /notes/$notebookId, /notes/$notebookId/$noteId).
+// routes: routes/ (/notes, /notes/$notebookId, /notes/$notebookId/$noteId).
 export const notesModule: AppModule = {
     id: notesModuleId,
     navigation: {
         title: "Notes",
-        loader: ({ queryClient, trpc }) => queryClient.fetchQuery(trpc.notebooks.list.queryOptions()),
+        prefetch: (queryClient) => queryClient.prefetchQuery(notesApi.listNotebooks.queryOptions({})),
         Component: NotebooksNavigation,
     },
     chat: {
         suggestions: ["Summarize my latest note", "Turn this note into todos"],
-        // the tools with effect "write" or "delete" in tools.server.ts
-        mutatingToolNames: ["createNotebook", "renameNotebook", "deleteNotebook", "createNote", "updateNote", "appendToNote", "deleteNote"],
     },
 };

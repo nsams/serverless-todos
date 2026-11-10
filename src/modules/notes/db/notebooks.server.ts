@@ -14,9 +14,10 @@ type NotebookRepository = {
     // The user's first notebook, created if the user has none
     getOrCreateDefault(userId: string): Promise<Notebook>;
     create(userId: string, name: string): Promise<Notebook>;
-    rename(userId: string, id: string, name: string): Promise<void>;
-    // Deletes the notebook's notes too (ON DELETE CASCADE)
-    delete(userId: string, id: string): Promise<void>;
+    // The renamed notebook; undefined if it doesn't exist (or belongs to another user)
+    rename(userId: string, id: string, name: string): Promise<Notebook | undefined>;
+    // Deletes the notebook's notes too (ON DELETE CASCADE). The deleted notebook; undefined if it doesn't exist (or belongs to another user)
+    delete(userId: string, id: string): Promise<Notebook | undefined>;
 };
 
 export function getNotebookRepository(): NotebookRepository {
@@ -59,13 +60,19 @@ export function getNotebookRepository(): NotebookRepository {
             return notebook;
         },
         rename: async (userId, id, name) => {
-            await db
+            const [notebook] = await db
                 .update(notebooks)
                 .set({ name })
-                .where(and(eq(notebooks.id, id), eq(notebooks.userId, userId)));
+                .where(and(eq(notebooks.id, id), eq(notebooks.userId, userId)))
+                .returning();
+            return notebook;
         },
         delete: async (userId, id) => {
-            await db.delete(notebooks).where(and(eq(notebooks.id, id), eq(notebooks.userId, userId)));
+            const [notebook] = await db
+                .delete(notebooks)
+                .where(and(eq(notebooks.id, id), eq(notebooks.userId, userId)))
+                .returning();
+            return notebook;
         },
     };
     return repository;

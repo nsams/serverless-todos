@@ -1,20 +1,23 @@
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 
 import type { User } from "~/auth.server";
-import { moduleApis } from "~/modules/registry.server";
+import { moduleRouters } from "~/modules/registry.server";
 
 import { apiPath } from "./api";
-import { procedure, router } from "./trpc.server";
+import { mergeRouters, procedure, router } from "./trpc.server";
 
-// The API of the app: core procedures and the procedures of the modules (e.g. lists.*, todos.* of the todos module)
-const appRouter = router({
+// The core's procedures (client: api in src/api/client.ts)
+const coreRouter = router({
     // the authenticated user
     user: procedure.query(({ ctx: { user } }) => user),
-    ...moduleApis,
 });
 
-// used by the client (src/api/client.ts) for the types of the procedures
-export type AppRouter = typeof appRouter;
+export type CoreRouter = typeof coreRouter;
+
+// The API of the app: the core's procedures and the router of every module under the module's id (e.g. todos.createList; a module id
+// that is also the name of a core procedure throws). Composed at runtime: the clients are typed by their own router (CoreRouter, the
+// modules' routers), not by this one, so a module is added without touching this file.
+const appRouter = mergeRouters(coreRouter, router(moduleRouters));
 
 // Handles a request to /api/* of an authenticated user (src/server.ts)
 export function handleApiRequest(request: Request, user: User) {

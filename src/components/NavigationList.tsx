@@ -1,19 +1,16 @@
 import { Add } from "@dextinity/admin-icons";
 import { Divider, List, ListItemButton, ListItemIcon, ListItemText, Typography } from "@mui/material";
-import { createLink, type LinkOptions, useNavigate } from "@tanstack/react-router";
+import { createLink, type LinkOptions } from "@tanstack/react-router";
 import { useState } from "react";
-
-import { useRefresh } from "~/routing";
 
 import { NameDialog } from "./NameDialog";
 
-// a ListItemButton that is a (typed) router link
 const ListItemLink = createLink(ListItemButton);
 
 export type NavigationItem = {
     id: string;
     name: string;
-    // the item's page, e.g. linkOptions({ to: "/lists/$listId", params: { listId } }) (checked against the route tree)
+    // e.g. linkOptions({ to: "/lists/$listId", params: { listId } })
     link: LinkOptions;
     // shown next to the name if > 0, e.g. the number of open todos
     count?: number;
@@ -26,28 +23,20 @@ type Props = {
     // e.g. "New list": button and dialog title
     createLabel: string;
     maxNameLength: number;
-    // creates an item; returns an error message, or the link to the created item's page
-    onCreate: (name: string) => Promise<{ error: string } | { link: LinkOptions }>;
+    // creates an item, navigates to it and reloads the items; throws a ValidationError with a message for the user, e.g. for an empty name
+    onCreate: (name: string) => Promise<void>;
     // closes the sidebar on small screens
     onNavigate: () => void;
 };
 
 // A module's items in the app's sidebar (e.g. the todo lists, the notebooks) with a button to create one
 export function NavigationList({ items, createLabel, maxNameLength, onCreate, onNavigate }: Props) {
-    const refresh = useRefresh();
-    const navigate = useNavigate();
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
     const handleCreate = async (name: string) => {
-        const result = await onCreate(name);
-        if ("error" in result) {
-            return result.error;
-        }
+        await onCreate(name);
         setCreateDialogOpen(false);
         onNavigate();
-        // the created item's page, with the sidebar's items (the new one) loaded again
-        await refresh(() => navigate(result.link));
-        return null;
     };
 
     return (

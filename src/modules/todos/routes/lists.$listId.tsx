@@ -1,74 +1,64 @@
 import { Add, Delete, Move, Warning } from "@dextinity/admin-icons";
 import { Box, Button, Checkbox, Container, Paper, Stack, TextField } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import {
-    DataGridPro,
-    getGridBooleanOperators,
-    getGridDateOperators,
-    getGridStringOperators,
-    GridActionsCellItem,
-    type GridColDef,
-} from "@mui/x-data-grid-pro";
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
+import { DataGridPro, getGridBooleanOperators, getGridDateOperators, getGridStringOperators, GridActionsCellItem } from "@mui/x-data-grid-pro";
+import { useQuery } from "@tanstack/react-query";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 
-import { api } from "~/api/client";
-import { trpc } from "~/api/query";
+import { pageHead } from "~/app";
+import { useChatPage } from "~/chat/useChatPage";
 import { CollectionHeader } from "~/components/CollectionHeader";
 import { useShowError } from "~/components/ErrorSnackbar";
 import { useMutate } from "~/components/useMutate";
 import { useServerGrid } from "~/components/useServerGrid";
 import { fromDateString, toDateString, useToday } from "~/dates";
-import { lastPageWithRows, supportedOperators, validateGridSearch } from "~/gridSearch";
-import { loadOrNotFound, pageTitle, useRefresh } from "~/routing";
+import { errorMessage } from "~/errors";
+import { type GridColumns, supportedOperators, validateGridSearch } from "~/gridSearch";
+import { loadPageQuery, useInvalidateModule, usePageQuery } from "~/moduleQueries";
 
-import type { Todo } from "../db/todos.server";
+import { todosApi, type TodosApiInputs } from "../api";
+import { todosChatPage } from "../chatPage";
 import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "../limits";
-import { useLists } from "../navigation";
+import { todosModuleId } from "../moduleId";
+import type { TodoView } from "../operations.server";
 import { isOverdue } from "../overdue";
-import { parseTodoSearch, todoFields } from "../todoSearch";
+import { todoFields } from "../todoSearch";
 
-// /lists/$listId: the todos of a list. The grid state (pagination, sorting, filtering) lives in the URL.
 export const Route = createFileRoute("/_app/lists/$listId")({
     validateSearch: validateGridSearch,
-    // the loader runs again when the grid state changes
     loaderDeps: ({ search }) => search,
-    loader: async ({ context: { queryClient, trpc }, params: { listId }, deps }) => {
-        const result = await loadOrNotFound(queryClient.fetchQuery(trpc.todos.list.queryOptions({ ...deps, listId })));
-
-        // e.g. after deleting the last todo of the last page
-        const lastPage = lastPageWithRows(parseTodoSearch(deps), result.todos.length, result.totalCount);
-        if (lastPage !== undefined) {
-            throw redirect({ to: "/lists/$listId", params: { listId }, search: { ...deps, page: lastPage || undefined }, replace: true });
-        }
-
-        return result;
+    loader: async ({ context: { queryClient }, params: { listId }, deps }) => {
+        const { list } = await loadPageQuery(queryClient, todosApi.listTodos.queryOptions({ ...deps, listId }));
+        return { title: list.name };
     },
-    head: ({ loaderData }) => pageTitle(loaderData?.list.name),
-    component: ListPage,
+    head: ({ loaderData }) => pageHead(loaderData?.title),
+    component: Todos,
 });
 
-function ListPage() {
+function Todos() {
     const { listId } = Route.useParams();
-    // loaded by the loader; updated in the cache after changes
-    const { list, todos, totalCount } = useSuspenseQuery(trpc.todos.list.queryOptions({ ...Route.useLoaderDeps(), listId })).data;
-    const lists = useLists();
+    const { list, todos, totalCount } = usePageQuery(todosApi.listTodos.queryOptions({ ...Route.useSearch(), listId }));
+    // for the "move to" menu: empty while loading, the page doesn't wait for them
+    const lists = useQuery(todosApi.listLists.queryOptions({})).data ?? [];
     const navigate = Route.useNavigate();
-    const refresh = useRefresh();
+    const invalidate = useInvalidateModule(todosModuleId);
     const showError = useShowError();
-    const mutate = useMutate();
+    const mutate = useMutate(todosModuleId);
     const today = useToday();
     const { updateSearch, gridProps } = useServerGrid({
         validateSearch: validateGridSearch,
         fields: todoFields,
-        // keeps the scroll position
         navigate: (search, { replace }) => void navigate({ search, replace, resetScroll: false }),
+        rows: todos,
         rowCount: totalCount,
         dateOnlyFields: ["dueDate"],
     });
 
-    const columns: GridColDef<Todo>[] = [
+    // what the assistant gets to know about the page
+    useChatPage(todosChatPage, { listId: list.id });
+
+    const columns: GridColumns<TodoView, typeof todoFields> = [
         {
             field: "done",
             headerName: "Done",
@@ -78,7 +68,7 @@ function ListPage() {
             renderCell: ({ row }) => (
                 <Checkbox
                     checked={row.done}
-                    onChange={(event) => void mutate(api.todos.update.mutate({ id: row.id, done: event.target.checked }))}
+                    onChange={(event) => void mutate(todosApi.updateTodo.mutate({ id: row.id, done: event.target.checked }))}
                     slotProps={{ input: { "aria-label": `Mark “${row.title}” as ${row.done ? "open" : "done"}` } }}
                 />
             ),
@@ -136,7 +126,7 @@ function ListPage() {
                     key="delete"
                     icon={<Delete />}
                     label="Delete"
-                    onClick={() => void mutate(api.todos.delete.mutate({ id: row.id }))}
+                    onClick={() => void mutate(todosApi.deleteTodo.mutate({ id: row.id }))}
                 />,
                 ...lists
                     .filter((otherList) => otherList.id !== list.id)
@@ -146,7 +136,7 @@ function ListPage() {
                             icon={<Move />}
                             label={`Move to “${otherList.name}”`}
                             showInMenu
-                            onClick={() => void mutate(api.todos.update.mutate({ id: row.id, listId: otherList.id }))}
+                            onClick={() => void mutate(todosApi.updateTodo.mutate({ id: row.id, listId: otherList.id }))}
                         />
                     )),
             ],
@@ -157,7 +147,7 @@ function ListPage() {
         <Container sx={{ py: 4 }}>
             <Stack spacing={2}>
                 <ListHeader list={list} />
-                <CreateTodoForm key={list.id} listId={list.id} onCreated={() => void refresh()} />
+                <CreateTodoForm key={list.id} listId={list.id} onCreated={() => void invalidate()} />
                 <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
                     <Button
                         startIcon={<Warning />}
@@ -169,7 +159,6 @@ function ListPage() {
                 </Box>
                 <Paper>
                     <DataGridPro
-                        rows={todos}
                         columns={columns}
                         autoHeight
                         disableRowSelectionOnClick
@@ -183,21 +172,20 @@ function ListPage() {
                                 // a todo needs a title
                                 return oldRow;
                             }
+                            // the changed fields, undefined: unchanged (typed by the operation: a renamed field breaks the build)
                             const changes = {
-                                ...(title !== oldRow.title && { title }),
-                                ...(newRow.description !== oldRow.description && { description: newRow.description }),
-                                ...(newRow.dueDate !== oldRow.dueDate && { dueDate: newRow.dueDate }),
-                            };
-                            if (Object.keys(changes).length > 0) {
-                                await api.todos.update.mutate({ id: newRow.id, ...changes });
-                                void refresh();
+                                id: newRow.id,
+                                title: title !== oldRow.title ? title : undefined,
+                                description: newRow.description !== oldRow.description ? newRow.description : undefined,
+                                dueDate: newRow.dueDate !== oldRow.dueDate ? newRow.dueDate : undefined,
+                            } satisfies TodosApiInputs["updateTodo"];
+                            if (changes.title !== undefined || changes.description !== undefined || changes.dueDate !== undefined) {
+                                await todosApi.updateTodo.mutate(changes);
+                                void invalidate();
                             }
                             return { ...newRow, title };
                         }}
-                        onProcessRowUpdateError={(error) => {
-                            console.error(error);
-                            showError("Saving failed, please try again.");
-                        }}
+                        onProcessRowUpdateError={(error) => showError(errorMessage(error))}
                     />
                 </Paper>
             </Stack>
@@ -206,8 +194,8 @@ function ListPage() {
 }
 
 function ListHeader({ list }: { list: { id: string; name: string } }) {
-    const refresh = useRefresh();
     const navigate = useNavigate();
+    const invalidate = useInvalidateModule(todosModuleId);
 
     return (
         <CollectionHeader
@@ -216,16 +204,13 @@ function ListHeader({ list }: { list: { id: string; name: string } }) {
             deleteText={`“${list.name}” and all its todos will be deleted.`}
             maxNameLength={maxListNameLength}
             onRename={async (name) => {
-                const result = await api.lists.rename.mutate({ id: list.id, name });
-                if (result.error === null) {
-                    await refresh();
-                }
-                return result.error;
+                await todosApi.renameList.mutate({ listId: list.id, name });
+                await invalidate();
             }}
             onDelete={async () => {
-                await api.lists.delete.mutate({ id: list.id });
-                // redirects to the first remaining list (or creates a new one), with the sidebar's lists loaded again
-                await refresh(() => navigate({ to: "/lists", replace: true }));
+                await todosApi.deleteList.mutate({ listId: list.id });
+                // redirects to the first remaining list (or creates a new one)
+                await invalidate(() => navigate({ to: "/lists", replace: true }));
             }}
         />
     );
@@ -241,20 +226,17 @@ function CreateTodoForm({ listId, onCreated }: { listId: string; onCreated: () =
         const formData = new FormData(form);
         setPending(true);
         try {
-            const result = await api.todos.create.mutate({
+            await todosApi.createTodo.mutate({
                 listId,
                 title: String(formData.get("title") ?? ""),
                 description: String(formData.get("description") ?? ""),
                 dueDate: String(formData.get("dueDate") ?? "") || null,
             });
-            setError(result.error);
-            if (result.error === null) {
-                form.reset();
-                onCreated();
-            }
+            setError(null);
+            form.reset();
+            onCreated();
         } catch (error) {
-            console.error(error);
-            setError("Saving failed, please try again.");
+            setError(errorMessage(error));
         } finally {
             setPending(false);
         }

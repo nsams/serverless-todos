@@ -1,34 +1,31 @@
 import { ArrowLeft, Delete, Move } from "@dextinity/admin-icons";
 import { Box, Container, IconButton, Menu, MenuItem, Paper, Stack, Tab, Tabs, TextField, Tooltip, Typography } from "@mui/material";
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute, createLink, redirect, useNavigate } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, createLink, Navigate, useNavigate, useRouter } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
-import { api } from "~/api/client";
-import { trpc } from "~/api/query";
+import { pageHead } from "~/app";
+import { useChatPage } from "~/chat/useChatPage";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { useShowError } from "~/components/ErrorSnackbar";
-import { loadOrNotFound, pageTitle, useRefresh } from "~/routing";
+import { loadPageQuery, useInvalidateModule, usePageQuery } from "~/moduleQueries";
 
+import { notesApi } from "../api";
+import { notesChatPage } from "../chatPage";
 import { MarkdownPreview } from "../components/MarkdownPreview";
-import type { Note } from "../db/notes.server";
 import { maxNoteBodyLength, maxNoteTitleLength } from "../limits";
-import { useNotebooks } from "../navigation";
+import { notesModuleId } from "../moduleId";
 import { validateNoteSearch } from "../noteSearch";
+import type { NoteView } from "../operations.server";
 
-// /notes/$notebookId/$noteId: a note in the editor. The search params are the state of the notebook's grid (notes.$notebookId.index.tsx),
-// kept for the back link.
+// A note in the editor. The search params are the state of the notebook's grid (notes.$notebookId.index.tsx), kept for the back link.
 export const Route = createFileRoute("/_app/notes/$notebookId/$noteId")({
     validateSearch: validateNoteSearch,
-    loader: async ({ context: { queryClient, trpc }, params: { notebookId, noteId } }) => {
-        const note = await loadOrNotFound(queryClient.fetchQuery(trpc.notes.get.queryOptions({ id: noteId })));
-        // e.g. moved to another notebook by the assistant
-        if (note.notebookId !== notebookId) {
-            throw redirect({ to: "/notes/$notebookId/$noteId", params: { notebookId: note.notebookId, noteId }, search: true, replace: true });
-        }
-        return note;
+    loader: async ({ context: { queryClient }, params: { noteId } }) => {
+        const note = await loadPageQuery(queryClient, notesApi.getNote.queryOptions({ id: noteId }));
+        return { title: note.title };
     },
-    head: ({ loaderData }) => pageTitle(loaderData?.title),
+    head: ({ loaderData }) => pageHead(loaderData?.title),
     component: NotePage,
     // e.g. deleted by the assistant while open
     notFoundComponent: () => (
@@ -40,15 +37,20 @@ export const Route = createFileRoute("/_app/notes/$notebookId/$noteId")({
     ),
 });
 
-// an IconButton that is a (typed) router link
 const IconButtonLink = createLink(IconButton);
 
 function NotePage() {
-    const { noteId } = Route.useParams();
-    // loaded by the loader; updated in the cache after changes (e.g. by the assistant)
-    const { data: note } = useSuspenseQuery(trpc.notes.get.queryOptions({ id: noteId }));
+    const { notebookId, noteId } = Route.useParams();
+    const search = Route.useSearch();
+    const note = usePageQuery(notesApi.getNote.queryOptions({ id: noteId }));
+    // what the assistant gets to know about the page
+    useChatPage(notesChatPage, { notebookId: note.notebookId, noteId: note.id });
     return (
         <NotePageLayout>
+            {/* moved to another notebook (in the editor or by the assistant): the URL follows the note */}
+            {note.notebookId !== notebookId && (
+                <Navigate to="/notes/$notebookId/$noteId" params={{ notebookId: note.notebookId, noteId }} search={search} replace />
+            )}
             {/* a fresh editor (draft, save state) per note */}
             <NoteEditor key={note.id} note={note} />
         </NotePageLayout>
@@ -90,9 +92,11 @@ const autosaveDelay = 1000;
 
 type Values = { title: string; body: string };
 
-function NoteEditor({ note }: { note: Note }) {
-    const refresh = useRefresh();
+function NoteEditor({ note }: { note: NoteView }) {
+    const router = useRouter();
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
+    const invalidate = useInvalidateModule(notesModuleId);
     const showError = useShowError();
     const search = Route.useSearch();
 
@@ -106,7 +110,7 @@ function NoteEditor({ note }: { note: Note }) {
     const pending: Values = { title: draft.title.trim() || saved.title, body: draft.body };
     const dirty = pending.title !== saved.title || pending.body !== saved.body;
 
-    // Changed elsewhere (e.g. by the assistant, the data is reloaded after its changes): take over the changes,
+    // Changed elsewhere (e.g. by the assistant, the module's data is reloaded after its changes): take over the changes,
     // unless there are unsaved ones (they are saved over them then)
     const [loadedNote, setLoadedNote] = useState(note);
     if (note !== loadedNote) {
@@ -125,11 +129,14 @@ function NoteEditor({ note }: { note: Note }) {
         saveQueue.current = saveQueue.current.then(async () => {
             setStatus("saving");
             try {
-                const { updatedAt } = await api.notes.update.mutate({ id: note.id, ...values });
-                setSaved({ ...values, updatedAt: updatedAt.getTime() });
+                const { updated } = await notesApi.updateNote.mutate({ id: note.id, title: values.title, body: values.body });
+                setSaved({ ...values, updatedAt: updated.updatedAt.getTime() });
                 setStatus("saved");
-                // the title and excerpt in the notes list
-                void refresh();
+                queryClient.setQueryData(notesApi.getNote.queryKey({ id: note.id }), updated);
+                // the tab title: the page's loader runs again (it reads the saved note from the cache, no request)
+                void router.invalidate({ filter: (match) => match.routeId === Route.id });
+                // the title and excerpt in the notebooks' grids (reloaded when shown again; the sidebar doesn't change)
+                void queryClient.invalidateQueries(notesApi.listNotes.pathFilter());
             } catch (error) {
                 console.error(error);
                 setStatus("error");
@@ -182,13 +189,13 @@ function NoteEditor({ note }: { note: Note }) {
     const handleDelete = async () => {
         deleting.current = true;
         try {
-            await api.notes.delete.mutate({ id: note.id });
+            await notesApi.deleteNote.mutate({ id: note.id });
         } catch (error) {
             deleting.current = false;
             throw error;
         }
-        // with the notebook's notes and the sidebar's note counts loaded again
-        await refresh(() => navigate({ to: "/notes/$notebookId", params: { notebookId: note.notebookId }, search, replace: true }));
+        // e.g. the sidebar's note counts
+        await invalidate(() => navigate({ to: "/notes/$notebookId", params: { notebookId: note.notebookId }, search, replace: true }));
     };
 
     const handleMove = async (notebookId: string) => {
@@ -199,13 +206,16 @@ function NoteEditor({ note }: { note: Note }) {
             await save(values);
         }
         try {
-            await api.notes.update.mutate({ id: note.id, notebookId });
+            const { updated } = await notesApi.updateNote.mutate({ id: note.id, notebookId });
+            // the page follows the note to its new notebook (NotePage)
+            queryClient.setQueryData(notesApi.getNote.queryKey({ id: note.id }), updated);
         } catch (error) {
             console.error(error);
             showError("Moving the note failed, please try again.");
             return;
         }
-        await refresh(() => navigate({ to: "/notes/$notebookId/$noteId", params: { notebookId, noteId: note.id }, search }));
+        // e.g. the sidebar's note counts
+        void invalidate();
     };
 
     return (
@@ -313,4 +323,9 @@ function DeleteNoteButton({ title, onDelete }: { title: string; onDelete: () => 
             />
         </>
     );
+}
+
+// The user's notebooks (e.g. for the "move to" menu): empty while loading, the page doesn't wait for them
+function useNotebooks() {
+    return useQuery(notesApi.listNotebooks.queryOptions({})).data ?? [];
 }

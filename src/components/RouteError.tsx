@@ -1,7 +1,7 @@
 import { Container, Typography } from "@mui/material";
 import type { ErrorComponentProps } from "@tanstack/react-router";
 
-// The pages of the router for 404 (unknown path, or e.g. a list that doesn't exist (anymore), see loadOrNotFound in src/routing.ts)
+// The pages of the router for 404 (unknown path, or e.g. a list that doesn't exist (anymore), see loadPageQuery in src/moduleQueries.ts)
 // and unexpected errors (src/router.tsx); shown in place of the route's page, so within the app layout
 
 export function RouteNotFound() {

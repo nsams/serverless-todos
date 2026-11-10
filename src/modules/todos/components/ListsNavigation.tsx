@@ -1,14 +1,18 @@
-import { linkOptions } from "@tanstack/react-router";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { linkOptions, useNavigate } from "@tanstack/react-router";
 
-import { api } from "~/api/client";
 import { NavigationList } from "~/components/NavigationList";
+import { useInvalidateModule } from "~/moduleQueries";
 
+import { todosApi } from "../api";
 import { maxListNameLength } from "../limits";
-import { useLists } from "../navigation";
+import { todosModuleId } from "../moduleId";
 
 // The user's lists in the app's sidebar
 export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
-    const lists = useLists();
+    const { data: lists } = useSuspenseQuery(todosApi.listLists.queryOptions({}));
+    const navigate = useNavigate();
+    const invalidate = useInvalidateModule(todosModuleId);
 
     return (
         <NavigationList
@@ -22,8 +26,8 @@ export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
             createLabel="New list"
             maxNameLength={maxListNameLength}
             onCreate={async (name) => {
-                const result = await api.lists.create.mutate({ name });
-                return result.id === null ? { error: result.error } : { link: linkOptions({ to: "/lists/$listId", params: { listId: result.id } }) };
+                const list = await todosApi.createList.mutate({ name });
+                await invalidate(() => navigate({ to: "/lists/$listId", params: { listId: list.id } }));
             }}
             onNavigate={onNavigate}
         />
