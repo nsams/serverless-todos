@@ -171,8 +171,9 @@ function NoteEditor({ note }: { note: NoteView }) {
     useEffect(() => {
         return () => {
             if (unsaved.current && !deleting.current) {
-                // also when the page is left (the submission outlives the editor)
-                run("updateNote", { id: note.id, ...unsaved.current }, { revalidate: false }).catch(console.error);
+                // also when the page is left (the submission outlives the editor); reloads the data of the page shown by then, which was
+                // loaded before this save (e.g. the title and text in the notebook's grid)
+                run("updateNote", { id: note.id, ...unsaved.current }).catch(console.error);
             }
         };
         // only on unmount
