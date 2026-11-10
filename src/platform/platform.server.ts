@@ -3,7 +3,7 @@ import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
 // The app runs on two platforms with the same code, only the server entry differs:
 //
 // - Cloudflare Workers (src/server.cloudflare.ts): D1, login via Cloudflare Access
-// - Node (src/server.node.ts), e.g. in a container on bunny.net Magic Containers: libSQL (Bunny Database), login via OpenID Connect
+// - bunny.net Edge Scripting (src/server.bunny.ts): libSQL (Bunny Database), login via OpenID Connect
 //
 // The entry registers its platform once (setPlatform) before it handles requests. The rest of the app only knows this interface.
 
@@ -11,10 +11,10 @@ import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
 export type Database = BaseSQLiteDatabase<"async", unknown>;
 
 export type Platform = {
-    name: "cloudflare" | "node";
+    name: "cloudflare" | "bunny";
     // Cheap to call: returns a handle (D1 binding) or a client created once (libSQL)
     getDb(): Database;
-    // A variable of the environment (Worker vars and secrets, process.env); undefined if not set or empty
+    // A variable of the environment (Worker vars and secrets, the Edge Script's variables and secrets); undefined if not set or empty
     getEnv(name: string): string | undefined;
     // Where the logout button leads (a full page load)
     logoutPath: string;
@@ -28,7 +28,7 @@ export function setPlatform(value: Platform) {
 
 export function getPlatform(): Platform {
     if (!platform) {
-        throw new Error("No platform registered: the server entry calls setPlatform (src/server.cloudflare.ts, src/server.node.ts)");
+        throw new Error("No platform registered: the server entry calls setPlatform (src/server.cloudflare.ts, src/server.bunny.ts)");
     }
     return platform;
 }

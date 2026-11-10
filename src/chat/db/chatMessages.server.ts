@@ -1,4 +1,4 @@
-import { and, desc, eq, lte, max } from "drizzle-orm";
+import { and, desc, eq, lte, sql } from "drizzle-orm";
 
 import { getDb } from "~/db/db.server";
 
@@ -23,19 +23,18 @@ export function getChatMessageRepository() {
                 .limit(maxMessages);
             return rows.reverse().map(({ message, position }) => ({ message: message as ChatMessage, position }));
         },
-        // Adds the message at the end of the conversation, or updates it (keeping its position) if it is already there
+        // Adds the message at the end of the conversation, or updates it (keeping its position) if it is already there.
+        // Two queries (on bunny.net every query is a subrequest, which are limited per request).
         save: async (userId: string, message: ChatMessage) => {
-            const [last] = await db
-                .select({ position: max(chatMessages.position) })
-                .from(chatMessages)
-                .where(eq(chatMessages.userId, userId));
-            const position = (last?.position ?? -1) + 1;
+            const userMessages = eq(chatMessages.userId, userId);
+            const nextPosition = sql<number>`(select coalesce(max(${chatMessages.position}), -1) + 1 from ${chatMessages} where ${userMessages})`;
             await db
                 .insert(chatMessages)
-                .values({ userId, id: message.id, position, message })
+                .values({ userId, id: message.id, position: nextPosition, message })
                 .onConflictDoUpdate({ target: [chatMessages.userId, chatMessages.id], set: { message } });
             // older messages beyond the limit
-            await db.delete(chatMessages).where(and(eq(chatMessages.userId, userId), lte(chatMessages.position, position - maxMessages)));
+            const oldestKept = sql`(select max(${chatMessages.position}) - ${maxMessages} from ${chatMessages} where ${userMessages})`;
+            await db.delete(chatMessages).where(and(userMessages, lte(chatMessages.position, oldestKept)));
         },
         clear: async (userId: string) => {
             await db.delete(chatMessages).where(eq(chatMessages.userId, userId));

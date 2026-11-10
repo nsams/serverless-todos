@@ -4,7 +4,7 @@ import { z } from "zod";
 import { mcpPath } from "~/mcp/mcp";
 import { type User, userFromEmail } from "~/user";
 
-// Node platform (src/server.node.ts): login with OpenID Connect, e.g. Microsoft Entra ID, without a service in front of the app.
+// bunny.net platform (src/server.bunny.ts): login with OpenID Connect, e.g. Microsoft Entra ID, without a service in front of the app.
 //
 // - Browser: authorization code flow with PKCE (/auth/login → identity provider → /auth/callback), then a session cookie (a JWT signed
 //   with SESSION_SECRET) with the user's email. Pages without a session redirect to the login, other requests get 401.

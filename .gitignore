@@ -10,5 +10,5 @@ node_modules
 .wrangler
 worker-configuration.d.ts
 
-# Node platform: local libSQL database (scripts/libsql.ts)
+# bunny.net platform: local libSQL database (scripts/libsql.ts)
 /.data/

@@ -3,8 +3,8 @@ import { migrate } from "drizzle-orm/libsql/migrator";
 
 import { createLibsqlClient } from "./libsql.ts";
 
-// Applies the pending migrations (drizzle/) to the libSQL database of the Node platform (`npm run db:migrate:node`, run by the
-// container before the server starts, see Dockerfile). On Cloudflare D1 they are applied with wrangler (`npm run db:migrate`).
+// Applies the pending migrations (drizzle/) to the libSQL database of the bunny.net platform (`npm run db:migrate:bunny`; the deployment
+// runs it before the new script is deployed, .github/workflows/bunny.yml). On Cloudflare D1 they are applied with wrangler (`npm run db:migrate`).
 
 const client = createLibsqlClient();
 await migrate(drizzle(client), { migrationsFolder: "drizzle" });

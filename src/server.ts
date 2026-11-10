@@ -7,7 +7,7 @@ import { handleMcpRequest } from "./mcp/mcp.server";
 import type { User } from "./user";
 
 // The requests of an authenticated user, the same on both platforms. The server entry of the platform (src/server.cloudflare.ts,
-// src/server.node.ts) authenticates every request in one place before it calls this, so an endpoint added later is authenticated too:
+// src/server.bunny.ts) authenticates every request in one place before it calls this, so an endpoint added later is authenticated too:
 // - the chat assistant (src/chat/chat.server.ts)
 // - the MCP server for external AI clients (src/mcp/mcp.server.ts)
 // - the app: pages and server functions get the user as request context

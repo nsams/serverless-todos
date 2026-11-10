@@ -9,10 +9,10 @@ export default defineConfig({
             group: ["dev"],
         },
         {
-            // Node platform (local libSQL file, see src/server.node.ts)
-            name: "app-node",
-            script: "npm run db:migrate:node && npm run dev:node:app",
-            group: ["dev-node"],
+            // bunny.net platform, in Node (local libSQL file, see src/server.bunny.ts)
+            name: "app-bunny",
+            script: "npm run db:migrate:bunny && npm run dev:bunny:app",
+            group: ["dev-bunny"],
         },
     ],
 });

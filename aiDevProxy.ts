@@ -7,8 +7,8 @@ import type { Plugin } from "vite";
 // (AI_BASE_URL) with the API key (AI_API_KEY).
 //
 // The Workers runtime (workerd) ignores HTTP(S)_PROXY, Node's fetch uses it (NODE_USE_ENV_PROXY): requests sent from here also work in
-// sandboxes whose egress proxy injects the API key, like Claude Code on the web. On the Node platform (`npm run dev:node`) the server
-// sends the requests itself.
+// sandboxes whose egress proxy injects the API key, like Claude Code on the web. On the bunny.net platform (`npm run dev:bunny`, in
+// Node) the server sends the requests itself.
 
 export const aiDevProxyPath = "/__ai";
 

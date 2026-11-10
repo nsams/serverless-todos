@@ -1,14 +1,14 @@
 import { cloudflare } from "@cloudflare/vite-plugin";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
-import { defineConfig, type PluginOption } from "vite";
+import { defineConfig, mergeConfig, type PluginOption, type UserConfig } from "vite";
 
 import { aiDevProxy } from "./aiDevProxy";
 
 // The platform the app is built for (see src/platform/platform.server.ts):
 // - cloudflare (default): Cloudflare Workers, runs in the Workers runtime (workerd) also in development
-// - node (PLATFORM=node): a Node server, e.g. in a container on bunny.net Magic Containers (Dockerfile)
-const platform = process.env.PLATFORM === "node" ? "node" : "cloudflare";
+// - bunny (PLATFORM=bunny): bunny.net Edge Scripting, the build is one script file (dist/server/server.bunny.js); in development Node
+const platform = process.env.PLATFORM === "bunny" ? "bunny" : "cloudflare";
 
 function cloudflarePlugins(): PluginOption[] {
     return [
@@ -42,26 +42,39 @@ function cloudflarePlugins(): PluginOption[] {
     ];
 }
 
-export default defineConfig(({ command }) => ({
-    plugins: [
-        ...(platform === "cloudflare" ? cloudflarePlugins() : []),
-        // the routes of the modules live in their module folders: tsr.config.json, src/routes.ts
-        tanstackStart({
-            // the server entry of the platform (relative to src/); on Cloudflare also `main` in wrangler.jsonc
-            server: { entry: platform === "node" ? "server.node.ts" : "server.cloudflare.ts" },
-        }),
-        viteReact(),
-    ],
-    // Node platform: the build bundles the dependencies like for Cloudflare, except libSQL with its native bindings (the only dependency
-    // the container installs, see Dockerfile). In development only the packages Node's ESM loader can't load (extensionless imports).
-    ...(platform === "node" && {
-        ssr: command === "build" ? { noExternal: true, external: ["@libsql/client"] } : { noExternal: [/^@dextinity\//] },
+// bunny.net: an Edge Script is a single file: all dependencies bundled, no chunks (dynamic imports inlined), minified (script size limit).
+// libSQL over HTTP: its web client (the default one has native bindings).
+const bunnyBuild = {
+    ssr: { noExternal: true },
+    resolve: { alias: { "@libsql/client": "@libsql/client/web" } },
+    environments: { ssr: { build: { minify: true, rolldownOptions: { output: { codeSplitting: false } } } } },
+} satisfies UserConfig;
+
+// bunny.net in development: Node, only the packages Node's ESM loader can't load are bundled (extensionless imports)
+const bunnyDev = { ssr: { noExternal: [/^@dextinity\//] } } satisfies UserConfig;
+
+export default defineConfig(({ command }) =>
+    mergeConfig(platform === "bunny" ? (command === "build" ? bunnyBuild : bunnyDev) : {}, {
+        plugins: [
+            ...(platform === "cloudflare" ? cloudflarePlugins() : []),
+            // the routes of the modules live in their module folders: tsr.config.json, src/routes.ts
+            tanstackStart({
+                // the server entry of the platform (relative to src/); on Cloudflare also `main` in wrangler.jsonc
+                server: { entry: platform === "bunny" ? "server.bunny.ts" : "server.cloudflare.ts" },
+                // bunny.net: the app's pages are rendered in the browser only (ssr: "data-only", src/routes/_app.tsx), so the script needn't
+                // contain their components (script size and startup time limits). Only applies to the server build (the client keeps them).
+                ...(platform === "bunny" && {
+                    router: { codeSplittingOptions: { deleteNodes: ["component", "errorComponent", "notFoundComponent"] } },
+                }),
+            }),
+            viteReact(),
+        ],
+        server: {
+            port: Number(process.env.APP_PORT ?? 5173),
+            strictPort: true,
+        },
+        resolve: {
+            tsconfigPaths: true,
+        },
     }),
-    server: {
-        port: Number(process.env.APP_PORT ?? 5173),
-        strictPort: true,
-    },
-    resolve: {
-        tsconfigPaths: true,
-    },
-}));
+);

@@ -5,8 +5,8 @@ import { createFixturesSql } from "./fixtures.ts";
 import { createLibsqlClient } from "./libsql.ts";
 import { wrangler } from "./wrangler.ts";
 
-// Inserts the fixtures (scripts/fixtures.ts) for DEV_USER_EMAIL into the local database: D1 (`npm run db:seed`) or, with PLATFORM=node,
-// the libSQL database of the Node platform (`npm run db:seed:node`)
+// Inserts the fixtures (scripts/fixtures.ts) for DEV_USER_EMAIL into the local database: D1 (`npm run db:seed`) or, with PLATFORM=bunny,
+// the libSQL database of the bunny.net platform (`npm run db:seed:bunny`)
 
 const email = process.env.DEV_USER_EMAIL;
 if (!email) {
@@ -15,7 +15,7 @@ if (!email) {
 }
 const sql = createFixturesSql([email]);
 
-if (process.env.PLATFORM === "node") {
+if (process.env.PLATFORM === "bunny") {
     const client = createLibsqlClient();
     await client.executeMultiple(sql);
     client.close();

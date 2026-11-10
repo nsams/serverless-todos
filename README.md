@@ -4,15 +4,16 @@ Minimal todo app (multiple lists, todos with description and due date, overdue t
 
 The app runs on two platforms with the same code, only the server entry differs (`src/platform/platform.server.ts`):
 
-|                   | Cloudflare (default)                                                                                                   | Node, e.g. on [bunny.net](https://bunny.net)                                                                            |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Runtime           | Cloudflare Workers (`src/server.cloudflare.ts`)                                                                        | Node in a container on [Magic Containers](https://docs.bunny.net/magic-containers) (`src/server.node.ts`, `Dockerfile`) |
-| Database          | D1                                                                                                                     | libSQL: [Bunny Database](https://docs.bunny.net/database)                                                               |
-| Login             | Cloudflare Access (Entra ID)                                                                                           | OpenID Connect in the app (Entra ID), `src/platform/oidc.server.ts`                                                     |
-| Deployment        | `npm run deploy`, Workers Builds, Worker Previews                                                                      | GitHub Actions (`.github/workflows/bunny.yml`)                                                                          |
-| Local development | `npm run dev`: Workers runtime (workerd) via `@cloudflare/vite-plugin`, D1 emulated by Miniflare in `.wrangler/state/` | `npm run dev:node`: Node, SQLite file `.data/app.db`                                                                    |
+|                   | Cloudflare (default)                                                                                                   | [bunny.net](https://bunny.net)                                                                         |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Runtime           | Cloudflare Workers (`src/server.cloudflare.ts`)                                                                        | [Edge Scripting](https://docs.bunny.net/scripting) (Deno), a standalone script (`src/server.bunny.ts`) |
+| Database          | D1                                                                                                                     | libSQL: [Bunny Database](https://docs.bunny.net/database)                                              |
+| Static files      | Workers static assets                                                                                                  | Storage Zone, served by the script                                                                     |
+| Login             | Cloudflare Access (Entra ID)                                                                                           | OpenID Connect in the app (Entra ID), `src/platform/oidc.server.ts`                                    |
+| Deployment        | `npm run deploy`, Workers Builds, Worker Previews                                                                      | GitHub Actions (`.github/workflows/bunny.yml`)                                                         |
+| Local development | `npm run dev`: Workers runtime (workerd) via `@cloudflare/vite-plugin`, D1 emulated by Miniflare in `.wrangler/state/` | `npm run dev:bunny`: in Node, SQLite file `.data/app.db`                                               |
 
-The Node platform uses no Cloudflare service; neither does the chat assistant on either platform: its model is called with an API key (`AI_API_KEY`), without one there is no chat assistant (see [Chat assistant](#chat-assistant)). No Docker or external database is needed for development.
+The bunny.net platform uses no Cloudflare service; neither does the chat assistant on either platform: its model is called with an API key (`AI_API_KEY`), without one there is no chat assistant (see [Chat assistant](#chat-assistant)). No external database is needed for development.
 
 ## Setup
 
@@ -24,12 +25,12 @@ The Node platform uses no Cloudflare service; neither does the chat assistant on
 
 ```bash
 npm run dev       # Cloudflare platform: applies pending migrations to the local D1, starts the app (http://localhost:5180)
-npm run dev:node  # Node platform: applies pending migrations to the local SQLite file .data/app.db, starts the app (http://localhost:5180)
+npm run dev:bunny # bunny.net platform (in Node): applies pending migrations to the local SQLite file .data/app.db, starts the app (http://localhost:5180)
 ```
 
 Processes are managed by [dev-process-manager](https://www.npmjs.com/package/dev-process-manager) (`npx dev-pm status`, `npx dev-pm logs`, `npx dev-pm stop`).
 
-Every request is authenticated as `DEV_USER_EMAIL` (`.env`): on the Cloudflare platform Cloudflare Access is simulated by the Workers runtime (`access.dev`, configured in `vite.config.ts`), on the Node platform the server entry uses it as long as `OIDC_ISSUER` isn't set (only in development). To work as another user, set `DEV_USER_EMAIL` in `.env.local` and restart. There is no login/logout locally (the logout button leads to a 404). To try the login of the Node platform locally, set the `OIDC_*` variables in `.env.local` (see [Deployment (bunny.net)](#deployment-bunnynet), redirect URI `http://localhost:5180/auth/callback`).
+Every request is authenticated as `DEV_USER_EMAIL` (`.env`): on the Cloudflare platform Cloudflare Access is simulated by the Workers runtime (`access.dev`, configured in `vite.config.ts`), on the bunny.net platform the server entry uses it as long as `OIDC_ISSUER` isn't set (only in development). To work as another user, set `DEV_USER_EMAIL` in `.env.local` and restart. There is no login/logout locally (the logout button leads to a 404). To try the login of the bunny.net platform locally, set the `OIDC_*` variables in `.env.local` (see [Deployment (bunny.net)](#deployment-bunnynet), redirect URI `http://localhost:5180/auth/callback`).
 
 The chat assistant calls a real model also in development, with costs. It needs an API key in `.env.local` (without one there is no chat button), optionally another API or model:
 
@@ -39,7 +40,7 @@ AI_API_KEY=...
 # AI_MODEL=gpt-5-mini                                         # Azure: the deployment name
 ```
 
-On the Cloudflare platform the worker sends the model requests to the dev server (`/__ai/...`), which forwards them from Node with the API key (`aiDevProxy.ts`). In a sandbox whose egress proxy injects credentials (e.g. [Claude Code on the web](https://code.claude.com/docs/en/claude-code-on-the-web)), allow the API's host in the environment's network settings and add the API key as network secret (credential injection) for that host; `AI_API_KEY` can then be any value (it is replaced by the proxy). This works because the requests are sent from Node, which uses `HTTPS_PROXY`; the Workers runtime itself ignores it. On the Node platform the server sends them itself.
+On the Cloudflare platform the worker sends the model requests to the dev server (`/__ai/...`), which forwards them from Node with the API key (`aiDevProxy.ts`). In a sandbox whose egress proxy injects credentials (e.g. [Claude Code on the web](https://code.claude.com/docs/en/claude-code-on-the-web)), allow the API's host in the environment's network settings and add the API key as network secret (credential injection) for that host; `AI_API_KEY` can then be any value (it is replaced by the proxy). This works because the requests are sent from Node, which uses `HTTPS_PROXY`; the Workers runtime itself ignores it. On the bunny.net platform the server (Node in development) sends them itself.
 
 The local D1 database can be browsed and queried in the Cloudflare Local Explorer at http://localhost:5180/cdn-cgi/explorer (while `npm run dev` is running), or from the command line:
 
@@ -49,7 +50,7 @@ npm run db:reset  # delete the local database and re-apply all migrations
 npm run db:seed   # insert test data (scripts/fixtures.ts) for DEV_USER_EMAIL
 ```
 
-On the Node platform: `npm run db:reset:node`, `npm run db:seed:node` (the database is the file `.data/app.db`, e.g. `sqlite3 .data/app.db`).
+On the bunny.net platform: `npm run db:reset:bunny`, `npm run db:seed:bunny` (the database is the file `.data/app.db`, e.g. `sqlite3 .data/app.db`).
 
 ## Structure
 
@@ -57,7 +58,7 @@ The app consists of a core (app shell, platforms with authentication and databas
 
 Core:
 
-- `src/server.cloudflare.ts`, `src/server.node.ts`: the server entries of the platforms (selected by `PLATFORM` in `vite.config.ts`): register the platform (`src/platform/platform.server.ts`: database, environment variables, logout) and authenticate every request (`src/platform/cloudflareAccess.server.ts`, `src/platform/oidc.server.ts`; the user is identified by email, `src/user.ts`) before `src/server.ts` routes it: the app gets the user as request context, chat requests go to the chat assistant, MCP requests to the MCP server (both also reject foreign origins). So an endpoint added later is authenticated too.
+- `src/server.cloudflare.ts`, `src/server.bunny.ts`: the server entries of the platforms (selected by `PLATFORM` in `vite.config.ts`): register the platform (`src/platform/platform.server.ts`: database, environment variables, logout) and authenticate every request (`src/platform/cloudflareAccess.server.ts`, `src/platform/oidc.server.ts`; the user is identified by email, `src/user.ts`) before `src/server.ts` routes it: the app gets the user as request context, chat requests go to the chat assistant, MCP requests to the MCP server (both also reject foreign origins). So an endpoint added later is authenticated too.
 - `src/start.ts`: the TanStack Start instance: CSRF check of the server functions, passes the user on to the server functions (`context.user`), maps the errors of the operations once for all server functions (`NotFoundError` → the router's not found, `ValidationError` → reaches the client as `ValidationError`, the form shows its message)
 - `src/router.tsx`: the router with TanStack Query (see [Data loading](#data-loading)); `src/routes.ts`: the route tree ([virtual file routes](https://tanstack.com/router/latest/docs/framework/react/routing/virtual-file-routes), configured in `tsr.config.json`): the core routes in `src/routes/`, the routes of each module mounted from its folder `src/modules/<module>/routes/` (file-based routing within the folder; the module folders with a `routes/` folder are found automatically). `src/routeTree.gen.ts` is generated by the TanStack Start Vite plugin on `dev`/`build` and by `npm run routegen` (`scripts/routeTree.ts`), which `npm run lint:tsc` runs first, so `tsc` never checks a stale route tree (committed)
 - `src/routes/index.tsx`: start page, redirects to `startPath` (`src/modules/registry.ts`)
@@ -153,9 +154,9 @@ The user is identified by their email, used as user id for all data (`src/user.t
 - In production it verifies the Access JWT in the `Cf-Access-Jwt-Assertion` header (signature against `${ACCESS_TEAM_DOMAIN}/cdn-cgi/access/certs`, issuer and audience `ACCESS_AUD`). [`ctx.access`](https://developers.cloudflare.com/workers/configuration/cloudflare-access/) is not available there: workers with static assets run behind an internal router worker that doesn't pass it on.
 - Locally it uses `ctx.access`, simulated by the Workers runtime (`access.dev`).
 
-**Node** (`src/platform/oidc.server.ts`): the app signs users in itself with OpenID Connect (authorization code flow with PKCE, e.g. Entra ID): `/auth/login` redirects to the identity provider, `/auth/callback` verifies the ID token and sets a session cookie (a JWT signed with `SESSION_SECRET`, 24 hours, `HttpOnly`, `SameSite=Lax`), `/auth/logout` deletes it and signs out at the identity provider. Pages without a session redirect to the login, other requests (server functions, chat) get `401`. Who may sign in is decided by the identity provider (Entra ID: the app registration's users, "Assignment required"). The static assets (`dist/client`, the app's JavaScript) are served without login.
+**bunny.net** (`src/platform/oidc.server.ts`): the app signs users in itself with OpenID Connect (authorization code flow with PKCE, e.g. Entra ID): `/auth/login` redirects to the identity provider, `/auth/callback` verifies the ID token and sets a session cookie (a JWT signed with `SESSION_SECRET`, 24 hours, `HttpOnly`, `SameSite=Lax`), `/auth/logout` deletes it and signs out at the identity provider. Pages without a session redirect to the login, other requests (server functions, chat) get `401`. Who may sign in is decided by the identity provider (Entra ID: the app registration's users, "Assignment required"). The static files (`/assets/`, the app's JavaScript, styles and fonts) are served without login, like on Cloudflare.
 
-Denied requests are logged with the reason (Workers Logs, the container's logs).
+Denied requests are logged with the reason (Workers Logs, the Edge Script's logs).
 
 ## Chat assistant
 
@@ -171,7 +172,7 @@ The assistant (chat panel, robot button in the app bar) works with the tools of 
     - `AI_MODEL`: default `gpt-5-mini` (Azure: the deployment name).
 - **UI** (`src/components/ChatPanel.tsx`): [MUI X Chat](https://mui.com/x/react-chat/) (`ChatBox`, alpha) renders the conversation of the AI SDK's `useChat` (history loaded when the panel is opened): its messages are controlled by `useChat`, its adapter forwards sending, stopping and tool approvals (after an approval the assistant continues automatically). After a tool whose operation writes or deletes, the assistant adds a `changes` data part with the module's id to its answer (`src/chat/chat.server.ts`); `useChatChanges` reports it once and the data of exactly these modules is reloaded (`invalidateModules`, see [Data loading](#data-loading)).
 
-Setup: set the API key as secret (Cloudflare: `npx wrangler secret put AI_API_KEY`, for Previews in the dashboard; Node/bunny.net: an environment variable of the container), `AI_BASE_URL` and `AI_MODEL` as variables (Cloudflare: `wrangler.jsonc`, also in `previews.vars`). Set a spend limit at the provider.
+Setup: set the API key as secret (Cloudflare: `npx wrangler secret put AI_API_KEY`, for Previews in the dashboard; bunny.net: a secret of the Edge Script), `AI_BASE_URL` and `AI_MODEL` as variables (Cloudflare: `wrangler.jsonc`, also in `previews.vars`). Set a spend limit at the provider.
 
 ## MCP server (external AI clients)
 
@@ -198,7 +199,7 @@ Connect:
 claude mcp add --transport http todos https://<worker>.workers.dev/mcp
 ```
 
-**Login on Node** (bunny.net): the app is an OAuth resource server of the identity provider (`src/platform/oidc.server.ts`, only when `MCP_OAUTH_AUDIENCE` is set, otherwise `/mcp` answers `404`): MCP clients send an access token of the identity provider as Bearer token, the app verifies it (signature, issuer `OIDC_ISSUER`, audience `MCP_OAUTH_AUDIENCE`) and takes the user's email from it (`email`, `preferred_username` or `upn`). Without a token it answers `401` with a link to its [Protected Resource Metadata](https://datatracker.ietf.org/doc/html/rfc9728) (`/.well-known/oauth-protected-resource/mcp`), which names the identity provider as authorization server, so the client signs the user in there. Entra ID has no dynamic client registration: the MCP client needs a client id of an app registration (e.g. claude.ai: Add custom connector → Advanced settings → OAuth Client ID/Secret). Setup in Entra ID:
+**Login on bunny.net**: the app is an OAuth resource server of the identity provider (`src/platform/oidc.server.ts`, only when `MCP_OAUTH_AUDIENCE` is set, otherwise `/mcp` answers `404`): MCP clients send an access token of the identity provider as Bearer token, the app verifies it (signature, issuer `OIDC_ISSUER`, audience `MCP_OAUTH_AUDIENCE`) and takes the user's email from it (`email`, `preferred_username` or `upn`). Without a token it answers `401` with a link to its [Protected Resource Metadata](https://datatracker.ietf.org/doc/html/rfc9728) (`/.well-known/oauth-protected-resource/mcp`), which names the identity provider as authorization server, so the client signs the user in there. Entra ID has no dynamic client registration: the MCP client needs a client id of an app registration (e.g. claude.ai: Add custom connector → Advanced settings → OAuth Client ID/Secret). Setup in Entra ID:
 
 1. In the app's registration (or a separate one for the API): Expose an API → Application ID URI (e.g. `api://<client-id>`, = `MCP_OAUTH_AUDIENCE`; with access token version 2 (Manifest: `requestedAccessTokenVersion: 2`) the audience is the client id) and a scope (e.g. `mcp`, `MCP_OAUTH_SCOPE=api://<client-id>/mcp`).
 2. An app registration for the MCP client with the redirect URIs of the client (e.g. `https://claude.ai/api/mcp/auth_callback`, `https://claude.com/api/mcp/auth_callback`; for local clients `http://localhost`) and the permission for that scope.
@@ -209,16 +210,16 @@ Locally the MCP server is at http://localhost:5180/mcp, without login (authentic
 
 ## Database
 
-SQLite with Drizzle: Cloudflare D1 or libSQL (Bunny Database) on Node. Schema and repositories in the modules (`src/modules/<module>/db/`, the chat history in `src/chat/db/`), migrations in `drizzle/` (one migration history for the database, generated from the schemas of all modules; applied with wrangler on D1, with `scripts/migrate.ts` (Drizzle's migrator) on libSQL).
+SQLite with Drizzle: Cloudflare D1 or libSQL (Bunny Database) on bunny.net. Schema and repositories in the modules (`src/modules/<module>/db/`, the chat history in `src/chat/db/`), migrations in `drizzle/` (one migration history for the database, generated from the schemas of all modules; applied with wrangler on D1, with `scripts/migrate.ts` (Drizzle's migrator) on libSQL).
 
 After changing the schema:
 
 ```bash
 npm run db:generate  # generates a migration into drizzle/
-npm run db:migrate   # applies it to the local D1 (also done on `npm run dev`; Node platform: `npm run db:migrate:node`)
+npm run db:migrate   # applies it to the local D1 (also done on `npm run dev`; bunny.net platform: `npm run db:migrate:bunny`)
 ```
 
-Migrations are applied before the new code is deployed (`npm run deploy`; on bunny.net when the new container starts, while the old one still serves requests), so the currently running code must keep working with the new schema: e.g. add a column (with a default) in one deployment, remove one only after the code no longer uses it.
+Migrations are applied before the new code is deployed (`npm run deploy`; on bunny.net by the GitHub workflow), so the currently running code must keep working with the new schema: e.g. add a column (with a default) in one deployment, remove one only after the code no longer uses it.
 
 ## Deployment (Cloudflare)
 
@@ -266,24 +267,35 @@ A pull request closed without merging keeps its Preview and database until its b
 
 ## Deployment (bunny.net)
 
-The app runs as a Node server in a container on [bunny.net Magic Containers](https://docs.bunny.net/magic-containers) with a [Bunny Database](https://docs.bunny.net/database) (libSQL), without any Cloudflare service. Every push to `main` builds the image (`Dockerfile`), pushes it to the GitHub Container Registry (`ghcr.io/<owner>/<repo>:<commit>`) and updates the container (`.github/workflows/bunny.yml`, with bunny.net's [GitHub Action](https://docs.bunny.net/magic-containers/deploy-with-github-actions)). The container applies the pending migrations when it starts (`scripts/migrate.ts`) and serves the app on port 3000 (`srvx`, `dist/server/server.node.js` plus the static files `dist/client`).
+The app runs as a standalone script on [bunny.net Edge Scripting](https://docs.bunny.net/scripting) with a [Bunny Database](https://docs.bunny.net/database) (libSQL), without any Cloudflare service. Every push to `main` runs `.github/workflows/bunny.yml`: it builds the script, applies the pending migrations to the database (`scripts/migrate.ts`), uploads the static files to a Storage Zone and deploys the script (bunny.net's [GitHub Action](https://docs.bunny.net/scripting/github-actions)).
 
 ```bash
-npm run build:node  # PLATFORM=node vite build: dist/server/server.node.js (all dependencies bundled except @libsql/client), dist/client
-npm run start:node  # applies the migrations, starts the server (http://localhost:3000), with the environment below
-docker build -t serverless-todos .
+npm run build:bunny  # PLATFORM=bunny vite build: dist/server/server.bunny.js (the script), dist/client/assets (the static files)
 ```
+
+How it fits into Edge Scripting's [limits](https://docs.bunny.net/scripting/limits):
+
+- **One script file**, minified, all dependencies bundled, about 1.8 MB (500 KB gzip). The script contains no page components: the app's pages are rendered in the browser only (`ssr: "data-only"`), so the server build drops them (`deleteNodes` in `vite.config.ts`). libSQL is used over HTTP (`@libsql/client/web`).
+- **Startup** (limit 500 ms): loading the script takes about 230 ms (measured locally in Deno).
+- **Static files**: they don't fit into the script. They are in a Storage Zone; the script serves `/assets/...` from its Pull Zone (`ASSETS_URL`) with `Cache-Control: immutable`, so the script's own Pull Zone caches them. All other responses get `Cache-Control: private, no-store` (pages, server functions, chat and MCP are per user).
+- **Long chat answers** are no problem: the answer is streamed, the CPU time limit (30 s) counts only computing, not waiting for the model, there is no limit on how long a response may take (the first bytes must come within 60 s).
+- **Subrequests** (limit 50 per request): every database query and every model request is one. A chat message with one or two tools takes about 10–15; very long tool chains (up to 10 steps) could come near the limit.
 
 Setup (once):
 
-1. Bunny Database: create a database (dashboard → Database), generate tokens (Access → Generate Tokens) and add them to the Magic Containers app ("Add Secrets to Magic Container App"): this sets `BUNNY_DATABASE_URL` and `BUNNY_DATABASE_AUTH_TOKEN`. Without them the container uses a SQLite file inside the container, which is lost on every deployment.
-2. Entra ID (or another OpenID Connect provider): an app registration (single tenant) with the redirect URI `https://<app>/auth/callback` (platform "Web") and a client secret; optional claim `email` for the ID token. To allow only some users of the tenant: Enterprise applications → the app → Properties → Assignment required, then assign users or groups.
-3. Magic Containers: create an app with a container from the image `ghcr.io/<owner>/<repo>` (the first image is pushed by the first run of the workflow, or push one manually; for a private package add the registry with a GitHub token with `read:packages` under Image Registries, or make the package public), endpoint (CDN) to port 3000, single region (one database primary). Environment variables:
-    - `APP_URL`: the app's public URL, e.g. `https://todos.example.com` (the container gets the requests from bunny.net's edge over http; used for the login's redirect URI, the origin checks and secure cookies)
-    - `OIDC_ISSUER` (Entra ID: `https://login.microsoftonline.com/<tenant-id>/v2.0`), `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`
-    - `SESSION_SECRET`: at least 32 random characters (e.g. `openssl rand -base64 32`), signs the session cookies; changing it signs everybody out
-    - Chat assistant (optional, without `AI_API_KEY` there is none): `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`, see [Chat assistant](#chat-assistant)
+1. Bunny Database: create a database (dashboard → Database), generate tokens (Access → Generate Tokens). Note the URL and the token (`BUNNY_DATABASE_URL`, `BUNNY_DATABASE_AUTH_TOKEN`): the script needs them and the GitHub workflow (migrations). The first run of the workflow creates the tables.
+2. Storage Zone for the static files, with a Pull Zone (its URL, e.g. `https://todos-assets.b-cdn.net`, is `ASSETS_URL`). The workflow uploads to it with the Storage Zone's password.
+3. Edge Scripting: create a standalone script (its Pull Zone is the app's URL; a custom hostname can be added there). Environment variables and secrets of the script:
+    - `BUNNY_DATABASE_URL`, `BUNNY_DATABASE_AUTH_TOKEN` (secret)
+    - `ASSETS_URL`: the Storage Zone's Pull Zone
+    - `OIDC_ISSUER` (Entra ID: `https://login.microsoftonline.com/<tenant-id>/v2.0`), `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` (secret)
+    - `SESSION_SECRET` (secret): at least 32 random characters (e.g. `openssl rand -base64 32`), signs the session cookies; changing it signs everybody out
+    - `APP_URL` (optional): the app's public URL, if the script sees another one (e.g. behind a custom hostname); used for the login's redirect URI, the origin checks and secure cookies
+    - Chat assistant (optional, without `AI_API_KEY` there is none): `AI_API_KEY` (secret), `AI_BASE_URL`, `AI_MODEL`, see [Chat assistant](#chat-assistant)
     - MCP server (optional): `MCP_OAUTH_AUDIENCE`, `MCP_OAUTH_SCOPE`, see [MCP server](#mcp-server-external-ai-clients)
-4. GitHub (repository settings → Secrets and variables → Actions): secret `BUNNY_API_KEY` (account API key, bunny.net doesn't support sub-users for it), variables `BUNNY_APP_ID` (the Magic Containers app) and `BUNNY_CONTAINER_NAME` (the container's name in the app, default `app`). The workflow only runs when `BUNNY_APP_ID` is set.
+4. Entra ID (or another OpenID Connect provider): an app registration (single tenant) with the redirect URI `https://<app>/auth/callback` (platform "Web") and a client secret; optional claim `email` for the ID token. To allow only some users of the tenant: Enterprise applications → the app → Properties → Assignment required, then assign users or groups.
+5. GitHub (repository settings → Secrets and variables → Actions):
+    - secrets `BUNNY_SCRIPT_ID`, `BUNNY_DEPLOY_KEY` (the script → Deployments → Settings), `BUNNY_STORAGE_PASSWORD` (the Storage Zone → FTP & API Access), `BUNNY_DATABASE_URL`, `BUNNY_DATABASE_AUTH_TOKEN`
+    - variables `BUNNY_STORAGE_ZONE` (its name; the workflow only runs when it is set), optionally `BUNNY_STORAGE_HOST` (the Storage Zone's region endpoint, default `storage.bunnycdn.com`)
 
 There are no Preview deployments per branch on bunny.net.

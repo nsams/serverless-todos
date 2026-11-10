@@ -4,20 +4,20 @@
     "type": "module",
     "scripts": {
         "build": "vite build",
-        "build:node": "PLATFORM=node vite build",
+        "build:bunny": "PLATFORM=bunny vite build",
         "db:generate": "drizzle-kit generate",
         "db:migrate": "wrangler d1 migrations apply DB --local",
-        "db:migrate:node": "dotenv -e .env.local -e .env -- node scripts/migrate.ts",
+        "db:migrate:bunny": "dotenv -e .env.local -e .env -- node scripts/migrate.ts",
         "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
         "db:reset": "rm -rf .wrangler/state/v3/d1 && npm run db:migrate",
-        "db:reset:node": "rm -rf .data && npm run db:migrate:node",
+        "db:reset:bunny": "rm -rf .data && npm run db:migrate:bunny",
         "db:seed": "dotenv -e .env.local -e .env -- node scripts/seed.ts",
-        "db:seed:node": "PLATFORM=node npm run db:seed",
+        "db:seed:bunny": "PLATFORM=bunny npm run db:seed",
         "deploy": "npm run build && wrangler d1 migrations apply DB --remote && wrangler deploy && npm run preview:cleanup",
         "dev": "dev-pm start @dev",
         "dev:app": "dotenv -e .env.local -e .env -- vite dev",
-        "dev:node": "dev-pm start @dev-node",
-        "dev:node:app": "dotenv -e .env.local -e .env -- env PLATFORM=node vite dev",
+        "dev:bunny": "dev-pm start @dev-bunny",
+        "dev:bunny:app": "dotenv -e .env.local -e .env -- env PLATFORM=bunny vite dev",
         "lint": "run-p lint:prettier lint:eslint lint:tsc",
         "lint:eslint": "eslint --max-warnings 0 .",
         "lint:fix": "run-p lint:fix:eslint lint:fix:prettier",
@@ -29,7 +29,6 @@
         "preview:cleanup": "node scripts/preview.ts cleanup",
         "preview:deploy": "node scripts/preview.ts deploy",
         "routegen": "node scripts/routeTree.ts",
-        "start:node": "node scripts/migrate.ts && srvx --prod --static ../client dist/server/server.node.js",
         "typegen": "wrangler types"
     },
     "engines": {
@@ -58,7 +57,6 @@
         "markdown-to-jsx": "^9.10.6",
         "react": "^19.3.1",
         "react-dom": "^19.3.1",
-        "srvx": "^1.0.8",
         "zod": "^4.6.7"
     },
     "devDependencies": {
