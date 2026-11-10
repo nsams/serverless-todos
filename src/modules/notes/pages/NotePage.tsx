@@ -25,7 +25,6 @@ type Note = ReturnType<typeof noteRoute.useLoaderData>;
 
 export function NotePage() {
     const note = noteRoute.useLoaderData();
-    useDocumentTitle(note.title);
     // what the assistant gets to know about the page
     useChatPage(notesChatPage, { notebookId: note.notebookId, noteId: note.id });
     return (
@@ -86,7 +85,7 @@ const autosaveDelay = 1000;
 type Values = { title: string; body: string };
 
 function NoteEditor({ note }: { note: Note }) {
-    const { navigate } = useModuleRevalidator(notesModuleId);
+    const { revalidate, navigate } = useModuleRevalidator(notesModuleId);
     const showError = useShowError();
     const search = noteRoute.useSearch();
     const notebookLink = useNotebookLink(note.notebookId);
@@ -96,6 +95,8 @@ function NoteEditor({ note }: { note: Note }) {
     const [saved, setSaved] = useState<Values & { updatedAt: number }>({ title: note.title, body: note.body, updatedAt: Date.parse(note.updatedAt) });
     const [status, setStatus] = useState<"saved" | "saving" | "error">("saved");
     const [mode, setMode] = useState<"write" | "preview">(note.body ? "preview" : "write");
+    // the saved title: the page data isn't reloaded after a save
+    useDocumentTitle(saved.title);
 
     // an empty title isn't saved (a note needs a title)
     const pending: Values = { title: draft.title.trim() || saved.title, body: draft.body };
@@ -125,8 +126,13 @@ function NoteEditor({ note }: { note: Note }) {
                     notesClient.notes[":id"].$patch({ param: { id: note.id }, json: { title: values.title, body: values.body } }),
                 );
                 setSaved({ ...values, updatedAt: Date.parse(updated.updatedAt) });
-                // nothing to reload: the notes list (title, excerpt) is loaded when the notebook is opened again
                 setStatus("saved");
+                // Nothing to reload while the editor is open: the notes grid (title, excerpt) loads fresh data when it is opened again.
+                // A save of the changes left when closing the editor (e.g. the back link right after typing) runs after the next
+                // page's data was loaded: reload it.
+                if (closed.current) {
+                    void revalidate();
+                }
             } catch (error) {
                 console.error(error);
                 setStatus("error");
@@ -140,6 +146,7 @@ function NoteEditor({ note }: { note: Note }) {
     const unsaved = useRef<Values | null>(null);
     // nothing is saved anymore once the note is being deleted
     const deleting = useRef(false);
+    const closed = useRef(false);
     useEffect(() => {
         unsaved.current = dirty ? pending : null;
         if (!dirty) {
@@ -157,7 +164,10 @@ function NoteEditor({ note }: { note: Note }) {
     }, [draft, saved]);
 
     useEffect(() => {
+        // mounted again (React's StrictMode in development)
+        closed.current = false;
         return () => {
+            closed.current = true;
             if (unsaved.current && !deleting.current) {
                 void save(unsaved.current);
             }
