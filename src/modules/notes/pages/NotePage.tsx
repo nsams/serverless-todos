@@ -1,45 +1,47 @@
 import { ArrowLeft, Delete, Move } from "@dextinity/admin-icons";
 import { Box, Container, IconButton, Menu, MenuItem, Paper, Stack, Tab, Tabs, TextField, Tooltip, Typography } from "@mui/material";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { type InferResponseType, parseResponse } from "hono/client";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { generatePath, Link, Navigate, useLocation, useNavigate } from "react-router";
+import { Link, Navigate } from "react-router";
 
-import { api, isNotFound } from "~/api/client";
-import { PageLoading } from "~/client/errors";
-import { usePathParams } from "~/client/params";
+import { useChatPage } from "~/chat/useChatPage";
+import { PageError, PageErrorBoundary } from "~/client/errors";
+import { useInvalidateModule, usePageQuery } from "~/client/queries";
+import { useLeavePage } from "~/client/routing";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { useShowError } from "~/components/ErrorSnackbar";
 import { useDocumentTitle } from "~/components/useDocumentTitle";
+import { NotFoundError } from "~/errors";
 
+import { notesClient } from "../api";
+import { notesChatPage } from "../chatPage";
 import { MarkdownPreview } from "../components/MarkdownPreview";
 import { maxNoteBodyLength, maxNoteTitleLength } from "../limits";
-import { notebookPath, notePath } from "../paths";
-import { notebooksQuery, noteQuery, notesQueryKey } from "../queries";
+import { notesModuleId } from "../moduleId";
+import { noteQuery, notesListsKey, useNotebooks } from "../queries";
+import { notebookRoute, noteRoute } from "../routes";
 
-type Note = InferResponseType<(typeof api.notes)[":noteId"]["$get"], 200>;
+type Note = InferResponseType<(typeof notesClient.notes)[":id"]["$get"], 200>;
 
-// A note in the editor. The search params are the state of the notebook's grid (NotebookPage.tsx), kept for the back link.
-export function NotePage() {
-    const { notebookId, noteId } = usePathParams(notePath);
-    const { search } = useLocation();
-    // a 404 is shown by the page itself (other errors by the error boundary of the app layout)
-    const { data: note, error } = useQuery({ ...noteQuery(noteId), throwOnError: (queryError) => !isNotFound(queryError) });
+// A note in the editor (see noteRoute). The search params are the state of the notebook's grid (NotebookPage.tsx), kept for the back link.
+export default function NotePage() {
+    return (
+        <PageErrorBoundary Fallback={NotePageError}>
+            <NoteLoader />
+        </PageErrorBoundary>
+    );
+}
 
-    // e.g. deleted by the assistant while open (the query still has the note from before then)
-    if (isNotFound(error)) {
-        return <NoteNotFound />;
-    }
-    if (note === undefined) {
-        return (
-            <NotePageLayout>
-                <PageLoading />
-            </NotePageLayout>
-        );
-    }
-    // e.g. moved to another notebook by the assistant
+function NoteLoader() {
+    const { notebookId, noteId } = noteRoute.useParams();
+    const search = noteRoute.useSearch();
+    const { data: note } = usePageQuery(noteQuery, noteId);
+    // what the assistant gets to know about the page
+    useChatPage(notesChatPage, { notebookId: note.notebookId, noteId: note.id });
+    // e.g. moved to another notebook by the assistant: the URL follows the note
     if (note.notebookId !== notebookId) {
-        return <Navigate to={generatePath(notePath, { notebookId: note.notebookId, noteId }) + search} replace />;
+        return <Navigate to={noteRoute.href({ notebookId: note.notebookId, noteId }, search)} replace />;
     }
     return (
         <NotePageLayout>
@@ -49,8 +51,12 @@ export function NotePage() {
     );
 }
 
-function NoteNotFound() {
+// e.g. deleted by the assistant while open
+function NotePageError({ error }: { error: unknown }) {
     useDocumentTitle();
+    if (!(error instanceof NotFoundError)) {
+        return <PageError error={error} />;
+    }
     return (
         <NotePageLayout>
             <Paper sx={{ p: 4, textAlign: "center" }}>
@@ -62,15 +68,14 @@ function NoteNotFound() {
 
 // The note's notebook with the grid state it was left in (the search params)
 function useNotebookLink(notebookId: string) {
-    return { pathname: generatePath(notebookPath, { notebookId }), search: useLocation().search };
+    return notebookRoute.href({ notebookId }, noteRoute.useSearch());
 }
 
 // The back link to the notebook's grid (in the state it was left) above the editor
 function NotePageLayout({ children }: { children: ReactNode }) {
-    const { notebookId } = usePathParams(notePath);
+    const { notebookId } = noteRoute.useParams();
     const notebookLink = useNotebookLink(notebookId);
-    const { data: notebooks = [] } = useQuery(notebooksQuery);
-    const notebook = notebooks.find((item) => item.id === notebookId);
+    const notebook = useNotebooks().find((item) => item.id === notebookId);
     return (
         <Container sx={{ py: 4 }}>
             <Stack spacing={2}>
@@ -97,15 +102,15 @@ type Values = { title: string; body: string };
 
 function NoteEditor({ note }: { note: Note }) {
     const queryClient = useQueryClient();
-    const navigate = useNavigate();
+    const leavePage = useLeavePage();
+    const invalidate = useInvalidateModule(notesModuleId);
     const showError = useShowError();
     const notebookLink = useNotebookLink(note.notebookId);
     useDocumentTitle(note.title);
 
-    // The cached note is updated with own changes: otherwise, when the note is opened again, the editor would start with the
-    // cached (outdated) note until it's reloaded
-    const updateCachedNote = (changes: Partial<Note>) =>
-        queryClient.setQueryData(noteQuery(note.id).queryKey, (cached) => cached && { ...cached, ...changes });
+    // The cached note is replaced by the saved one: the page shows it (e.g. the tab title), and when the note is opened again, the
+    // editor starts with it instead of the outdated one
+    const updateCachedNote = (updated: Note) => queryClient.setQueryData(noteQuery(note.id).queryKey, updated);
 
     const [draft, setDraft] = useState<Values>({ title: note.title, body: note.body });
     // the stored state the draft is based on; updatedAt tells newer changes made elsewhere from outdated or own ones
@@ -117,7 +122,7 @@ function NoteEditor({ note }: { note: Note }) {
     const pending: Values = { title: draft.title.trim() || saved.title, body: draft.body };
     const dirty = pending.title !== saved.title || pending.body !== saved.body;
 
-    // Changed elsewhere (e.g. by the assistant, the queries are reloaded after its changes): take over the changes,
+    // Changed elsewhere (e.g. by the assistant, the module's data is reloaded after its changes): take over the changes,
     // unless there are unsaved ones (they are saved over them then)
     const [loadedNote, setLoadedNote] = useState(note);
     if (note !== loadedNote) {
@@ -136,10 +141,16 @@ function NoteEditor({ note }: { note: Note }) {
         saveQueue.current = saveQueue.current.then(async () => {
             setStatus("saving");
             try {
-                const { updatedAt } = await parseResponse(api.notes[":noteId"].$patch({ param: { noteId: note.id }, json: values }));
-                setSaved({ ...values, updatedAt: Date.parse(updatedAt) });
-                updateCachedNote({ ...values, updatedAt });
+                // the fields named (not spread), so a renamed input field breaks the build instead of being dropped by the schema
+                const { updated } = await parseResponse(
+                    notesClient.notes[":id"].$patch({ param: { id: note.id }, json: { title: values.title, body: values.body } }),
+                );
+                setSaved({ ...values, updatedAt: Date.parse(updated.updatedAt) });
                 setStatus("saved");
+                updateCachedNote(updated);
+                // the title and excerpt in the notebooks' grids (reloaded when shown, also after a save that outlives the editor; the
+                // sidebar doesn't change)
+                void queryClient.invalidateQueries({ queryKey: notesListsKey });
             } catch (error) {
                 console.error(error);
                 setStatus("error");
@@ -192,16 +203,15 @@ function NoteEditor({ note }: { note: Note }) {
     const handleDelete = async () => {
         deleting.current = true;
         try {
-            await parseResponse(api.notes[":noteId"].$delete({ param: { noteId: note.id } }));
+            await parseResponse(notesClient.notes[":id"].$delete({ param: { id: note.id } }));
         } catch (error) {
             deleting.current = false;
             throw error;
         }
-        await navigate(notebookLink, { replace: true });
-        // after leaving the page, otherwise it would show "doesn't exist" while leaving
+        leavePage(notebookLink, { replace: true });
+        // the deleted note isn't loaded again (it would be "not found"), the notebook's notes and the sidebar's note counts are reloaded
         queryClient.removeQueries({ queryKey: noteQuery(note.id).queryKey });
-        // the notebook's notes and the sidebar's note counts
-        await queryClient.invalidateQueries({ queryKey: notesQueryKey });
+        void invalidate();
     };
 
     const handleMove = async (notebookId: string) => {
@@ -212,16 +222,16 @@ function NoteEditor({ note }: { note: Note }) {
             await save(values);
         }
         try {
-            const { updatedAt } = await parseResponse(api.notes[":noteId"].$patch({ param: { noteId: note.id }, json: { notebookId } }));
+            const { updated } = await parseResponse(notesClient.notes[":id"].$patch({ param: { id: note.id }, json: { notebookId } }));
             // the page redirects to the note in its new notebook (like after a move by the assistant, see NotePage)
-            updateCachedNote({ notebookId, updatedAt });
+            updateCachedNote(updated);
         } catch (error) {
             console.error(error);
             showError("Moving the note failed, please try again.");
             return;
         }
         // the notebooks' notes and the sidebar's note counts
-        await queryClient.invalidateQueries({ queryKey: notesQueryKey });
+        await invalidate();
     };
 
     return (
@@ -279,8 +289,7 @@ function NoteEditor({ note }: { note: Note }) {
 }
 
 function MoveNoteButton({ currentNotebookId, onMove }: { currentNotebookId: string; onMove: (notebookId: string) => void }) {
-    const { data: allNotebooks = [] } = useQuery(notebooksQuery);
-    const notebooks = allNotebooks.filter((notebook) => notebook.id !== currentNotebookId);
+    const notebooks = useNotebooks().filter((notebook) => notebook.id !== currentNotebookId);
     const [anchor, setAnchor] = useState<HTMLElement | null>(null);
 
     if (notebooks.length === 0) {

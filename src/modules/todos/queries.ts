@@ -1,28 +1,27 @@
-import { keepPreviousData, queryOptions } from "@tanstack/react-query";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { parseResponse } from "hono/client";
 
-import { api } from "~/api/client";
-import type { GridSearch } from "~/gridSearch";
-import { toQuery } from "~/searchParams";
+import type { OperationInput } from "~/operations";
 
-export const todosModuleId = "todos";
+import { todosClient } from "./api";
+import { todosModuleId } from "./moduleId";
+import type { todoOperations } from "./operations.server";
 
-// The module's queries (TanStack Query). Their keys start with the module's id: a change invalidates all of them (todosQueryKey),
-// e.g. a new todo changes the list's todos and the open count in the sidebar.
-export const todosQueryKey = [todosModuleId];
+// The module's data in the query cache (loaded with the module's typed client). Every key starts with the module's id, so a change
+// reloads all of it (useInvalidateModule, src/client/queries.ts), e.g. a new todo changes the list's todos and the open count in the sidebar.
 
-// The user's lists with their number of open todos (the sidebar, the lists to move a todo to)
-export const listsQuery = queryOptions({
-    queryKey: [todosModuleId, "lists"],
-    queryFn: () => parseResponse(api.lists.$get()),
-});
+// The user's lists with their number of open todos: the module's navigation data (sidebar)
+export const listsQuery = queryOptions({ queryKey: [todosModuleId, "lists"], queryFn: () => parseResponse(todosClient.lists.$get()) });
 
-// The list and a page of its todos (search: the grid state, see src/gridSearch.ts)
-export function listTodosQuery(listId: string, search: GridSearch) {
+// The user's lists for the pages (e.g. the "move to" menu): empty while loading, the page doesn't wait for them
+export function useLists() {
+    return useQuery(listsQuery).data ?? [];
+}
+
+// The list and a page of its todos for its grid (sorted and filtered as in the URL)
+export function todosQuery({ listId, ...search }: OperationInput<typeof todoOperations.listTodos>) {
     return queryOptions({
-        queryKey: [todosModuleId, "lists", listId, "todos", search],
-        queryFn: () => parseResponse(api.lists[":listId"].todos.$get({ param: { listId }, query: toQuery(search) })),
-        // the grid shows the previous rows while the rows for new search params (e.g. the next page) are loading
-        placeholderData: keepPreviousData,
+        queryKey: [todosModuleId, "todos", listId, search],
+        queryFn: () => parseResponse(todosClient.lists[":listId"].todos.$get({ param: { listId }, query: search })),
     });
 }

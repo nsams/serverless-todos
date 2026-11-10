@@ -1,10 +1,10 @@
 import { AIChatAgent, type OnChatMessageOptions } from "@cloudflare/ai-chat";
-import { convertToModelMessages, isStepCount, pruneMessages, streamText } from "ai";
+import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, isStepCount, pruneMessages, streamText } from "ai";
 
 import { appName } from "~/app";
 import { getChatContext, toolsInstructions } from "~/modules/registry.server";
 
-import { chatRequestBodySchema } from "./chat";
+import { type ChatMessage, chatRequestBodySchema } from "./chat";
 import { getChatModel } from "./model.server";
 import { createChatTools } from "./tools.server";
 
@@ -20,27 +20,39 @@ export class ChatAgent extends AIChatAgent<Env> {
         const body = chatRequestBodySchema.catch({}).parse(options?.body ?? {});
         const context = await getChatContext(userId, body.page);
 
-        const result = streamText({
-            model: getChatModel(this.env),
-            system: systemPrompt({ today: body.today ?? new Date().toISOString().slice(0, 10), context }),
-            messages: pruneMessages({
-                messages: await convertToModelMessages(this.messages),
-                reasoning: "before-last-message",
-                toolCalls: "before-last-2-messages",
-            }),
-            tools: createChatTools(userId),
-            stopWhen: isStepCount(10),
-            abortSignal: options?.abortSignal,
+        const messages = pruneMessages({
+            messages: await convertToModelMessages(this.messages),
+            reasoning: "before-last-message",
+            toolCalls: "before-last-2-messages",
         });
-        return result.toUIMessageStreamResponse({
-            onError: (error) => {
-                // Workers Logs show only the stack of an Error: log the fields that say what went wrong
-                console.error("Chat assistant error", errorLogFields(error));
-                // details only in development (they may contain internals)
-                return import.meta.env.DEV ? errorDetails(error) : "The assistant is not available.";
+
+        // The model's answer plus a data part after every tool that changed data, telling the client which modules' data to reload
+        const stream = createUIMessageStream<ChatMessage>({
+            execute: ({ writer }) => {
+                const result = streamText({
+                    model: getChatModel(this.env),
+                    system: systemPrompt({ today: body.today ?? new Date().toISOString().slice(0, 10), context }),
+                    messages,
+                    tools: createChatTools(userId, (module) =>
+                        writer.write({ type: "data-changes", id: crypto.randomUUID(), data: { modules: [module] } }),
+                    ),
+                    stopWhen: isStepCount(10),
+                    abortSignal: options?.abortSignal,
+                });
+                writer.merge(result.toUIMessageStream({ onError: handleError }));
             },
+            onError: handleError,
         });
+        return createUIMessageStreamResponse({ stream });
     }
+}
+
+// The error message for the chat
+function handleError(error: unknown) {
+    // Workers Logs show only the stack of an Error: log the fields that say what went wrong
+    console.error("Chat assistant error", errorLogFields(error));
+    // details only in development (they may contain internals)
+    return import.meta.env.DEV ? errorDetails(error) : "The assistant is not available.";
 }
 
 // context: what the user is looking at, from the modules

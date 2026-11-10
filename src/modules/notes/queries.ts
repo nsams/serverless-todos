@@ -1,37 +1,42 @@
-import { keepPreviousData, queryOptions } from "@tanstack/react-query";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { parseResponse } from "hono/client";
 
-import { api } from "~/api/client";
-import { toQuery } from "~/searchParams";
+import type { OperationInput } from "~/operations";
 
-import type { NoteSearch } from "./noteSearch";
+import { notesClient } from "./api";
+import { notesModuleId } from "./moduleId";
+import type { noteOperations } from "./operations.server";
 
-export const notesModuleId = "notes";
+// The module's data in the query cache (loaded with the module's typed client). Every key starts with the module's id, so a change
+// reloads all of it (useInvalidateModule, src/client/queries.ts), e.g. a new note changes the notebook's notes and the note count in
+// the sidebar.
 
-// The module's queries (TanStack Query). Their keys start with the module's id: a change invalidates all of them (notesQueryKey),
-// e.g. a new note changes the notebook's notes and the note count in the sidebar.
-export const notesQueryKey = [notesModuleId];
-
-// The user's notebooks with their number of notes (the sidebar, the notebooks to move a note to)
+// The user's notebooks with their number of notes: the module's navigation data (sidebar)
 export const notebooksQuery = queryOptions({
     queryKey: [notesModuleId, "notebooks"],
-    queryFn: () => parseResponse(api.notebooks.$get()),
+    queryFn: () => parseResponse(notesClient.notebooks.$get()),
 });
 
-// The notebook and a page of its notes (search: the grid state and the search text, see noteSearch.ts)
-export function notebookNotesQuery(notebookId: string, search: NoteSearch) {
+// The user's notebooks for the pages (e.g. the "move to" menu): empty while loading, the page doesn't wait for them
+export function useNotebooks() {
+    return useQuery(notebooksQuery).data ?? [];
+}
+
+// The key of all pages of the notebooks' grids
+export const notesListsKey = [notesModuleId, "notes"] as const;
+
+// The notebook and a page of its notes for its grid (sorted, filtered and searched as in the URL)
+export function notesQuery({ notebookId, ...search }: OperationInput<typeof noteOperations.listNotes>) {
     return queryOptions({
-        queryKey: [notesModuleId, "notebooks", notebookId, "notes", search],
-        queryFn: () => parseResponse(api.notebooks[":notebookId"].notes.$get({ param: { notebookId }, query: toQuery(search) })),
-        // the grid shows the previous rows while the rows for new search params (e.g. the search text) are loading
-        placeholderData: keepPreviousData,
+        queryKey: [...notesListsKey, notebookId, search],
+        queryFn: () => parseResponse(notesClient.notebooks[":notebookId"].notes.$get({ param: { notebookId }, query: search })),
     });
 }
 
 // A note with its body (the editor)
-export function noteQuery(noteId: string) {
+export function noteQuery(id: string) {
     return queryOptions({
-        queryKey: [notesModuleId, "notes", noteId],
-        queryFn: () => parseResponse(api.notes[":noteId"].$get({ param: { noteId } })),
+        queryKey: [notesModuleId, "note", id],
+        queryFn: () => parseResponse(notesClient.notes[":id"].$get({ param: { id } })),
     });
 }

@@ -5,11 +5,11 @@ import { parseResponse } from "hono/client";
 import { Fragment, lazy, Suspense, useState } from "react";
 import { Outlet } from "react-router";
 
-import { api } from "~/api/client";
+import { userClient } from "~/api/client";
 import { appName } from "~/app";
 import { appModules } from "~/modules/registry";
 
-import { PageErrorBoundary } from "./errors";
+import { PageErrorBoundary, PageLoading } from "./errors";
 
 // Layout of the app pages: app bar and the navigation of the modules in a sidebar. The layout stays mounted while navigating
 // between the pages, so its data (the user, the sidebar's data loaded by the modules' navigation components) isn't reloaded by
@@ -17,7 +17,7 @@ import { PageErrorBoundary } from "./errors";
 
 const userQuery = queryOptions({
     queryKey: ["user"],
-    queryFn: () => parseResponse(api.user.$get()),
+    queryFn: () => parseResponse(userClient.user.$get()),
     // doesn't change while the app is open
     staleTime: Infinity,
 });
@@ -104,7 +104,10 @@ export function AppLayout() {
                 <Toolbar />
                 {/* errors of the pages (e.g. a list that doesn't exist (anymore)) are shown in the layout */}
                 <PageErrorBoundary>
-                    <Outlet />
+                    {/* while a page's code or data is loading for the first time (see usePageQuery) */}
+                    <Suspense fallback={<PageLoading />}>
+                        <Outlet />
+                    </Suspense>
                 </PageErrorBoundary>
             </Box>
             <Drawer anchor="right" variant="persistent" open={chatOpen} sx={{ "& .MuiDrawer-paper": { width: { xs: "100%", sm: chatWidth } } }}>

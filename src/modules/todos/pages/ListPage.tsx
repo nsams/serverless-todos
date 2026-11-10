@@ -1,78 +1,61 @@
 import { Add, Delete, Move, Warning } from "@dextinity/admin-icons";
 import { Box, Button, Checkbox, Container, Paper, Stack, TextField } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import {
-    DataGridPro,
-    getGridBooleanOperators,
-    getGridDateOperators,
-    getGridStringOperators,
-    GridActionsCellItem,
-    type GridColDef,
-} from "@mui/x-data-grid-pro";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { DataGridPro, getGridBooleanOperators, getGridDateOperators, getGridStringOperators, GridActionsCellItem } from "@mui/x-data-grid-pro";
 import { type InferRequestType, type InferResponseType, parseResponse } from "hono/client";
 import { type FormEvent, useState } from "react";
-import { generatePath, Navigate, useLocation, useNavigate } from "react-router";
 
-import { api } from "~/api/client";
-import { PageLoading } from "~/client/errors";
-import { usePathParams } from "~/client/params";
+import { useChatPage } from "~/chat/useChatPage";
+import { useInvalidateModule, usePageQuery } from "~/client/queries";
 import { CollectionHeader } from "~/components/CollectionHeader";
 import { useShowError } from "~/components/ErrorSnackbar";
 import { useDocumentTitle } from "~/components/useDocumentTitle";
 import { useMutate } from "~/components/useMutate";
 import { useServerGrid } from "~/components/useServerGrid";
 import { fromDateString, toDateString, useToday } from "~/dates";
-import { lastPageWithRows, supportedOperators, validateGridSearch } from "~/gridSearch";
-import { readSearch, stringifySearch } from "~/searchParams";
+import { errorMessage } from "~/errors";
+import { type GridColumns, supportedOperators } from "~/gridSearch";
 
+import { todosClient } from "../api";
+import { todosChatPage } from "../chatPage";
 import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "../limits";
+import { todosModuleId } from "../moduleId";
 import { isOverdue } from "../overdue";
-import { listPath, listsPath } from "../paths";
-import { listsQuery, listTodosQuery, todosQueryKey } from "../queries";
-import { parseTodoSearch, todoFields } from "../todoSearch";
+import { todosQuery, useLists } from "../queries";
+import { listRoute, listsRoute } from "../routes";
+import { todoFields } from "../todoSearch";
 
-type ListTodos = InferResponseType<(typeof api.lists)[":listId"]["todos"]["$get"], 200>;
-type Todo = ListTodos["todos"][number];
+type Todo = InferResponseType<(typeof todosClient.lists)[":listId"]["todos"]["$get"], 200>["todos"][number];
 
-// The todos of a list in a grid (pagination, sorting, filtering on the server, state in the URL)
-export function ListPage() {
-    const { listId } = usePathParams(listPath);
-    const search = readSearch(useLocation().search, validateGridSearch);
-    const { data, isPlaceholderData } = useQuery(listTodosQuery(listId, search));
-
-    if (data === undefined) {
-        return <PageLoading />;
-    }
-    // e.g. after deleting the last todo of the last page (not for the previous rows shown while loading)
-    const lastPage = isPlaceholderData ? undefined : lastPageWithRows(parseTodoSearch(search), data.todos.length, data.totalCount);
-    if (lastPage !== undefined) {
-        return <Navigate to={generatePath(listPath, { listId }) + stringifySearch({ ...search, page: lastPage || undefined })} replace />;
-    }
-    return <ListView data={data} loading={isPlaceholderData} />;
-}
-
-function ListView({ data: { list, todos, totalCount }, loading }: { data: ListTodos; loading: boolean }) {
-    const { data: lists = [] } = useQuery(listsQuery);
-    const queryClient = useQueryClient();
-    // the list's todos and the sidebar's open counts
-    const reload = () => queryClient.invalidateQueries({ queryKey: todosQueryKey });
+// The todos of a list in a grid (pagination, sorting, filtering on the server, state in the URL), see listRoute
+export default function ListPage() {
+    const { listId } = listRoute.useParams();
+    const search = listRoute.useSearch();
+    const {
+        data: { list, todos, totalCount },
+        loading,
+    } = usePageQuery(todosQuery, { listId, ...search });
+    const lists = useLists();
+    const invalidate = useInvalidateModule(todosModuleId);
     const showError = useShowError();
-    const mutate = useMutate(todosQueryKey);
+    const mutate = useMutate(todosModuleId);
     const today = useToday();
     const { updateSearch, gridProps } = useServerGrid({
-        validateSearch: validateGridSearch,
+        search,
         fields: todoFields,
+        rows: todos,
         rowCount: totalCount,
         loading,
         dateOnlyFields: ["dueDate"],
     });
     useDocumentTitle(list.name);
+    // what the assistant gets to know about the page
+    useChatPage(todosChatPage, { listId: list.id });
 
-    const updateTodo = (todoId: string, changes: InferRequestType<(typeof api.todos)[":todoId"]["$patch"]>["json"]) =>
-        parseResponse(api.todos[":todoId"].$patch({ param: { todoId }, json: changes }));
+    const updateTodo = (id: string, changes: InferRequestType<(typeof todosClient.todos)[":id"]["$patch"]>["json"]) =>
+        parseResponse(todosClient.todos[":id"].$patch({ param: { id }, json: changes }));
 
-    const columns: GridColDef<Todo>[] = [
+    const columns: GridColumns<Todo, typeof todoFields> = [
         {
             field: "done",
             headerName: "Done",
@@ -142,7 +125,7 @@ function ListView({ data: { list, todos, totalCount }, loading }: { data: ListTo
                     key="delete"
                     icon={<Delete />}
                     label="Delete"
-                    onClick={() => void mutate(parseResponse(api.todos[":todoId"].$delete({ param: { todoId: row.id } })))}
+                    onClick={() => void mutate(parseResponse(todosClient.todos[":id"].$delete({ param: { id: row.id } })))}
                 />,
                 ...lists
                     .filter((otherList) => otherList.id !== list.id)
@@ -163,7 +146,7 @@ function ListView({ data: { list, todos, totalCount }, loading }: { data: ListTo
         <Container sx={{ py: 4 }}>
             <Stack spacing={2}>
                 <ListHeader list={list} />
-                <CreateTodoForm key={list.id} listId={list.id} onCreated={() => void reload()} />
+                <CreateTodoForm key={list.id} listId={list.id} onCreated={() => void invalidate()} />
                 <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
                     <Button
                         startIcon={<Warning />}
@@ -175,7 +158,6 @@ function ListView({ data: { list, todos, totalCount }, loading }: { data: ListTo
                 </Box>
                 <Paper>
                     <DataGridPro
-                        rows={todos}
                         columns={columns}
                         autoHeight
                         disableRowSelectionOnClick
@@ -189,21 +171,19 @@ function ListView({ data: { list, todos, totalCount }, loading }: { data: ListTo
                                 // a todo needs a title
                                 return oldRow;
                             }
-                            const changes = {
-                                ...(title !== oldRow.title && { title }),
-                                ...(newRow.description !== oldRow.description && { description: newRow.description }),
-                                ...(newRow.dueDate !== oldRow.dueDate && { dueDate: newRow.dueDate }),
+                            // the changed fields, undefined: unchanged (a typed object literal: a renamed field of the API breaks the build)
+                            const changes: Parameters<typeof updateTodo>[1] = {
+                                title: title !== oldRow.title ? title : undefined,
+                                description: newRow.description !== oldRow.description ? newRow.description : undefined,
+                                dueDate: newRow.dueDate !== oldRow.dueDate ? newRow.dueDate : undefined,
                             };
-                            if (Object.keys(changes).length > 0) {
+                            if (changes.title !== undefined || changes.description !== undefined || changes.dueDate !== undefined) {
                                 await updateTodo(newRow.id, changes);
-                                void reload();
+                                void invalidate();
                             }
                             return { ...newRow, title };
                         }}
-                        onProcessRowUpdateError={(error) => {
-                            console.error(error);
-                            showError("Saving failed, please try again.");
-                        }}
+                        onProcessRowUpdateError={(error) => showError(errorMessage(error))}
                     />
                 </Paper>
             </Stack>
@@ -212,31 +192,18 @@ function ListView({ data: { list, todos, totalCount }, loading }: { data: ListTo
 }
 
 function ListHeader({ list }: { list: { id: string; name: string } }) {
-    const queryClient = useQueryClient();
-    const navigate = useNavigate();
-
     return (
         <CollectionHeader
+            moduleId={todosModuleId}
             name={list.name}
             kind="list"
             deleteText={`“${list.name}” and all its todos will be deleted.`}
             maxNameLength={maxListNameLength}
-            onRename={async (name) => {
-                const response = await api.lists[":listId"].$patch({ param: { listId: list.id }, json: { name } });
-                if (response.status === 422) {
-                    return (await response.json()).error;
-                }
-                await parseResponse(response);
-                // the heading and the sidebar
-                await queryClient.invalidateQueries({ queryKey: todosQueryKey });
-                return null;
-            }}
+            onRename={(name) => parseResponse(todosClient.lists[":listId"].$patch({ param: { listId: list.id }, json: { name } }))}
             onDelete={async () => {
-                await parseResponse(api.lists[":listId"].$delete({ param: { listId: list.id } }));
+                await parseResponse(todosClient.lists[":listId"].$delete({ param: { listId: list.id } }));
                 // redirects to the first remaining list (or creates a new one)
-                await navigate(listsPath, { replace: true });
-                // the sidebar's lists; after leaving the page, otherwise its query would show the deleted list's 404
-                await queryClient.invalidateQueries({ queryKey: todosQueryKey });
+                return listsRoute.href();
             }}
         />
     );
@@ -252,25 +219,21 @@ function CreateTodoForm({ listId, onCreated }: { listId: string; onCreated: () =
         const formData = new FormData(form);
         setPending(true);
         try {
-            const response = await api.lists[":listId"].todos.$post({
-                param: { listId },
-                json: {
-                    title: String(formData.get("title") ?? ""),
-                    description: String(formData.get("description") ?? ""),
-                    dueDate: String(formData.get("dueDate") ?? "") || null,
-                },
-            });
-            if (response.status === 422) {
-                setError((await response.json()).error);
-                return;
-            }
-            await parseResponse(response);
+            await parseResponse(
+                todosClient.lists[":listId"].todos.$post({
+                    param: { listId },
+                    json: {
+                        title: String(formData.get("title") ?? ""),
+                        description: String(formData.get("description") ?? ""),
+                        dueDate: String(formData.get("dueDate") ?? "") || null,
+                    },
+                }),
+            );
             setError(null);
             form.reset();
             onCreated();
         } catch (error) {
-            console.error(error);
-            setError("Saving failed, please try again.");
+            setError(errorMessage(error));
         } finally {
             setPending(false);
         }

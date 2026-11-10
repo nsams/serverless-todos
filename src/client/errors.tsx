@@ -1,10 +1,10 @@
 import { Box, CircularProgress, Container, Typography } from "@mui/material";
 import { useQueryClient } from "@tanstack/react-query";
-import { Component, type ReactNode } from "react";
+import { Component, type ComponentType, type ReactNode } from "react";
 import { useLocation } from "react-router";
 
-import { isNotFound } from "~/api/client";
 import { useDocumentTitle } from "~/components/useDocumentTitle";
+import { NotFoundError } from "~/errors";
 
 type ErrorBoundaryProps = {
     children: ReactNode;
@@ -15,7 +15,7 @@ type ErrorBoundaryProps = {
     onReset: () => void;
 };
 
-// Catches errors while rendering, including the errors of the queries (throwOnError, see queryClient.ts)
+// Catches errors while rendering, including the errors of the queries (see src/client/queries.ts)
 class ErrorBoundary extends Component<ErrorBoundaryProps, { error: unknown; resetKey: string }> {
     state = { error: undefined, resetKey: this.props.resetKey };
 
@@ -40,23 +40,24 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, { error: unknown; rese
 }
 
 // Shows the errors of its children (e.g. a list that doesn't exist (anymore)) instead of them, until the user goes to another page.
-// Used around the pages in the app layout (AppLayout.tsx) and around the whole app (AppRoutes.tsx).
-export function PageErrorBoundary({ children }: { children: ReactNode }) {
+// Used around the pages in the app layout (AppLayout.tsx) and around the whole app (AppRoutes.tsx); a page can show its errors itself
+// (Fallback, e.g. NotePage.tsx).
+export function PageErrorBoundary({ children, Fallback = PageError }: { children: ReactNode; Fallback?: ComponentType<{ error: unknown }> }) {
     const { pathname } = useLocation();
     const queryClient = useQueryClient();
     // The failed queries are forgotten: coming back to the page fetches its data again instead of showing the cached error
     // (e.g. after a network error)
     const forgetFailedQueries = () => queryClient.removeQueries({ type: "inactive", predicate: (query) => query.state.status === "error" });
     return (
-        <ErrorBoundary resetKey={pathname} onReset={forgetFailedQueries} fallback={(error) => <PageError error={error} />}>
+        <ErrorBoundary resetKey={pathname} onReset={forgetFailedQueries} fallback={(error) => <Fallback error={error} />}>
             {children}
         </ErrorBoundary>
     );
 }
 
-// The error of a page; the API's 404 (see isNotFound in src/api/client.ts) as "not found"
+// The error of a page; the API's 404 (thrown by the typed clients, src/api/client.ts) as "not found"
 export function PageError({ error }: { error: unknown }) {
-    if (isNotFound(error)) {
+    if (error instanceof NotFoundError) {
         return <NotFoundPage />;
     }
     console.error(error);
@@ -78,7 +79,7 @@ function ErrorMessage({ message, details }: { message: string; details: string }
     );
 }
 
-// While a page's data is loading for the first time (afterwards the page shows the previous data while loading, see placeholderData)
+// While a page's code or data is loading for the first time (afterwards the page shows the previous data while loading, see usePageQuery)
 export function PageLoading() {
     return (
         <Box sx={{ display: "flex", justifyContent: "center", p: 8 }}>

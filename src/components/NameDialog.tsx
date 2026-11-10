@@ -1,6 +1,8 @@
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField } from "@mui/material";
 import { type FormEvent, useState } from "react";
 
+import { errorMessage } from "~/errors";
+
 type Props = {
     open: boolean;
     title: string;
@@ -10,8 +12,8 @@ type Props = {
     initialName?: string;
     maxLength: number;
     onClose: () => void;
-    // returns an error message, or null on success (the dialog is closed by the caller)
-    onSubmit: (name: string) => Promise<string | null>;
+    // the dialog is closed by the caller; a ValidationError's message (e.g. "Name is required") is shown in the field
+    onSubmit: (name: string) => Promise<void>;
 };
 
 // Dialog with a single name field, e.g. to create or rename a list, or the title of a new note
@@ -23,10 +25,10 @@ export function NameDialog({ open, title, submitLabel, label = "Name", initialNa
         event.preventDefault();
         setPending(true);
         try {
-            setError(await onSubmit(String(new FormData(event.currentTarget).get("name") ?? "")));
+            await onSubmit(String(new FormData(event.currentTarget).get("name") ?? ""));
+            setError(null);
         } catch (error) {
-            console.error(error);
-            setError("Saving failed, please try again.");
+            setError(errorMessage(error));
         } finally {
             setPending(false);
         }
