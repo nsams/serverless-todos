@@ -29,8 +29,6 @@ function todoView({ id, listId, title, description, dueDate, done, createdAt }: 
     return { id, listId, title, description, dueDate, done, createdAt };
 }
 
-export type TodoView = ReturnType<typeof todoView>;
-
 async function getList(userId: string, listId: string) {
     const list = await getListRepository().get(userId, listId);
     if (!list) {

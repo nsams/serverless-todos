@@ -27,8 +27,6 @@ function noteView({ id, notebookId, title, body, createdAt, updatedAt }: Note) {
     return { id, notebookId, title, body, createdAt, updatedAt };
 }
 
-export type NoteView = ReturnType<typeof noteView>;
-
 async function getNotebook(userId: string, notebookId: string) {
     const notebook = await getNotebookRepository().get(userId, notebookId);
     if (!notebook) {
