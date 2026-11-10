@@ -22,7 +22,6 @@ import { notebookRoute, noteRoute } from "../routes";
 // A note in the editor (noteRoute in routes.ts, loaded by the route when it is opened first)
 export function Component() {
     const note = noteRoute.useLoaderData();
-    usePageTitle(note.title);
     // what the assistant gets to know about the page
     useChatPage(notesChatPage, { notebookId: note.notebookId, noteId: note.id });
     return (
@@ -88,6 +87,8 @@ function NoteEditor({ note }: { note: NoteView }) {
     const [saved, setSaved] = useState<Values & { updatedAt: number }>({ title: note.title, body: note.body, updatedAt: note.updatedAt.getTime() });
     const [status, setStatus] = useState<"saved" | "saving" | "error">("saved");
     const [mode, setMode] = useState<"write" | "preview">(note.body ? "preview" : "write");
+    // the stored title: follows the autosave, which doesn't reload the page's data
+    usePageTitle(saved.title);
 
     // an empty title isn't saved (a note needs a title)
     const pending: Values = { title: draft.title.trim() || saved.title, body: draft.body };
