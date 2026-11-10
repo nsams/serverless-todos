@@ -1,30 +1,48 @@
 import handler from "@tanstack/react-start/server-entry";
 import { getAgentByName } from "agents";
 
-import { getUser } from "./auth.server";
+import { getUser, type User } from "./auth.server";
 import { chatAgentPath } from "./chat/chat";
 import { handleMcpRequest, mcpPath } from "./mcp/mcp.server";
 
 export { ChatAgent } from "./chat/agent.server";
 
 // Custom worker entry:
-// - passes Cloudflare Access (`ctx.access`, set by the runtime on requests that matched an Access application) to the app
+// - authenticates every request (Cloudflare Access, src/auth.server.ts) in one place, before it is routed: the app (pages and server
+//   functions get the user as request context), the chat and the MCP server, and any endpoint added later
 // - routes the chat (WebSocket and HTTP requests from useAgentChat) to the user's chat agent
 // - serves the MCP server for external AI clients (src/mcp/mcp.server.ts)
 export default {
     async fetch(request, env, ctx) {
+        // `ctx.access`: set by the runtime on requests that matched an Access application
+        const user = await getUser(request, ctx.access);
+        if (!user) {
+            return new Response("Forbidden", { status: 403 });
+        }
         const { pathname } = new URL(request.url);
         if (pathname === `/${chatAgentPath}` || pathname.startsWith(`/${chatAgentPath}/`)) {
-            return handleChatRequest(request, env, ctx.access);
+            // WebSockets aren't protected by CORS
+            if (isForeignOrigin(request)) {
+                return new Response("Forbidden", { status: 403 });
+            }
+            // one agent per user: the instance is chosen by the authenticated user, never by the client
+            const agent = await getAgentByName(env.ChatAgent, user.id);
+            return agent.fetch(request);
         }
         if (pathname === mcpPath) {
-            return handleMcp(request, ctx.access);
+            // MCP clients authenticate with an OAuth token issued by Cloudflare Access (managed OAuth), Access verifies it and forwards
+            // the request with the Access JWT like for a browser session. Browser-based clients of other sites are rejected.
+            if (isForeignOrigin(request)) {
+                return new Response("Forbidden", { status: 403 });
+            }
+            return handleMcpRequest(request, user.id);
         }
-        return handler.fetch(request, { context: { access: ctx.access } });
+        return handler.fetch(request, { context: { user } });
     },
 } satisfies ExportedHandler<Env>;
 
-// Requests from browsers of other sites carry the user's Access cookie: reject them (CSRF, cross-site WebSocket hijacking)
+// Requests from browsers of other sites carry the user's Access cookie: reject them (CSRF, cross-site WebSocket hijacking).
+// The server functions are checked by Start's CSRF middleware (src/start.ts).
 function isForeignOrigin(request: Request) {
     const origin = request.headers.get("origin");
     if (origin !== null && origin !== new URL(request.url).origin) {
@@ -34,35 +52,8 @@ function isForeignOrigin(request: Request) {
     return false;
 }
 
-// Chat requests bypass the app's request middleware (src/start.ts), so they are authenticated here
-async function handleChatRequest(request: Request, env: Env, access: CloudflareAccessContext | undefined) {
-    // WebSockets aren't protected by CORS
-    if (isForeignOrigin(request)) {
-        return new Response("Forbidden", { status: 403 });
-    }
-    const user = await getUser(request, access);
-    if (!user) {
-        return new Response("Forbidden", { status: 403 });
-    }
-    // one agent per user: the instance is chosen by the authenticated user, never by the client
-    const agent = await getAgentByName(env.ChatAgent, user.id);
-    return agent.fetch(request);
-}
-
-// MCP requests bypass the app's request middleware too. MCP clients authenticate with an OAuth token issued by Cloudflare Access (managed OAuth),
-// Access verifies it and forwards the request with the Access JWT like for a browser session.
-async function handleMcp(request: Request, access: CloudflareAccessContext | undefined) {
-    if (isForeignOrigin(request)) {
-        return new Response("Forbidden", { status: 403 });
-    }
-    const user = await getUser(request, access);
-    if (!user) {
-        return new Response("Forbidden", { status: 403 });
-    }
-    return handleMcpRequest(request, user.id);
-}
-
-export type RequestContext = { access: CloudflareAccessContext | undefined };
+// The context of every request of the app: the authenticated user (context.user in server functions and middleware)
+export type RequestContext = { user: User };
 
 declare module "@tanstack/react-router" {
     interface Register {

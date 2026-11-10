@@ -1,7 +1,6 @@
 import { createSerializationAdapter, notFound } from "@tanstack/react-router";
 import { createCsrfMiddleware, createMiddleware, createStart } from "@tanstack/react-start";
 
-import { getUser } from "./auth.server";
 import { NotFoundError, ValidationError } from "./errors";
 import type { RequestContext } from "./server";
 
@@ -9,14 +8,11 @@ const csrfMiddleware = createCsrfMiddleware({
     filter: (ctx) => ctx.handlerType === "serverFn",
 });
 
-// Every request (pages and server functions) must have been authenticated by Cloudflare Access; the user is passed on as context
-const authMiddleware = createMiddleware().server(async ({ request, context, next }) => {
-    // the request context passed in src/server.ts; not reflected in the request middleware's context type
-    const { access } = context as unknown as RequestContext;
-    const user = await getUser(request, access);
-    if (!user) {
-        return new Response("Forbidden", { status: 403 });
-    }
+// Every request is authenticated before it reaches the app (src/server.ts), which passes the user as request context. Passed on by a
+// middleware, so the server functions' context is typed: Start types the request context (Register.server.requestContext) as {}
+// wherever the start instance's own middlewares are typed (a circular reference through Register.config).
+const userMiddleware = createMiddleware().server(({ context, next }) => {
+    const { user } = context as unknown as RequestContext;
     return next({ context: { user } });
 });
 
@@ -43,7 +39,7 @@ const validationErrorAdapter = createSerializationAdapter({
 });
 
 export const startInstance = createStart(() => ({
-    requestMiddleware: [csrfMiddleware, authMiddleware],
+    requestMiddleware: [csrfMiddleware, userMiddleware],
     functionMiddleware: [operationErrorMiddleware],
     serializationAdapters: [validationErrorAdapter],
 }));
