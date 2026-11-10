@@ -4,14 +4,13 @@ import { createLink, type LinkOptions } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { NameDialog } from "./NameDialog";
-import { useRevalidate } from "./useRevalidate";
 
 const ListItemLink = createLink(ListItemButton);
 
 export type NavigationItem = {
     id: string;
     name: string;
-    // the item's page, e.g. linkOptions({ to: "/lists/$listId", params: { listId } }) (typed by the route tree)
+    // e.g. linkOptions({ to: "/lists/$listId", params: { listId } })
     link: LinkOptions;
     // shown next to the name if > 0, e.g. the number of open todos
     count?: number;
@@ -24,33 +23,41 @@ type Props = {
     // e.g. "New list": button and dialog title
     createLabel: string;
     maxNameLength: number;
-    // creates an item and navigates to it; returns an error message, or null on success
-    onCreate: (name: string) => Promise<string | null>;
+    // creates an item, navigates to it and reloads the items; throws a ValidationError with a message for the user, e.g. for an empty name
+    onCreate: (name: string) => Promise<void>;
     // closes the sidebar on small screens
     onNavigate: () => void;
 };
 
 // A module's items in the app's sidebar (e.g. the todo lists, the notebooks) with a button to create one
 export function NavigationList({ items, createLabel, maxNameLength, onCreate, onNavigate }: Props) {
-    const revalidate = useRevalidate();
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
     const handleCreate = async (name: string) => {
-        const error = await onCreate(name);
-        if (error === null) {
-            setCreateDialogOpen(false);
-            onNavigate();
-            // the new item: the sidebar's data isn't reloaded by the navigation (the app layout's loader doesn't run again)
-            await revalidate();
-        }
-        return error;
+        await onCreate(name);
+        setCreateDialogOpen(false);
+        onNavigate();
     };
 
     return (
         <>
             <List>
                 {items.map((item) => (
-                    <NavigationListItem key={item.id} item={item} onNavigate={onNavigate} />
+                    <ListItemLink
+                        key={item.id}
+                        {...item.link}
+                        // also active on the item's sub pages and with search params (e.g. a grid's filters)
+                        activeOptions={{ includeSearch: false }}
+                        activeProps={{ selected: true }}
+                        onClick={onNavigate}
+                    >
+                        <ListItemText primary={item.name} slotProps={{ primary: { noWrap: true } }} />
+                        {item.count !== undefined && item.count > 0 && (
+                            <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }} aria-label={item.countLabel}>
+                                {item.count}
+                            </Typography>
+                        )}
+                    </ListItemLink>
                 ))}
             </List>
             <Divider />
@@ -71,24 +78,5 @@ export function NavigationList({ items, createLabel, maxNameLength, onCreate, on
                 onSubmit={handleCreate}
             />
         </>
-    );
-}
-
-function NavigationListItem({ item, onNavigate }: { item: NavigationItem; onNavigate: () => void }) {
-    return (
-        <ListItemLink
-            {...item.link}
-            // also active on the item's sub pages (e.g. a note of a notebook) and with search params (e.g. a grid's filters)
-            activeOptions={{ includeSearch: false }}
-            activeProps={{ selected: true }}
-            onClick={onNavigate}
-        >
-            <ListItemText primary={item.name} slotProps={{ primary: { noWrap: true } }} />
-            {item.count !== undefined && item.count > 0 && (
-                <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }} aria-label={item.countLabel}>
-                    {item.count}
-                </Typography>
-            )}
-        </ListItemLink>
     );
 }

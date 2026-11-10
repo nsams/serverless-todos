@@ -2,23 +2,12 @@ import { and, asc, desc, eq, gt, gte, isNull, lt, lte, or, type SQL } from "driz
 
 import { getDb } from "~/db/db.server";
 import { dateTimeCondition, filterModelCondition, sortOrder, textCondition } from "~/db/filters.server";
-import type { DateTimeOperator, TextOperator } from "~/gridSearch";
 
+import type { TodoFilter, TodoFilterModel, TodoSort } from "../todoSearch";
 import { getListRepository } from "./lists.server";
 import { todos } from "./schema";
 
 export type Todo = typeof todos.$inferSelect;
-
-export type TodoSort = { field: "title" | "description" | "dueDate" | "done" | "createdAt"; direction: "asc" | "desc" };
-
-export type TodoFilter =
-    | { field: "title"; operator: TextOperator; value: string }
-    | { field: "description"; operator: TextOperator; value: string }
-    | { field: "dueDate"; operator: "is" | "after" | "onOrAfter" | "before" | "onOrBefore"; value: string /* YYYY-MM-DD */ }
-    | { field: "done"; operator: "is"; value: boolean }
-    | { field: "createdAt"; operator: DateTimeOperator; value: Date };
-
-export type TodoFilterModel = { items: TodoFilter[]; logicOperator: "and" | "or" };
 
 type ListOptions = { offset: number; limit: number; sort: TodoSort[]; filter: TodoFilterModel };
 
@@ -32,17 +21,18 @@ type TodoRepository = {
     // open todos first, then by due date (todos without due date last), newest first
     search(userId: string, options: SearchOptions): Promise<Todo[]>;
     get(userId: string, id: string): Promise<Todo | undefined>;
-    // false if the list doesn't exist (or belongs to another user)
-    create(userId: string, listId: string, values: TodoValues): Promise<boolean>;
-    // false if the target list doesn't exist (or belongs to another user)
-    update(userId: string, id: string, values: Partial<TodoValues & Pick<Todo, "done" | "listId">>): Promise<boolean>;
-    delete(userId: string, id: string): Promise<void>;
+    // undefined if the list doesn't exist (or belongs to another user)
+    create(userId: string, listId: string, values: TodoValues): Promise<Todo | undefined>;
+    // The updated todo; undefined if the todo or the target list doesn't exist (or belongs to another user)
+    update(userId: string, id: string, values: Partial<TodoValues & Pick<Todo, "done" | "listId">>): Promise<Todo | undefined>;
+    // The deleted todo; undefined if it doesn't exist (or belongs to another user)
+    delete(userId: string, id: string): Promise<Todo | undefined>;
 };
 
 export function getTodoRepository(): TodoRepository {
     const db = getDb();
     const listExists = async (userId: string, listId: string) => (await getListRepository().get(userId, listId)) !== undefined;
-    return {
+    const repository: TodoRepository = {
         list: async (userId, listId, { offset, limit, sort, filter }) => {
             const where = and(eq(todos.userId, userId), eq(todos.listId, listId), filterModelCondition(filter, filterCondition));
             const orderBy = sort.flatMap(({ field, direction }) => {
@@ -93,25 +83,38 @@ export function getTodoRepository(): TodoRepository {
         },
         create: async (userId, listId, values) => {
             if (!(await listExists(userId, listId))) {
-                return false;
+                return undefined;
             }
-            await db.insert(todos).values({ userId, listId, ...values });
-            return true;
+            const [todo] = await db
+                .insert(todos)
+                .values({ userId, listId, ...values })
+                .returning();
+            return todo;
         },
         update: async (userId, id, values) => {
             if (values.listId !== undefined && !(await listExists(userId, values.listId))) {
-                return false;
+                return undefined;
             }
-            await db
+            // nothing to change (an UPDATE needs at least one column)
+            if (Object.values(values).every((value) => value === undefined)) {
+                return repository.get(userId, id);
+            }
+            const [todo] = await db
                 .update(todos)
                 .set(values)
-                .where(and(eq(todos.id, id), eq(todos.userId, userId)));
-            return true;
+                .where(and(eq(todos.id, id), eq(todos.userId, userId)))
+                .returning();
+            return todo;
         },
         delete: async (userId, id) => {
-            await db.delete(todos).where(and(eq(todos.id, id), eq(todos.userId, userId)));
+            const [todo] = await db
+                .delete(todos)
+                .where(and(eq(todos.id, id), eq(todos.userId, userId)))
+                .returning();
+            return todo;
         },
     };
+    return repository;
 }
 
 function filterCondition(filter: TodoFilter): SQL | undefined {

@@ -1,41 +1,55 @@
 import { Chatbot, Hamburger, Logout } from "@dextinity/admin-icons";
-import { AppBar, Box, CircularProgress, Divider, Drawer, IconButton, ListSubheader, Toolbar, Typography } from "@mui/material";
+import {
+    AppBar,
+    Box,
+    CircularProgress,
+    Divider,
+    Drawer,
+    IconButton,
+    LinearProgress,
+    ListSubheader,
+    Skeleton,
+    Toolbar,
+    Typography,
+} from "@mui/material";
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { parseResponse } from "hono/client";
 import { Fragment, lazy, Suspense, useState } from "react";
 
-import { api } from "~/api/client";
+import { userClient } from "~/api/client";
 import { appName } from "~/app";
-import { appModules, loadNavigationData } from "~/modules/registry";
+import { appModules } from "~/modules/registry";
 
 // Layout of the app pages: app bar and the navigation of the modules in a sidebar
 export const Route = createFileRoute("/_app")({
-    // the user and the navigation data of the modules (e.g. the lists in the sidebar), into the query cache
-    loader: async ({ context: { queryClient } }) => {
-        await Promise.all([queryClient.fetchQuery(userQueryOptions), loadNavigationData(queryClient)]);
+    loader: async ({ context: { queryClient }, cause }) => {
+        // Not awaited: the page doesn't wait for the sidebar, each module's navigation is shown when its data is there. Only when the
+        // app is opened: then the navigation queries keep themselves up to date (reloaded with their module's data, or when stale and
+        // shown again), so the loaders running again (e.g. after a change in one module) don't reload every module's navigation.
+        if (cause === "enter") {
+            for (const { navigation } of appModules) {
+                void navigation?.prefetch(queryClient);
+            }
+        }
+        await queryClient.ensureQueryData(userQuery);
     },
-    // Not reloaded by navigations between the pages, only by an explicit revalidation (useRevalidate, e.g. after creating a list)
-    staleTime: Infinity,
-    // while the first page is loading
-    pendingComponent: () => (
-        <Box sx={{ display: "flex", justifyContent: "center", p: 8 }}>
-            <CircularProgress />
-        </Box>
-    ),
     component: AppLayout,
+    // until the user is loaded when the app is opened
+    pendingComponent: () => <LinearProgress />,
 });
 
-const userQueryOptions = queryOptions({ queryKey: ["user"], queryFn: () => parseResponse(api.user.$get()) });
+// The authenticated user (doesn't change while the app is open)
+const userQuery = queryOptions({ queryKey: ["user"], queryFn: () => parseResponse(userClient.user.$get()), staleTime: Infinity });
 
 const drawerWidth = 260;
 const chatWidth = 420;
 
-// loaded on first open: the chat (MUI X Chat, Agents SDK client) is a large part of the app's code
+// loaded on first open: the chat (MUI X Chat, Agents SDK client) is only needed in the browser
 const ChatPanel = lazy(() => import("~/components/ChatPanel"));
 
 function AppLayout() {
-    const { data: user } = useSuspenseQuery(userQueryOptions);
+    const { data: user } = useSuspenseQuery(userQuery);
     const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
     const [chatOpen, setChatOpen] = useState(false);
     // stays mounted once opened, so the conversation (and a running answer) survives closing the panel
@@ -58,7 +72,9 @@ function AppLayout() {
                             <ListSubheader component="h2" disableSticky sx={{ pt: 1, lineHeight: 2.5 }}>
                                 {navigation.title}
                             </ListSubheader>
-                            <navigation.Component onNavigate={() => setMobileDrawerOpen(false)} />
+                            <Suspense fallback={<NavigationSkeleton />}>
+                                <navigation.Component onNavigate={() => setMobileDrawerOpen(false)} />
+                            </Suspense>
                         </Fragment>
                     ),
             )}
@@ -124,6 +140,17 @@ function AppLayout() {
                     </Suspense>
                 )}
             </Drawer>
+        </Box>
+    );
+}
+
+// Shown while a module's navigation data is loading
+function NavigationSkeleton() {
+    return (
+        <Box sx={{ px: 2, py: 1 }}>
+            {[0, 1, 2].map((index) => (
+                <Skeleton key={index} height={40} />
+            ))}
         </Box>
     );
 }

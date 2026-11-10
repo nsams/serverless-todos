@@ -1,6 +1,6 @@
-// Search params as plain URLSearchParams instead of TanStack Router's default JSON values (src/client/router.tsx): arrays are repeated keys
+// Search params as plain URLSearchParams instead of TanStack Router's default JSON values (src/router.tsx): arrays are repeated keys
 // (?sort=title:asc&sort=done:desc), all values are strings. The routes type them with their validateSearch (e.g. validateGridSearch),
-// the API does the same with the query.
+// the API (the query of a GET route, src/api/hono.server.ts) validates them with the operation's schema.
 
 export function parseSearch(searchStr: string) {
     const searchParams = new URLSearchParams(searchStr);
@@ -21,9 +21,4 @@ export function stringifySearch(search: Record<string, unknown>) {
     }
     const searchStr = searchParams.toString();
     return searchStr ? `?${searchStr}` : "";
-}
-
-// Search params as query of the typed API client (src/api/client.ts), e.g. a grid's state for the request of its rows
-export function toQuery(search: Record<string, unknown>) {
-    return parseSearch(stringifySearch(search));
 }

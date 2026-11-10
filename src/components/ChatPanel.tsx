@@ -2,21 +2,21 @@ import { useAgentChat } from "@cloudflare/ai-chat/react";
 import { Close, Delete } from "@dextinity/admin-icons";
 import { Alert, Box, IconButton, Toolbar, Tooltip, Typography } from "@mui/material";
 import { ChatBox } from "@mui/x-chat";
-import type { ChatAdapter, ChatMessage, ChatMessagePart } from "@mui/x-chat/headless";
-import { type AnyRouter, useRouter } from "@tanstack/react-router";
+import type { ChatAdapter, ChatMessage as MuiChatMessage, ChatMessagePart } from "@mui/x-chat/headless";
+import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "@tanstack/react-router";
 import { useAgent } from "agents/react";
-import { getToolName, isToolUIPart, type UIMessage } from "ai";
-import { useEffect, useMemo, useRef } from "react";
+import { getToolName, isToolUIPart } from "ai";
+import { useMemo } from "react";
 
-import { chatAgentPath, type ChatRequestBody } from "~/chat/chat";
+import { chatAgentPath, type ChatMessage, type ChatRequestBody } from "~/chat/chat";
+import { useChatChanges } from "~/chat/useChatChanges";
+import { useChatPageGetter } from "~/chat/useChatPage";
 import { toDateString } from "~/dates";
+import { invalidateModules } from "~/moduleQueries";
 import { appModules } from "~/modules/registry";
 
-import { useRevalidate } from "./useRevalidate";
-
 const suggestions = appModules.flatMap((module) => module.chat?.suggestions ?? []);
-// tools that change data: the page data is reloaded after they ran
-const mutatingToolNames: ReadonlySet<string> = new Set(appModules.flatMap((module) => module.chat?.mutatingToolNames ?? []));
 
 // The chat with the assistant (src/chat/agent.server.ts).
 //
@@ -24,16 +24,22 @@ const mutatingToolNames: ReadonlySet<string> = new Set(appModules.flatMap((modul
 // after reconnects, tool approvals. MUI X Chat only renders it: its messages are controlled by useAgentChat's messages and its adapter
 // forwards sending, stopping and approvals to useAgentChat.
 export default function ChatPanel({ onClose }: { onClose: () => void }) {
+    const queryClient = useQueryClient();
     const router = useRouter();
-    const revalidate = useRevalidate();
+    // what the user is looking at (reported by the page with useChatPage)
+    const getChatPage = useChatPageGetter();
 
     // the server picks the agent instance of the authenticated user (src/server.ts)
     const agent = useAgent({ agent: "ChatAgent", basePath: chatAgentPath });
-    const { messages, sendMessage, stop, addToolApprovalResponse, clearHistory, error } = useAgentChat({
+    const { messages, sendMessage, stop, addToolApprovalResponse, clearHistory, error } = useAgentChat<unknown, ChatMessage>({
         agent,
         // read on every request
-        body: (): ChatRequestBody => ({ today: toDateString(new Date()), page: currentPage(router) }),
+        body: (): ChatRequestBody => ({ today: toDateString(new Date()), page: getChatPage() }),
     });
+
+    // A tool changed the data of modules (reported by the agent, src/chat/agent.server.ts): reload exactly their data (the keys of a
+    // module's queries start with its id, src/moduleQueries.ts)
+    useChatChanges(messages, (modules) => void invalidateModules(queryClient, router, modules));
 
     const adapter = useMemo(
         (): ChatAdapter => ({
@@ -57,28 +63,6 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
         }),
         [sendMessage, stop, addToolApprovalResponse],
     );
-
-    // Reload the page data (lists, todos) after the assistant changed something
-    const handledToolCallIds = useRef(new Set<string>());
-    useEffect(() => {
-        let changed = false;
-        for (const message of messages) {
-            for (const part of message.parts) {
-                if (
-                    isToolUIPart(part) &&
-                    part.state === "output-available" &&
-                    mutatingToolNames.has(getToolName(part)) &&
-                    !handledToolCallIds.current.has(part.toolCallId)
-                ) {
-                    handledToolCallIds.current.add(part.toolCallId);
-                    changed = true;
-                }
-            }
-        }
-        if (changed) {
-            void revalidate();
-        }
-    }, [messages, revalidate]);
 
     const chatMessages = useMemo(() => messages.map(toChatMessage), [messages]);
 
@@ -118,16 +102,8 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
     );
 }
 
-// The page shown in the app: the deepest route match (route id of the route tree, e.g. "/_app/lists/$listId", see ServerModule.chatContext)
-function currentPage(router: AnyRouter): ChatRequestBody["page"] {
-    const match = router.state.matches.at(-1);
-    return match
-        ? { routeId: match.routeId, params: Object.fromEntries(Object.entries(match.params).map(([name, value]) => [name, String(value)])) }
-        : undefined;
-}
-
 // AI SDK UI message → MUI X Chat message (the part types mostly match, tool parts are nested differently)
-function toChatMessage(message: UIMessage): ChatMessage {
+function toChatMessage(message: ChatMessage): MuiChatMessage {
     return {
         id: message.id,
         role: message.role,

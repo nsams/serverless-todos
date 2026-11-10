@@ -11,11 +11,12 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as indexRouteImport } from './routes/index'
 import { Route as appRouteImport } from './routes/_app'
-import { Route as ListsDotindexRouteImport } from './../modules/todos/routes/lists.index'
-import { Route as ListsDotlistIdRouteImport } from './../modules/todos/routes/lists.$listId'
-import { Route as NotesDotindexRouteImport } from './../modules/notes/routes/notes.index'
-import { Route as NotesDotnotebookIdDotindexRouteImport } from './../modules/notes/routes/notes.$notebookId.index'
-import { Route as NotesDotnotebookIdDotnoteIdRouteImport } from './../modules/notes/routes/notes.$notebookId.$noteId'
+import { Route as appDotsplatRouteImport } from './routes/_app.$'
+import { Route as ListsDotindexRouteImport } from './modules/todos/routes/lists.index'
+import { Route as ListsDotlistIdRouteImport } from './modules/todos/routes/lists.$listId'
+import { Route as NotesDotindexRouteImport } from './modules/notes/routes/notes.index'
+import { Route as NotesDotnotebookIdDotindexRouteImport } from './modules/notes/routes/notes.$notebookId.index'
+import { Route as NotesDotnotebookIdDotnoteIdRouteImport } from './modules/notes/routes/notes.$notebookId.$noteId'
 
 const indexRoute = indexRouteImport.update({
   id: '/',
@@ -25,6 +26,11 @@ const indexRoute = indexRouteImport.update({
 const appRoute = appRouteImport.update({
   id: '/_app',
   getParentRoute: () => rootRouteImport,
+} as any)
+const appDotsplatRoute = appDotsplatRouteImport.update({
+  id: '/$',
+  path: '/$',
+  getParentRoute: () => appRoute,
 } as any)
 const ListsDotindexRoute = ListsDotindexRouteImport.update({
   id: '/lists/',
@@ -56,6 +62,7 @@ const NotesDotnotebookIdDotnoteIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof indexRoute
+  '/$': typeof appDotsplatRoute
   '/lists/$listId': typeof ListsDotlistIdRoute
   '/lists/': typeof ListsDotindexRoute
   '/notes/': typeof NotesDotindexRoute
@@ -64,6 +71,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof indexRoute
+  '/$': typeof appDotsplatRoute
   '/lists/$listId': typeof ListsDotlistIdRoute
   '/lists': typeof ListsDotindexRoute
   '/notes': typeof NotesDotindexRoute
@@ -74,6 +82,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof indexRoute
   '/_app': typeof appRouteWithChildren
+  '/_app/$': typeof appDotsplatRoute
   '/_app/lists/$listId': typeof ListsDotlistIdRoute
   '/_app/lists/': typeof ListsDotindexRoute
   '/_app/notes/': typeof NotesDotindexRoute
@@ -84,6 +93,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/$'
     | '/lists/$listId'
     | '/lists/'
     | '/notes/'
@@ -92,6 +102,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/$'
     | '/lists/$listId'
     | '/lists'
     | '/notes'
@@ -101,6 +112,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_app'
+    | '/_app/$'
     | '/_app/lists/$listId'
     | '/_app/lists/'
     | '/_app/notes/'
@@ -128,6 +140,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof appRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_app/$': {
+      id: '/_app/$'
+      path: '/$'
+      fullPath: '/$'
+      preLoaderRoute: typeof appDotsplatRouteImport
+      parentRoute: typeof appRoute
     }
     '/_app/lists/': {
       id: '/_app/lists/'
@@ -168,6 +187,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface appRouteChildren {
+  appDotsplatRoute: typeof appDotsplatRoute
   ListsDotlistIdRoute: typeof ListsDotlistIdRoute
   ListsDotindexRoute: typeof ListsDotindexRoute
   NotesDotindexRoute: typeof NotesDotindexRoute
@@ -176,6 +196,7 @@ interface appRouteChildren {
 }
 
 const appRouteChildren: appRouteChildren = {
+  appDotsplatRoute: appDotsplatRoute,
   ListsDotlistIdRoute: ListsDotlistIdRoute,
   ListsDotindexRoute: ListsDotindexRoute,
   NotesDotindexRoute: NotesDotindexRoute,

@@ -1,38 +1,37 @@
-import { linkOptions, useNavigate } from "@tanstack/react-router";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { linkOptions } from "@tanstack/react-router";
 import { parseResponse } from "hono/client";
 
-import { api } from "~/api/client";
+import { useCreateCollection } from "~/collections";
 import { NavigationList } from "~/components/NavigationList";
 
+import { notesClient } from "../api";
 import { maxNotebookNameLength } from "../limits";
-import { useNotebooks } from "../navigation";
+import { notesModuleId } from "../moduleId";
+import { notebooksQuery } from "../queries";
 
 // The user's notebooks in the app's sidebar
 export function NotebooksNavigation({ onNavigate }: { onNavigate: () => void }) {
-    const notebooks = useNotebooks();
-    const navigate = useNavigate();
+    const { data: notebooks } = useSuspenseQuery(notebooksQuery);
+    const createNotebook = useCreateCollection(notesModuleId, (name) => parseResponse(notesClient.notebooks.$post({ json: { name } })), notebookLink);
 
     return (
         <NavigationList
             items={notebooks.map((notebook) => ({
                 id: notebook.id,
                 name: notebook.name,
-                link: linkOptions({ to: "/notes/$notebookId", params: { notebookId: notebook.id } }),
+                link: notebookLink(notebook.id),
                 count: notebook.noteCount,
                 countLabel: `${notebook.noteCount} notes`,
             }))}
             createLabel="New notebook"
             maxNameLength={maxNotebookNameLength}
-            onCreate={async (name) => {
-                const response = await api.notebooks.$post({ json: { name } });
-                if (response.status === 422) {
-                    return (await response.json()).error;
-                }
-                const { id } = await parseResponse(response);
-                await navigate({ to: "/notes/$notebookId", params: { notebookId: id } });
-                return null;
-            }}
+            onCreate={createNotebook}
             onNavigate={onNavigate}
         />
     );
+}
+
+function notebookLink(notebookId: string) {
+    return linkOptions({ to: "/notes/$notebookId", params: { notebookId } });
 }

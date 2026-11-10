@@ -1,22 +1,39 @@
-import { notFound } from "@tanstack/react-router";
-import { type ClientResponse, DetailedError, hc, parseResponse } from "hono/client";
+import type { Hono } from "hono";
+import { hc } from "hono/client";
 
-import type { Api } from "./api.server";
+import { NotFoundError, ValidationError } from "~/errors";
 
-// The typed client of the REST API (src/api/api.server.ts, type-only import): paths, params, query, JSON bodies and responses
-// are checked against the API's routes. parseResponse (hono/client) returns the body of a successful response and throws
-// a DetailedError (with statusCode) for error responses.
-export const api = hc<Api>("/api");
+import type { userApi } from "./user.server";
 
-// For the data of a route's loader: the body of a successful response; a 404 is shown as "not found" by the route
-// (its notFoundComponent, see src/client/errors.tsx)
-export async function loadResponse<Response extends ClientResponse<unknown>>(request: Promise<Response>): ReturnType<typeof parseResponse<Response>> {
-    try {
-        return await parseResponse(request);
-    } catch (error) {
-        if (error instanceof DetailedError && error.statusCode === 404) {
-            throw notFound();
-        }
-        throw error;
+// Typed clients of the REST API (src/api/api.server.ts): paths, params, query, JSON bodies and responses are checked against the
+// routes (type-only imports). parseResponse (hono/client) returns the body of a response, e.g.
+// `await parseResponse(todosClient.lists.$post({ json: { name } }))`.
+
+// The client of a module's REST API (mounted at /api/<module id>), e.g. createClient<typeof todosApi>(todosModuleId)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- any API (its env and routes)
+export function createClient<App extends Hono<any, any, any>>(moduleId: string): ReturnType<typeof hc<App>> {
+    return hc<App>(`/api/${moduleId}`, { fetch: fetchApi });
+}
+
+// The core's routes, e.g. the authenticated user
+export const userClient = hc<typeof userApi>("/api", { fetch: fetchApi });
+
+// Error responses throw the operations' errors (src/errors.ts), so the forms show a ValidationError's message and a page shows
+// a NotFoundError as "not found" (src/client/root.tsx)
+async function fetchApi(input: RequestInfo | URL, init?: RequestInit) {
+    const response = await fetch(input, init);
+    if (response.ok) {
+        return response;
     }
+    const message = await response.json<{ error?: string }>().then(
+        (body) => body.error,
+        () => undefined,
+    );
+    if (response.status === 404) {
+        throw new NotFoundError(message ?? "Not found");
+    }
+    if (response.status === 422) {
+        throw new ValidationError(message ?? "Invalid input");
+    }
+    throw new Error(`${init?.method ?? "GET"} ${String(input)} failed: ${response.status} ${message ?? response.statusText}`);
 }

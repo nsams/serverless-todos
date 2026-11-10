@@ -1,23 +1,38 @@
 import { isDateString } from "~/dates";
-import { dateTimeOperators, type GridFieldConfig, type GridSearch, parseDateTime, parseGridSearch, textOperators } from "~/gridSearch";
-
-import type { TodoFilter, TodoFilterModel } from "./db/todos.server";
+import {
+    dateTimeField,
+    dateTimeOperators,
+    gridField,
+    type GridFilterModel,
+    type GridSearch,
+    gridSearchSchema,
+    type GridSort,
+    parseGridSearch,
+    textField,
+} from "~/gridSearch";
 
 // The grid state of a list (pagination, sorting, filtering) lives in the URL, see src/gridSearch.ts
 
-// The filterable fields: the operators of each field's filter type (TodoFilter) and how its value is read from the URL
-export const todoFields: {
-    [Field in TodoFilter["field"]]: GridFieldConfig & { operators: readonly Extract<TodoFilter, { field: Field }>["operator"][] };
-} = {
-    title: { operators: textOperators, parseValue: (value) => value },
-    description: { operators: textOperators, parseValue: (value) => value },
-    dueDate: { operators: ["is", ...dateTimeOperators], parseValue: (value) => (isDateString(value) ? value : undefined) },
-    done: { operators: ["is"], parseValue: (value) => value === "true" },
-    createdAt: { operators: dateTimeOperators, parseValue: parseDateTime },
+// The search params of a list's page, also the input of the operation that loads its todos (listTodos)
+export const todoSearchSchema = gridSearchSchema;
+
+// The sortable and filterable fields: the operators of each field and how its value is read from the URL
+export const todoFields = {
+    title: textField,
+    description: textField,
+    // YYYY-MM-DD
+    dueDate: gridField(["is", ...dateTimeOperators], (value) => (isDateString(value) ? value : undefined)),
+    done: gridField(["is"], (value) => value === "true"),
+    createdAt: dateTimeField,
 };
 
+export type TodoSort = GridSort<keyof typeof todoFields>;
+
+// e.g. { items: [{ field: "dueDate", operator: "before", value: "2026-11-06" }], logicOperator: "and" }
+export type TodoFilterModel = GridFilterModel<typeof todoFields>;
+
+export type TodoFilter = TodoFilterModel["items"][number];
+
 export function parseTodoSearch(search: GridSearch) {
-    const { filter, ...rest } = parseGridSearch(search, todoFields);
-    // the values are parsed by the fields' parseValue, so they match the filter types
-    return { ...rest, filter: filter as TodoFilterModel };
+    return parseGridSearch(search, todoFields);
 }

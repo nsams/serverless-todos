@@ -5,7 +5,7 @@ import { defineConfig } from "vite";
 
 import { cloudflareAiDevProxy } from "./cloudflareAiDevProxy";
 
-// The app (index.html, src/client/main.tsx) is built as single-page application into static assets, the worker (src/server.ts: REST API,
+// The app (index.html, src/main.tsx) is built as single-page application into static assets, the worker (src/server.ts: REST API,
 // chat, MCP server) by the Cloudflare plugin; both are served by the dev server, the worker in the Workers runtime (workerd)
 export default defineConfig({
     plugins: [
@@ -36,14 +36,9 @@ export default defineConfig({
             // calls the model through cloudflareAiDevProxy instead (see src/chat/model.server.ts)
             remoteBindings: false,
         }),
-        // generates the route tree (src/client/routeTree.gen.ts) from the route files; the routes of the modules live in their module
-        // folders, see src/client/routes.ts
-        tanstackRouter({
-            target: "react",
-            virtualRouteConfig: "./src/client/routes.ts",
-            routesDirectory: "./src/client/routes",
-            generatedRouteTree: "./src/client/routeTree.gen.ts",
-        }),
+        // generates the route tree (src/routeTree.gen.ts) from the route files (config: tsr.config.json; the routes of the modules live in
+        // their module folders, see src/routes.ts). Each page's component is loaded on demand (code splitting), in parallel with its loader's data.
+        tanstackRouter({ target: "react", autoCodeSplitting: true }),
         viteReact(),
     ],
     server: {

@@ -1,38 +1,37 @@
-import { linkOptions, useNavigate } from "@tanstack/react-router";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { linkOptions } from "@tanstack/react-router";
 import { parseResponse } from "hono/client";
 
-import { api } from "~/api/client";
+import { useCreateCollection } from "~/collections";
 import { NavigationList } from "~/components/NavigationList";
 
+import { todosClient } from "../api";
 import { maxListNameLength } from "../limits";
-import { useLists } from "../navigation";
+import { todosModuleId } from "../moduleId";
+import { listsQuery } from "../queries";
 
 // The user's lists in the app's sidebar
 export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
-    const lists = useLists();
-    const navigate = useNavigate();
+    const { data: lists } = useSuspenseQuery(listsQuery);
+    const createList = useCreateCollection(todosModuleId, (name) => parseResponse(todosClient.lists.$post({ json: { name } })), listLink);
 
     return (
         <NavigationList
             items={lists.map((list) => ({
                 id: list.id,
                 name: list.name,
-                link: linkOptions({ to: "/lists/$listId", params: { listId: list.id } }),
+                link: listLink(list.id),
                 count: list.openCount,
                 countLabel: `${list.openCount} open`,
             }))}
             createLabel="New list"
             maxNameLength={maxListNameLength}
-            onCreate={async (name) => {
-                const response = await api.lists.$post({ json: { name } });
-                if (response.status === 422) {
-                    return (await response.json()).error;
-                }
-                const { id } = await parseResponse(response);
-                await navigate({ to: "/lists/$listId", params: { listId: id } });
-                return null;
-            }}
+            onCreate={createList}
             onNavigate={onNavigate}
         />
     );
+}
+
+function listLink(listId: string) {
+    return linkOptions({ to: "/lists/$listId", params: { listId } });
 }
