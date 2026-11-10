@@ -49,9 +49,15 @@ export type OperationOutput<Op extends Operation> = Awaited<ReturnType<Op["handl
 export function parseOperationInput<Input extends z.ZodType>(operation: Operation<Input, unknown>, input: unknown): z.output<Input> {
     const result = operation.input.safeParse(input);
     if (!result.success) {
-        throw new ValidationError(result.error.issues.map((issue) => issue.message).join("; "));
+        throw inputValidationError(result.error.issues);
     }
     return result.data;
+}
+
+// The ValidationError for invalid input: the messages of the schema's issues. Also for API layers that validate with the operation's
+// schema themselves (e.g. a validator middleware), so the form shows the same message.
+export function inputValidationError(issues: readonly { message: string }[]) {
+    return new ValidationError(issues.map((issue) => issue.message).join("; "));
 }
 
 // Runs an operation with untrusted input: what every API layer and the AI tools call
