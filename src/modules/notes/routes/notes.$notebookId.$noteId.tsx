@@ -8,6 +8,7 @@ import { useChatPage } from "~/chat/useChatPage";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { useShowError } from "~/components/ErrorSnackbar";
 import { errorMessage } from "~/errors";
+import { revalidateOnChangesOf } from "~/modules/client";
 import { loadOperation } from "~/routeOperations.server";
 import { parseSearch, stringifySearch } from "~/searchParams";
 
@@ -15,6 +16,7 @@ import { notesChatPage } from "../chatPage";
 import { useNotebooks, useNoteOperations } from "../client";
 import { MarkdownPreview } from "../components/MarkdownPreview";
 import { maxNoteBodyLength, maxNoteTitleLength } from "../limits";
+import { notesModuleId } from "../moduleId";
 import { validateNoteSearch } from "../noteSearch";
 import { noteOperations, type NoteView } from "../operations.server";
 import type { Route } from "./+types/notes.$notebookId.$noteId";
@@ -30,6 +32,8 @@ export async function loader({ params: { notebookId, noteId }, url, context }: R
 }
 
 export const meta: Route.MetaFunction = ({ loaderData }) => [{ title: loaderData ? `${loaderData.title} – ${appName}` : appName }];
+
+export const shouldRevalidate = revalidateOnChangesOf(notesModuleId);
 
 export default function NotePage({ loaderData: note }: Route.ComponentProps) {
     // what the assistant gets to know about the page

@@ -14,12 +14,14 @@ import { useServerGrid } from "~/components/useServerGrid";
 import { fromDateString, toDateString, useToday } from "~/dates";
 import { errorMessage } from "~/errors";
 import { type GridColumns, supportedOperators, validateGridSearch } from "~/gridSearch";
+import { revalidateOnChangesOf } from "~/modules/client";
 import type { OperationInput } from "~/operations";
 import { loadGridOperation } from "~/routeOperations.server";
 
 import { todosChatPage } from "../chatPage";
 import { useLists, useTodoOperations } from "../client";
 import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "../limits";
+import { todosModuleId } from "../moduleId";
 import { todoOperations, type TodoView } from "../operations.server";
 import { isOverdue } from "../overdue";
 import { todoFields } from "../todoSearch";
@@ -31,6 +33,8 @@ export async function loader({ params: { listId }, url, context }: Route.LoaderA
 }
 
 export const meta: Route.MetaFunction = ({ loaderData }) => [{ title: loaderData ? `${loaderData.list.name} – ${appName}` : appName }];
+
+export const shouldRevalidate = revalidateOnChangesOf(todosModuleId);
 
 export default function Todos({ loaderData: { list, todos, totalCount } }: Route.ComponentProps) {
     const lists = useLists();

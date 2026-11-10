@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { href, type Register, type SubmitTarget, useRouteLoaderData, useSubmit } from "react-router";
+import { href, type Register, type ShouldRevalidateFunction, type SubmitTarget, useRouteLoaderData, useSubmit } from "react-router";
 
 import { NotFoundError, ValidationError } from "~/errors";
 import type { OperationInput, OperationOutput } from "~/operations";
@@ -77,6 +77,15 @@ export function useOperations<Module extends ServerModule>(moduleId: Module["id"
         }),
         [submitOperation],
     );
+}
+
+// The shouldRevalidate of a module's pages: React Router reloads every loader of the page after any change, but modules don't share data,
+// so a module's page is only reloaded after changes of its own module (e.g. not when a notebook is created in the sidebar while a todo
+// list is shown). Explicit reloads (e.g. after the assistant changed something) still reload it.
+export function revalidateOnChangesOf(moduleId: string): ShouldRevalidateFunction {
+    const operationsPath = href("/api/:module/:operation", { module: moduleId, operation: "" });
+    return ({ formAction, defaultShouldRevalidate }) =>
+        defaultShouldRevalidate && (formAction === undefined || !formAction.startsWith("/api/") || formAction.startsWith(operationsPath));
 }
 
 type NavigationData<Module extends ServerModule> = Awaited<ReturnType<NonNullable<Module["navigation"]>>>;

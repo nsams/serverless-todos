@@ -12,6 +12,7 @@ import { NameDialog } from "~/components/NameDialog";
 import { useMutate } from "~/components/useMutate";
 import { useServerGrid } from "~/components/useServerGrid";
 import { type GridColumns, supportedOperators } from "~/gridSearch";
+import { revalidateOnChangesOf } from "~/modules/client";
 import { loadGridOperation } from "~/routeOperations.server";
 import { stringifySearch } from "~/searchParams";
 
@@ -20,6 +21,7 @@ import { useNotebooks, useNoteOperations } from "../client";
 import type { NoteSummary } from "../db/notes.server";
 import { plainExcerpt } from "../excerpt";
 import { maxNotebookNameLength, maxNoteTitleLength } from "../limits";
+import { notesModuleId } from "../moduleId";
 import { noteFields, validateNoteSearch } from "../noteSearch";
 import { noteOperations } from "../operations.server";
 import type { Route } from "./+types/notes.$notebookId.index";
@@ -31,6 +33,8 @@ export async function loader({ params: { notebookId }, url, context }: Route.Loa
 }
 
 export const meta: Route.MetaFunction = ({ loaderData }) => [{ title: loaderData ? `${loaderData.notebook.name} – ${appName}` : appName }];
+
+export const shouldRevalidate = revalidateOnChangesOf(notesModuleId);
 
 export default function NotebookPage({ loaderData: { notebook, notes, totalCount } }: Route.ComponentProps) {
     const notebooks = useNotebooks();
