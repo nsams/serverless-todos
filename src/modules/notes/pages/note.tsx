@@ -8,6 +8,7 @@ import { queryClient } from "~/api/client";
 import { useChatPage } from "~/chat/useChatPage";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { useShowError } from "~/components/ErrorSnackbar";
+import { NotFoundBoundary } from "~/routes/root";
 import { linkProps, useLeaveDeleted, usePageTitle } from "~/routing";
 
 import { notesApi } from "../api";
@@ -20,18 +21,38 @@ import { notebookRoute, noteRoute } from "../routes";
 // /notes/:notebookId/:noteId (noteRoute): a note in the editor. The search params are the state of the notebook's grid (notebook.tsx),
 // kept for the back link.
 export default function NotePage() {
+    return (
+        <NotePageLayout>
+            {/* e.g. deleted by the assistant while open */}
+            <NotFoundBoundary fallback={<NoteNotFound />}>
+                <NoteContent />
+            </NotFoundBoundary>
+        </NotePageLayout>
+    );
+}
+
+function NoteContent() {
     const { notebookId, noteId } = noteRoute.useParams();
     const search = noteRoute.useSearch();
     const note = noteRoute.useData();
     // what the assistant gets to know about the page
     useChatPage(notesChatPage, { notebookId: note.notebookId, noteId: note.id });
     return (
-        <NotePageLayout>
+        <>
             {/* moved to another notebook (in the editor or by the assistant): the URL follows the note */}
             {note.notebookId !== notebookId && <Navigate to={noteRoute.href({ notebookId: note.notebookId, noteId }, search)} replace />}
             {/* a fresh editor (draft, save state) per note */}
             <NoteEditor key={note.id} note={note} />
-        </NotePageLayout>
+        </>
+    );
+}
+
+function NoteNotFound() {
+    usePageTitle();
+    return (
+        <Paper sx={{ p: 4, textAlign: "center" }}>
+            <Typography color="text.secondary">This note doesn't exist (anymore).</Typography>
+        </Paper>
     );
 }
 

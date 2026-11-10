@@ -49,6 +49,27 @@ export function RouteErrorBoundary({ children }: { children: ReactNode }) {
     );
 }
 
+// A page's own "not found" content instead of the 404 page, e.g. the note page keeps its back link when the note doesn't exist (anymore):
+// shows the fallback when the children throw a NotFoundError (until another location is shown), other errors go to RouteErrorBoundary
+export function NotFoundBoundary({ fallback, children }: { fallback: ReactNode; children: ReactNode }) {
+    const { pathname, search } = useLocation();
+    const { reset } = useQueryErrorResetBoundary();
+    return (
+        <ErrorBoundary
+            resetKey={pathname + search}
+            onReset={reset}
+            fallback={(error) => {
+                if (!(error instanceof NotFoundError)) {
+                    throw error;
+                }
+                return fallback;
+            }}
+        >
+            {children}
+        </ErrorBoundary>
+    );
+}
+
 // 404 and unexpected errors (logged by onCaughtError in src/main.tsx)
 function RouteError({ error }: { error: unknown }) {
     if (error instanceof NotFoundError) {
