@@ -3,11 +3,12 @@ import { Box, Button, Checkbox, Container, Paper, Stack, TextField } from "@mui/
 import { alpha } from "@mui/material/styles";
 import { DataGridPro, getGridBooleanOperators, getGridDateOperators, getGridStringOperators, GridActionsCellItem } from "@mui/x-data-grid-pro";
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, linkOptions } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 
 import { pageHead } from "~/app";
 import { useChatPage } from "~/chat/useChatPage";
+import { useCollectionHeaderActions } from "~/collections";
 import { CollectionHeader } from "~/components/CollectionHeader";
 import { useShowError } from "~/components/ErrorSnackbar";
 import { useMutate } from "~/components/useMutate";
@@ -194,8 +195,12 @@ function Todos() {
 }
 
 function ListHeader({ list }: { list: { id: string; name: string } }) {
-    const navigate = useNavigate();
-    const invalidate = useInvalidateModule(todosModuleId);
+    const actions = useCollectionHeaderActions(todosModuleId, {
+        rename: (name) => todosApi.renameList.mutate({ listId: list.id, name }),
+        delete: () => todosApi.deleteList.mutate({ listId: list.id }),
+        // redirects to the first remaining list (or creates a new one)
+        index: linkOptions({ to: "/lists" }),
+    });
 
     return (
         <CollectionHeader
@@ -203,15 +208,7 @@ function ListHeader({ list }: { list: { id: string; name: string } }) {
             kind="list"
             deleteText={`“${list.name}” and all its todos will be deleted.`}
             maxNameLength={maxListNameLength}
-            onRename={async (name) => {
-                await todosApi.renameList.mutate({ listId: list.id, name });
-                await invalidate();
-            }}
-            onDelete={async () => {
-                await todosApi.deleteList.mutate({ listId: list.id });
-                // redirects to the first remaining list (or creates a new one)
-                await invalidate(() => navigate({ to: "/lists", replace: true }));
-            }}
+            {...actions}
         />
     );
 }

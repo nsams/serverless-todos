@@ -2,11 +2,12 @@ import { Add, Delete, Move, Search } from "@dextinity/admin-icons";
 import { Box, Button, Container, InputAdornment, Link as MuiLink, Paper, Stack, TextField, Typography } from "@mui/material";
 import { DataGridPro, getGridDateOperators, getGridStringOperators, GridActionsCellItem } from "@mui/x-data-grid-pro";
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, createLink, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, createLink, linkOptions, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { pageHead } from "~/app";
 import { useChatPage } from "~/chat/useChatPage";
+import { useCollectionHeaderActions } from "~/collections";
 import { CollectionHeader } from "~/components/CollectionHeader";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { NameDialog } from "~/components/NameDialog";
@@ -229,8 +230,12 @@ function NewNoteButton({ notebookId }: { notebookId: string }) {
 }
 
 function NotebookHeader({ notebook }: { notebook: { id: string; name: string } }) {
-    const navigate = useNavigate();
-    const invalidate = useInvalidateModule(notesModuleId);
+    const actions = useCollectionHeaderActions(notesModuleId, {
+        rename: (name) => notesApi.renameNotebook.mutate({ notebookId: notebook.id, name }),
+        delete: () => notesApi.deleteNotebook.mutate({ notebookId: notebook.id }),
+        // redirects to the first remaining notebook (or creates a new one)
+        index: linkOptions({ to: "/notes" }),
+    });
 
     return (
         <CollectionHeader
@@ -238,15 +243,7 @@ function NotebookHeader({ notebook }: { notebook: { id: string; name: string } }
             kind="notebook"
             deleteText={`“${notebook.name}” and all its notes will be deleted.`}
             maxNameLength={maxNotebookNameLength}
-            onRename={async (name) => {
-                await notesApi.renameNotebook.mutate({ notebookId: notebook.id, name });
-                await invalidate();
-            }}
-            onDelete={async () => {
-                await notesApi.deleteNotebook.mutate({ notebookId: notebook.id });
-                // redirects to the first remaining notebook (or creates a new one)
-                await invalidate(() => navigate({ to: "/notes", replace: true }));
-            }}
+            {...actions}
         />
     );
 }
