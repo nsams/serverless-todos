@@ -6,7 +6,7 @@ export default defineConfig([
         ".tanstack/**",
         ".wrangler/**",
         "dist/**",
-        "src/client/routeTree.gen.ts",
+        "src/routeTree.gen.ts",
         "drizzle/**",
         "worker-configuration.d.ts",
         "eslint.config.mjs",
