@@ -1,7 +1,7 @@
 import { ArrowLeft, Delete, Move } from "@dextinity/admin-icons";
 import { Box, Container, IconButton, Menu, MenuItem, Paper, Stack, Tab, Tabs, TextField, Tooltip, Typography } from "@mui/material";
 import { useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, createLink, Navigate, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, createLink, Navigate, useNavigate, useRouter } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { pageHead } from "~/app";
@@ -94,6 +94,7 @@ const autosaveDelay = 1000;
 type Values = { title: string; body: string };
 
 function NoteEditor({ note }: { note: NoteView }) {
+    const router = useRouter();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const invalidate = useInvalidateModule(notesModuleId);
@@ -133,6 +134,8 @@ function NoteEditor({ note }: { note: NoteView }) {
                 setSaved({ ...values, updatedAt: updated.updatedAt.getTime() });
                 setStatus("saved");
                 queryClient.setQueryData(noteQuery(note.id).queryKey, updated);
+                // the tab title: the page's loader runs again (it reads the saved note from the cache, no request)
+                void router.invalidate({ filter: (match) => match.routeId === Route.id });
                 // the title and excerpt in the notebooks' grids (reloaded when shown again; the sidebar doesn't change)
                 void queryClient.invalidateQueries({ queryKey: notesListsKey });
             } catch (error) {
