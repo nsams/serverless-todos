@@ -1,23 +1,24 @@
+import { defineChatContext } from "~/chat/chatPage";
 import type { ServerModule } from "~/modules/types";
 
+import { todosRouter } from "./api.server";
+import { todosChatPage } from "./chatPage";
 import { getListRepository } from "./db/lists.server";
-import { listsApi } from "./lists.api.server";
-import { listRouteId } from "./paths";
-import { todosApi } from "./todos.api.server";
-import { createTodoTools, todoToolsInstructions } from "./tools.server";
+import { todosModuleId } from "./moduleId";
+import { todoInstructions, todoOperations } from "./operations.server";
 
 // The todos module (todo lists and todos), server part. App shell part: module.ts.
-export const todosServerModule = {
-    api: { lists: listsApi, todos: todosApi },
-    createTools: createTodoTools,
-    instructions: todoToolsInstructions,
-    chatContext: async (userId, page) => {
-        const currentList =
-            page?.routeId === listRouteId && page.params.listId ? await getListRepository().get(userId, page.params.listId) : undefined;
+export const serverModule: ServerModule = {
+    id: todosModuleId,
+    operations: todoOperations,
+    api: todosRouter,
+    instructions: todoInstructions,
+    chatContext: defineChatContext(todosChatPage, async (userId, page) => {
+        const currentList = page ? await getListRepository().get(userId, page.listId) : undefined;
         return [
             currentList
                 ? `The user is currently looking at the todo list "${currentList.name}" (id ${currentList.id}). Add new todos to this list unless the user names another one.`
                 : "The user isn't looking at a todo list right now. If it's unclear which list is meant, look up the lists and ask.",
         ];
-    },
-} satisfies ServerModule;
+    }),
+};

@@ -1,34 +1,33 @@
 import { useNavigate } from "react-router";
 
-import { api } from "~/api/client";
 import { NavigationList } from "~/components/NavigationList";
+import { useRevalidateModule } from "~/moduleData";
 
+import { todosApi, type TodosApiOutputs } from "../api";
 import { maxListNameLength } from "../limits";
-import { useLists } from "../navigation";
-import { listPath } from "../paths";
+import { todosModuleId } from "../moduleId";
+import { listRoute } from "../routes";
 
-// The user's lists in the app's sidebar
-export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
-    const lists = useLists();
+// The user's lists in the app's sidebar (navigation.ts)
+export function ListsNavigation({ data: lists, onNavigate }: { data: TodosApiOutputs["listLists"]; onNavigate: () => void }) {
     const navigate = useNavigate();
+    const revalidate = useRevalidateModule(todosModuleId);
 
     return (
         <NavigationList
             items={lists.map((list) => ({
                 id: list.id,
                 name: list.name,
-                path: listPath(list.id),
+                path: listRoute.href({ listId: list.id }),
                 count: list.openCount,
                 countLabel: `${list.openCount} open`,
             }))}
             createLabel="New list"
             maxNameLength={maxListNameLength}
             onCreate={async (name) => {
-                const result = await api.lists.create.mutate({ name });
-                if (result.id !== null) {
-                    await navigate(listPath(result.id));
-                }
-                return result.error;
+                const list = await todosApi.createList.mutate({ name });
+                await navigate(listRoute.href({ listId: list.id }));
+                void revalidate();
             }}
             onNavigate={onNavigate}
         />

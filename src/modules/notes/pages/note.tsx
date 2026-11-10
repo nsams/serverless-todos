@@ -1,35 +1,40 @@
 import { ArrowLeft, Delete, Move } from "@dextinity/admin-icons";
 import { Box, Container, IconButton, Menu, MenuItem, Paper, Stack, Tab, Tabs, TextField, Tooltip, Typography } from "@mui/material";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { isRouteErrorResponse, Link, type LoaderFunctionArgs, replace, useNavigate, useParams, useRevalidator, useRouteError } from "react-router";
+import { isRouteErrorResponse, Link, useNavigate, useRouteError } from "react-router";
 
-import { api } from "~/api/client";
+import { useChatPage } from "~/chat/useChatPage";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { useShowError } from "~/components/ErrorSnackbar";
+import { useRevalidateModule } from "~/moduleData";
 import { RouteError } from "~/routes/root";
-import { loadOrNotFound, useLoaderResult, usePageTitle, useSearch } from "~/routing";
-import { stringifySearch } from "~/searchParams";
+import { usePageTitle } from "~/routing";
 
+import { notesApi } from "../api";
+import { notesChatPage } from "../chatPage";
 import { MarkdownPreview } from "../components/MarkdownPreview";
-import type { Note } from "../db/notes.server";
 import { maxNoteBodyLength, maxNoteTitleLength } from "../limits";
-import { useNotebooks } from "../navigation";
-import { validateNoteSearch } from "../noteSearch";
-import { notebookPath, notePath } from "../paths";
+import { notesModuleId } from "../moduleId";
+import { notebooksNavigation } from "../navigation";
+import type { NoteView } from "../operations.server";
+import { notebookRoute, noteRoute } from "../routes";
 
-// /notes/:notebookId/:noteId: a note in the editor. The search params are the state of the notebook's grid (notebook.tsx), kept for the back link.
-export async function noteLoader({ params, request }: LoaderFunctionArgs) {
-    const noteId = params.noteId ?? "";
-    const note = await loadOrNotFound(api.notes.get.query({ id: noteId }, { signal: request.signal }));
-    // e.g. moved to another notebook by the assistant
-    if (note.notebookId !== params.notebookId) {
-        throw replace(notePath(note.notebookId, noteId) + new URL(request.url).search);
-    }
-    return note;
+// A note in the editor (noteRoute in routes.ts, loaded by the route when it is opened first)
+export function Component() {
+    const note = noteRoute.useLoaderData();
+    usePageTitle(note.title);
+    // what the assistant gets to know about the page
+    useChatPage(notesChatPage, { notebookId: note.notebookId, noteId: note.id });
+    return (
+        <NotePageLayout>
+            {/* a fresh editor (draft, save state) per note */}
+            <NoteEditor key={note.id} note={note} />
+        </NotePageLayout>
+    );
 }
 
 // e.g. deleted by the assistant while open
-export function NoteError() {
+export function ErrorBoundary() {
     const error = useRouteError();
     if (!isRouteErrorResponse(error) || error.status !== 404) {
         return <RouteError />;
@@ -43,33 +48,17 @@ export function NoteError() {
     );
 }
 
-export function NotePage() {
-    const note = useLoaderResult<typeof noteLoader>();
-    usePageTitle(note.title);
-    return (
-        <NotePageLayout>
-            {/* a fresh editor (draft, save state) per note */}
-            <NoteEditor key={note.id} note={note} />
-        </NotePageLayout>
-    );
-}
-
 // The back link to the notebook's grid (in the state it was left) above the editor
 function NotePageLayout({ children }: { children: ReactNode }) {
-    const notebookId = useParams().notebookId ?? "";
-    const search = useSearch(validateNoteSearch);
-    const notebook = useNotebooks().find((item) => item.id === notebookId);
+    const { notebookId } = noteRoute.useParams();
+    const search = noteRoute.useSearch();
+    const notebook = notebooksNavigation.useLoaderData().find((item) => item.id === notebookId);
     return (
         <Container sx={{ py: 4 }}>
             <Stack spacing={2}>
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                     <Tooltip title="Back to the notebook">
-                        <IconButton
-                            component={Link}
-                            to={notebookPath(notebookId) + stringifySearch(search)}
-                            edge="start"
-                            aria-label="Back to the notebook"
-                        >
+                        <IconButton component={Link} to={notebookRoute.href({ notebookId }, search)} edge="start" aria-label="Back to the notebook">
                             <ArrowLeft />
                         </IconButton>
                     </Tooltip>
@@ -88,11 +77,11 @@ const autosaveDelay = 1000;
 
 type Values = { title: string; body: string };
 
-function NoteEditor({ note }: { note: Note }) {
-    const { revalidate } = useRevalidator();
+function NoteEditor({ note }: { note: NoteView }) {
     const navigate = useNavigate();
+    const revalidate = useRevalidateModule(notesModuleId);
     const showError = useShowError();
-    const search = stringifySearch(useSearch(validateNoteSearch));
+    const search = noteRoute.useSearch();
 
     const [draft, setDraft] = useState<Values>({ title: note.title, body: note.body });
     // the stored state the draft is based on; updatedAt tells newer changes made elsewhere from outdated or own ones
@@ -104,7 +93,7 @@ function NoteEditor({ note }: { note: Note }) {
     const pending: Values = { title: draft.title.trim() || saved.title, body: draft.body };
     const dirty = pending.title !== saved.title || pending.body !== saved.body;
 
-    // Changed elsewhere (e.g. by the assistant, the page data is reloaded after its changes): take over the changes,
+    // Changed elsewhere (e.g. by the assistant, the module's data is reloaded after its changes): take over the changes,
     // unless there are unsaved ones (they are saved over them then)
     const [loadedNote, setLoadedNote] = useState(note);
     if (note !== loadedNote) {
@@ -123,11 +112,10 @@ function NoteEditor({ note }: { note: Note }) {
         saveQueue.current = saveQueue.current.then(async () => {
             setStatus("saving");
             try {
-                const { updatedAt } = await api.notes.update.mutate({ id: note.id, ...values });
-                setSaved({ ...values, updatedAt: updatedAt.getTime() });
+                const { updated } = await notesApi.updateNote.mutate({ id: note.id, title: values.title, body: values.body });
+                setSaved({ ...values, updatedAt: updated.updatedAt.getTime() });
                 setStatus("saved");
-                // the title and excerpt in the notes list
-                void revalidate();
+                // nothing to reload: the notebook's grid (title, excerpt) is loaded again when it is opened, the sidebar doesn't change
             } catch (error) {
                 console.error(error);
                 setStatus("error");
@@ -180,14 +168,14 @@ function NoteEditor({ note }: { note: Note }) {
     const handleDelete = async () => {
         deleting.current = true;
         try {
-            await api.notes.delete.mutate({ id: note.id });
+            await notesApi.deleteNote.mutate({ id: note.id });
         } catch (error) {
             deleting.current = false;
             throw error;
         }
-        await navigate(notebookPath(note.notebookId) + search, { replace: true });
-        // the sidebar's note counts aren't reloaded by the navigation (the layout route's loader data is reused)
-        await revalidate();
+        await navigate(notebookRoute.href({ notebookId: note.notebookId }, search), { replace: true });
+        // e.g. the sidebar's note counts; after leaving the page, so the deleted note isn't reloaded
+        void revalidate();
     };
 
     const handleMove = async (notebookId: string) => {
@@ -198,14 +186,14 @@ function NoteEditor({ note }: { note: Note }) {
             await save(values);
         }
         try {
-            await api.notes.update.mutate({ id: note.id, notebookId });
+            await notesApi.updateNote.mutate({ id: note.id, notebookId });
         } catch (error) {
             console.error(error);
             showError("Moving the note failed, please try again.");
             return;
         }
-        await navigate(notePath(notebookId, note.id) + search);
-        await revalidate();
+        // e.g. the sidebar's note counts; the page follows the note to its new notebook (the route's loader redirects)
+        void revalidate();
     };
 
     return (
@@ -263,7 +251,7 @@ function NoteEditor({ note }: { note: Note }) {
 }
 
 function MoveNoteButton({ currentNotebookId, onMove }: { currentNotebookId: string; onMove: (notebookId: string) => void }) {
-    const notebooks = useNotebooks().filter((notebook) => notebook.id !== currentNotebookId);
+    const notebooks = notebooksNavigation.useLoaderData().filter((notebook) => notebook.id !== currentNotebookId);
     const [anchor, setAnchor] = useState<HTMLElement | null>(null);
 
     if (notebooks.length === 0) {

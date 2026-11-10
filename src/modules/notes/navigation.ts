@@ -1,9 +1,12 @@
-import type { ApiOutputs } from "~/api/client";
-import { useNavigationData } from "~/modules/navigation";
+import { defineNavigation } from "~/navigation";
 
-export const notesModuleId = "notes";
+import { notesApi } from "./api";
+import { NotebooksNavigation } from "./components/NotebooksNavigation";
+import { notesModuleId } from "./moduleId";
 
-// The user's notebooks with their number of notes: the navigation data of the module (loaded by the app layout with api.notebooks.list)
-export function useNotebooks() {
-    return useNavigationData(notesModuleId) as ApiOutputs["notebooks"]["list"];
-}
+// The user's notebooks with their number of notes in the sidebar; useLoaderData: the notebooks for the pages (e.g. the "move to" menu)
+export const notebooksNavigation = defineNavigation(notesModuleId, {
+    title: "Notes",
+    loader: () => notesApi.listNotebooks.query({}),
+    Component: NotebooksNavigation,
+});

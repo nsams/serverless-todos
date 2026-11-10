@@ -1,37 +1,41 @@
-import {
-    dateTimeOperators,
-    type GridFieldConfig,
-    type GridSearch,
-    parseDateTime,
-    parseGridSearch,
-    textOperators,
-    validateGridSearch,
-} from "~/gridSearch";
+import { z } from "zod";
 
-import type { NoteFilter, NoteFilterModel } from "./db/notes.server";
+import { dateTimeField, type GridFilterModel, gridSearchSchema, type GridSort, parseGridSearch, textField } from "~/gridSearch";
 
 // The grid state of a notebook (pagination, sorting, filtering, see src/gridSearch.ts) and the search text (?q=) live in the URL.
 // The open note keeps them, so its back link returns to the same view of the grid.
-export type NoteSearch = GridSearch & { q?: string };
 
-// Used as route validateSearch and as server function validator: accepts untrusted input
+// The search params of a notebook's page (and of the open note), also the input of the operation that loads its notes (listNotes)
+export const noteSearchSchema = gridSearchSchema.extend({
+    // only notes whose title or body contains it; kept as typed (not trimmed), it's the value of the search field
+    q: z
+        .string()
+        .refine((value) => value.trim() !== "")
+        .optional()
+        .catch(undefined),
+});
+
+export type NoteSearch = z.output<typeof noteSearchSchema>;
+
+// Used as route validateSearch: accepts untrusted input
 export function validateNoteSearch(search: unknown): NoteSearch {
-    const { q } = (typeof search === "object" && search !== null ? search : {}) as Record<string, unknown>;
-    return { ...validateGridSearch(search), q: typeof q === "string" && q.trim() ? q : undefined };
+    return noteSearchSchema.catch({}).parse(search);
 }
 
-// The filterable fields: the operators of each field's filter type (NoteFilter) and how its value is read from the URL
-export const noteFields: {
-    [Field in NoteFilter["field"]]: GridFieldConfig & { operators: readonly Extract<NoteFilter, { field: Field }>["operator"][] };
-} = {
-    title: { operators: textOperators, parseValue: (value) => value },
-    body: { operators: textOperators, parseValue: (value) => value },
-    createdAt: { operators: dateTimeOperators, parseValue: parseDateTime },
-    updatedAt: { operators: dateTimeOperators, parseValue: parseDateTime },
+// The sortable and filterable fields: the operators of each field and how its value is read from the URL
+export const noteFields = {
+    title: textField,
+    body: textField,
+    createdAt: dateTimeField,
+    updatedAt: dateTimeField,
 };
 
+export type NoteSort = GridSort<keyof typeof noteFields>;
+
+export type NoteFilterModel = GridFilterModel<typeof noteFields>;
+
+export type NoteFilter = NoteFilterModel["items"][number];
+
 export function parseNoteSearch(search: NoteSearch) {
-    const { filter, ...rest } = parseGridSearch(search, noteFields);
-    // the values are parsed by the fields' parseValue, so they match the filter types
-    return { ...rest, filter: filter as NoteFilterModel, query: search.q?.trim() || undefined };
+    return { ...parseGridSearch(search, noteFields), query: search.q?.trim() || undefined };
 }

@@ -1,9 +1,12 @@
-import type { ApiOutputs } from "~/api/client";
-import { useNavigationData } from "~/modules/navigation";
+import { defineNavigation } from "~/navigation";
 
-export const todosModuleId = "todos";
+import { todosApi } from "./api";
+import { ListsNavigation } from "./components/ListsNavigation";
+import { todosModuleId } from "./moduleId";
 
-// The user's lists with their number of open todos: the navigation data of the module (loaded by the app layout with api.lists.list)
-export function useLists() {
-    return useNavigationData(todosModuleId) as ApiOutputs["lists"]["list"];
-}
+// The user's lists with their number of open todos in the sidebar; useLoaderData: the lists for the pages (e.g. the "move to" menu)
+export const listsNavigation = defineNavigation(todosModuleId, {
+    title: "Todo lists",
+    loader: () => todosApi.listLists.query({}),
+    Component: ListsNavigation,
+});

@@ -1,27 +1,34 @@
-import type { ChatPage } from "~/chat/chat";
+import type { ChatPage } from "~/chat/chatPage";
+import { toolsFromOperations } from "~/operations";
 
-import { notesServerModule } from "./notes/module.server";
-import { todosServerModule } from "./todos/module.server";
 import type { AppTool, ServerModule } from "./types";
 
-// The modules of the app (server part). App shell part: registry.ts.
-const serverModules: ServerModule[] = [todosServerModule, notesServerModule];
+// The modules of the app (server part): the `serverModule` export of every src/modules/<module>/module.server.ts, so a new module
+// needs no entry here. App shell part: registry.ts.
+const serverModules = Object.entries(import.meta.glob<ServerModule | undefined>("./*/module.server.ts", { eager: true, import: "serverModule" })).map(
+    ([path, module]) => {
+        if (!module) {
+            throw new Error(`${path} doesn't export serverModule`);
+        }
+        return module;
+    },
+);
 
-// The API procedures of all modules, part of the app's API (src/api/router.server.ts). Spread explicitly (not from serverModules),
-// so the types of the procedures are kept for the client.
-export const moduleApis = { ...todosServerModule.api, ...notesServerModule.api };
+// The API routers of the modules by module id: mounted under the module's id (src/api/router.server.ts), so each module's client
+// (e.g. src/modules/todos/api.ts) is typed by its own router only
+export const moduleRouters = Object.fromEntries(serverModules.flatMap((module) => (module.api ? [[module.id, module.api]] : [])));
 
-for (const name of new Set(serverModules.flatMap((module) => Object.keys(module.api)))) {
-    if (serverModules.filter((module) => Object.hasOwn(module.api, name)).length > 1) {
-        throw new Error(`API ${name} is defined by more than one module`);
+for (const [index, module] of serverModules.entries()) {
+    if (serverModules.findIndex((other) => other.id === module.id) !== index) {
+        throw new Error(`Module id ${module.id} is used by more than one module`);
     }
 }
 
-// The tools of all modules for the AI assistants, scoped to the user
+// The tools of all modules for the AI assistants (the operations with AI metadata), scoped to the user
 export function createTools(userId: string): Record<string, AppTool> {
     const tools: Record<string, AppTool> = {};
     for (const module of serverModules) {
-        for (const [name, tool] of Object.entries(module.createTools(userId))) {
+        for (const [name, tool] of Object.entries(toolsFromOperations(module.id, module.operations, { userId }))) {
             if (Object.hasOwn(tools, name)) {
                 throw new Error(`Tool ${name} is defined by more than one module`);
             }

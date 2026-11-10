@@ -1,15 +1,17 @@
 import { Box, CircularProgress, Container, Typography } from "@mui/material";
 import { isRouteErrorResponse, Outlet, ScrollRestoration, useRouteError } from "react-router";
 
+import { ChatPageProvider } from "~/chat/useChatPage";
 import { usePageTitle } from "~/routing";
 
 // Root route of the app (src/router.tsx); the providers (theme, error snackbar) are set up in src/main.tsx
 export function Root() {
     return (
-        <>
+        // the pages report what they show (useChatPage), the chat panel in the app layout sends it with every message
+        <ChatPageProvider>
             <Outlet />
             <ScrollRestoration />
-        </>
+        </ChatPageProvider>
     );
 }
 

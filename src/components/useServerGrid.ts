@@ -1,23 +1,30 @@
 import { type DataGridProProps, type GridFilterModel, GridLogicOperator, type GridSortModel } from "@mui/x-data-grid-pro";
+import { useState } from "react";
 import { useLocation, useNavigate, useNavigation } from "react-router";
 
-import { type GridFieldConfig, type GridSearch, pageSizeOptions, parseGridSearch, serializeFilterValue } from "~/gridSearch";
+import { type GridFields, type GridSearch, pageSizeOptions, parseGridSearch, serializeFilterValue } from "~/gridSearch";
 import { parseSearch, stringifySearch } from "~/searchParams";
 
-type Options<Search extends GridSearch> = {
+type Options<Search extends GridSearch, Fields extends GridFields> = {
     // the route's validateSearch
     validateSearch: (search: unknown) => Search;
     // the sortable and filterable fields
-    fields: Record<string, GridFieldConfig>;
+    fields: Fields;
     // the number of rows on the server (with the filters applied)
     rowCount: number;
     // fields with calendar date filters (YYYY-MM-DD), e.g. a due date
-    dateOnlyFields?: string[];
+    dateOnlyFields?: (keyof Fields & string)[];
 };
 
 // A DataGrid with server-side pagination, sorting and filtering whose state lives in the URL (see src/gridSearch.ts):
-// gridProps connect the grid to the URL, the route's loader loads the rows for it (parseGridSearch on the server).
-export function useServerGrid<Search extends GridSearch>({ validateSearch, fields, rowCount, dateOnlyFields = [] }: Options<Search>) {
+// gridProps connect the grid to the URL, the route's loader loads the rows for it (parseGridSearch on the server) and goes to the last page
+// with rows if the page is empty (lastPageWithRows).
+export function useServerGrid<Search extends GridSearch, Fields extends GridFields>({
+    validateSearch,
+    fields,
+    rowCount,
+    dateOnlyFields = [],
+}: Options<Search, Fields>) {
     const location = useLocation();
     const navigation = useNavigation();
     const routerNavigate = useNavigate();
@@ -32,11 +39,14 @@ export function useServerGrid<Search extends GridSearch>({ validateSearch, field
     const navigate = (newSearch: Search, { replace }: { replace: boolean }) =>
         void routerNavigate({ search: stringifySearch(newSearch) }, { replace, preventScrollReset: true });
 
-    const sortModel: GridSortModel = sort.map(({ field, direction }) => ({ field, sort: direction }));
-    const filterModel: GridFilterModel = {
+    // Stable references: the grid treats a new sort model object as a changed sort and goes back to the first page
+    // (e.g. a grid opened on ?page=1 ended up on the first page)
+    const sortModel: GridSortModel = useStableValue(sort.map(({ field, direction }) => ({ field, sort: direction })));
+    const filterModel: GridFilterModel = useStableValue({
         items: filterItems.map((item, index) => ({ id: index, ...item })),
         logicOperator: filter.logicOperator === "or" ? GridLogicOperator.Or : GridLogicOperator.And,
-    };
+    });
+    const paginationModel = useStableValue({ page, pageSize });
 
     // Changes search params, e.g. a search field next to the grid (also goes back to the first page)
     const updateSearch = (values: Partial<Search>, { replace = false } = {}) => navigate({ ...search, page: undefined, ...values }, { replace });
@@ -49,7 +59,7 @@ export function useServerGrid<Search extends GridSearch>({ validateSearch, field
         rowCount,
         loading,
         pageSizeOptions,
-        paginationModel: { page, pageSize },
+        paginationModel,
         onPaginationModelChange: (model) => navigate({ ...search, page: model.page, pageSize: model.pageSize }, { replace: false }),
         sortModel,
         onSortModelChange: (model) =>
@@ -73,4 +83,14 @@ export function useServerGrid<Search extends GridSearch>({ validateSearch, field
 
     // search: the current search params; hasFilter: whether the filters filter (e.g. for the text of an empty grid)
     return { search, hasFilter: filter.items.length > 0, updateSearch, gridProps };
+}
+
+// The previous value as long as it is equal (as JSON) to the new one
+function useStableValue<T>(value: T): T {
+    const [stable, setStable] = useState(value);
+    if (JSON.stringify(value) === JSON.stringify(stable)) {
+        return stable;
+    }
+    setStable(value);
+    return value;
 }
