@@ -1,5 +1,5 @@
-// Plain URLSearchParams serialization instead of TanStack Router's default JSON values:
-// arrays are repeated keys (?sort=title:asc&sort=done:desc), all values are strings and are typed by the routes' validateSearch
+// Search params as an object and back: arrays are repeated keys (?sort=title:asc&sort=done:desc), all values are strings and are typed by
+// the pages' validate functions (e.g. validateGridSearch)
 
 export function parseSearch(searchStr: string) {
     const searchParams = new URLSearchParams(searchStr);

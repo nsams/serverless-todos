@@ -1,4 +1,5 @@
 package-lock.json
 drizzle/**/meta/
 worker-configuration.d.ts
-src/routeTree.gen.ts
+.react-router/
+build/

@@ -1,17 +1,15 @@
 import { Add } from "@dextinity/admin-icons";
 import { Divider, List, ListItemButton, ListItemIcon, ListItemText, Typography } from "@mui/material";
-import { createLink, type LinkOptions, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
+import { matchPath, NavLink, useLocation } from "react-router";
 
 import { NameDialog } from "./NameDialog";
-
-const ListItemLink = createLink(ListItemButton);
 
 export type NavigationItem = {
     id: string;
     name: string;
-    // e.g. linkOptions({ to: "/lists/$listId", params: { listId } })
-    link: LinkOptions;
+    // e.g. href("/lists/:listId", { listId })
+    to: string;
     // shown next to the name if > 0, e.g. the number of open todos
     count?: number;
     // accessible name of the count, e.g. "3 open"
@@ -23,7 +21,7 @@ type Props = {
     // e.g. "New list": button and dialog title
     createLabel: string;
     maxNameLength: number;
-    // creates an item and navigates to it; throws a ValidationError with a message for the user, e.g. for an empty name
+    // creates an item and goes to it; throws a ValidationError with a message for the user, e.g. for an empty name
     onCreate: (name: string) => Promise<void>;
     // closes the sidebar on small screens
     onNavigate: () => void;
@@ -31,27 +29,26 @@ type Props = {
 
 // A module's items in the app's sidebar (e.g. the todo lists, the notebooks) with a button to create one
 export function NavigationList({ items, createLabel, maxNameLength, onCreate, onNavigate }: Props) {
-    const router = useRouter();
+    const { pathname } = useLocation();
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
     const handleCreate = async (name: string) => {
         await onCreate(name);
         setCreateDialogOpen(false);
         onNavigate();
-        // the new item: the sidebar's data isn't reloaded by the navigation (the layout route's loader data is reused)
-        await router.invalidate();
     };
 
     return (
         <>
             <List>
                 {items.map((item) => (
-                    <ListItemLink
+                    <ListItemButton
                         key={item.id}
-                        {...item.link}
+                        // NavLink: aria-current="page" on the active item
+                        component={NavLink}
+                        to={item.to}
                         // also active on the item's sub pages and with search params (e.g. a grid's filters)
-                        activeOptions={{ includeSearch: false }}
-                        activeProps={{ selected: true }}
+                        selected={matchPath({ path: item.to, end: false }, pathname) !== null}
                         onClick={onNavigate}
                     >
                         <ListItemText primary={item.name} slotProps={{ primary: { noWrap: true } }} />
@@ -60,7 +57,7 @@ export function NavigationList({ items, createLabel, maxNameLength, onCreate, on
                                 {item.count}
                             </Typography>
                         )}
-                    </ListItemLink>
+                    </ListItemButton>
                 ))}
             </List>
             <Divider />

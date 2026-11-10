@@ -1,14 +1,19 @@
-import { index, layout, physical, rootRoute } from "@tanstack/virtual-file-routes";
+import { index, layout, route, type RouteConfig } from "@react-router/dev/routes";
 
-// Route tree (TanStack Router virtual file routes, see vite.config.ts): the core routes in src/routes/, the routes of each module
-// in its own folder src/modules/<module>/routes/ (file-based routing within the folder), mounted into the app layout.
-// Paths are relative to src/routes/.
-export const routes = rootRoute("__root.tsx", [
-    index("index.tsx"),
-    layout("_app.tsx", [
-        // src/modules/todos/routes/: /lists, /lists/$listId
-        physical("../modules/todos/routes"),
-        // src/modules/notes/routes/: /notes, /notes/$notebookId, /notes/$notebookId/$noteId
-        physical("../modules/notes/routes"),
+import { notesRoutes } from "./modules/notes/routes";
+import { todosRoutes } from "./modules/todos/routes";
+
+// Route config (React Router framework mode): the core routes in src/routes/, the routes of each module in its own folder
+// src/modules/<module>/ (route config routes.ts, route modules in routes/), mounted into the app layout. Paths are relative to src/.
+export default [
+    index("routes/index.tsx"),
+    // the modules' operations for the UI (useOperations, src/modules/client.ts)
+    route("api/:module/:operation", "routes/api.ts"),
+    // its loader data is read by useNavigationData (src/modules/client.ts)
+    layout("routes/_app.tsx", [
+        // /lists, /lists/:listId
+        ...todosRoutes,
+        // /notes, /notes/:notebookId, /notes/:notebookId/:noteId
+        ...notesRoutes,
     ]),
-]);
+] satisfies RouteConfig;

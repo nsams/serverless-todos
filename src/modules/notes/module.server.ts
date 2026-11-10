@@ -1,5 +1,5 @@
 import { defineChatContext } from "~/chat/chatPage";
-import type { ServerModule } from "~/modules/types";
+import { defineServerModule } from "~/modules/types";
 
 import { notesChatPage } from "./chatPage";
 import { getNotebookRepository } from "./db/notebooks.server";
@@ -8,9 +8,11 @@ import { notesModuleId } from "./moduleId";
 import { noteInstructions, noteOperations } from "./operations.server";
 
 // The notes module (notebooks and Markdown notes), server part. App shell part: module.ts.
-export const notesServerModule: ServerModule = {
+export const notesServerModule = defineServerModule({
     id: notesModuleId,
     operations: noteOperations,
+    // the user's notebooks with their number of notes (sidebar), see client.ts
+    navigation: (ctx) => noteOperations.listNotebooks.handler(ctx, {}),
     instructions: noteInstructions,
     chatContext: defineChatContext(notesChatPage, async (userId, page) => {
         if (page?.noteId) {
@@ -31,4 +33,4 @@ export const notesServerModule: ServerModule = {
         }
         return [];
     }),
-};
+});

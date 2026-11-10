@@ -3,7 +3,7 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "build": "vite build",
+        "build": "react-router build",
         "db:generate": "drizzle-kit generate",
         "db:migrate": "wrangler d1 migrations apply DB --local",
         "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
@@ -11,7 +11,7 @@
         "db:seed": "dotenv -e .env.local -e .env -- node scripts/seed.ts",
         "deploy": "npm run build && wrangler d1 migrations apply DB --remote && wrangler deploy && npm run preview:cleanup",
         "dev": "dev-pm start @dev",
-        "dev:app": "dotenv -e .env.local -e .env -- vite dev",
+        "dev:app": "dotenv -e .env.local -e .env -- react-router dev",
         "lint": "run-p lint:prettier lint:eslint lint:tsc",
         "lint:eslint": "eslint --max-warnings 0 .",
         "lint:fix": "run-p lint:fix:eslint lint:fix:prettier",
@@ -22,7 +22,7 @@
         "preview": "npm run build && dotenv -e .env.local -e .env -- vite preview",
         "preview:cleanup": "node scripts/preview.ts cleanup",
         "preview:deploy": "node scripts/preview.ts deploy",
-        "typegen": "wrangler types"
+        "typegen": "wrangler types && react-router typegen"
     },
     "engines": {
         "node": "24"
@@ -40,25 +40,24 @@
         "@mui/material": "^7.3.11",
         "@mui/x-chat": "9.0.0-alpha.21",
         "@mui/x-data-grid-pro": "^8.29.5",
-        "@tanstack/react-router": "^1.170.46",
-        "@tanstack/react-start": "^1.169.4",
         "agents": "^0.33.0",
         "ai": "^7.0.165",
         "drizzle-orm": "^0.45.4",
+        "isbot": "^5",
         "jose": "^6.2.15",
         "markdown-to-jsx": "^9.10.6",
         "react": "^19.3.1",
         "react-dom": "^19.3.1",
+        "react-router": "^8.5.1",
         "zod": "^4.6.7"
     },
     "devDependencies": {
         "@cloudflare/vite-plugin": "^1.66.0",
         "@dextinity/eslint-config": "^10.11.0",
-        "@tanstack/virtual-file-routes": "^1.162.0",
+        "@react-router/dev": "^8.5.1",
         "@types/node": "^24.19.2",
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",
-        "@vitejs/plugin-react": "^6.2.1",
         "dev-process-manager": "^4.1.0",
         "dotenv-cli": "^11.1.0",
         "drizzle-kit": "^0.31.11",

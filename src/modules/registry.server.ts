@@ -1,5 +1,5 @@
 import type { ChatPage } from "~/chat/chatPage";
-import { toolsFromOperations } from "~/operations";
+import { type OperationContext, toolsFromOperations } from "~/operations";
 
 import { notesServerModule } from "./notes/module.server";
 import { todosServerModule } from "./todos/module.server";
@@ -7,6 +7,18 @@ import type { AppTool, ServerModule } from "./types";
 
 // The modules of the app (server part). App shell part: registry.ts.
 const serverModules: ServerModule[] = [todosServerModule, notesServerModule];
+
+// An operation of a module, e.g. for the operations' API route (src/routes/api.ts); undefined if there is none with these names
+export function findOperation(moduleId: string, name: string) {
+    const operations = serverModules.find((module) => module.id === moduleId)?.operations;
+    return operations && Object.hasOwn(operations, name) ? operations[name] : undefined;
+}
+
+// Navigation data of all modules by module id, loaded by the app layout (src/routes/_app.tsx), read by the modules with useNavigationData
+export async function loadNavigationData(ctx: OperationContext): Promise<Record<string, unknown>> {
+    const entries = await Promise.all(serverModules.map(async ({ id, navigation }) => [id, await navigation?.(ctx)] as const));
+    return Object.fromEntries(entries);
+}
 
 // The tools of all modules for the AI assistants (the operations with AI metadata), scoped to the user
 export function createTools(userId: string): Record<string, AppTool> {

@@ -3,10 +3,9 @@ import { defineConfig, globalIgnores } from "eslint/config";
 
 export default defineConfig([
     globalIgnores([
-        ".tanstack/**",
+        ".react-router/**",
         ".wrangler/**",
-        "dist/**",
-        "src/routeTree.gen.ts",
+        "build/**",
         "drizzle/**",
         "worker-configuration.d.ts",
         "eslint.config.mjs",

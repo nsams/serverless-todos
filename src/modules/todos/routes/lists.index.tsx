@@ -1,11 +1,12 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { href, replace } from "react-router";
 
-import { getDefaultList } from "../lists.functions";
+import { loadOperation } from "~/routeOperations.server";
+
+import { todoOperations } from "../operations.server";
+import type { Route } from "./+types/lists.index";
 
 // The user's first list (created if the user has none yet); also the start page of the app (src/modules/registry.ts)
-export const Route = createFileRoute("/_app/lists/")({
-    loader: async () => {
-        const { id } = await getDefaultList();
-        throw redirect({ to: "/lists/$listId", params: { listId: id }, replace: true });
-    },
-});
+export async function loader({ context }: Route.LoaderArgs) {
+    const { id } = await loadOperation(todoOperations.getDefaultList, context, {});
+    throw replace(href("/lists/:listId", { listId: id }));
+}

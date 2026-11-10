@@ -4,7 +4,7 @@ import { ValidationError } from "./errors";
 import type { AppTool } from "./modules/types";
 
 // An operation is a domain operation of a module (e.g. create a todo), defined once and used by
-// - the UI: the API layer of the app wraps it (here: a TanStack Start server function, see e.g. src/modules/todos/todos.functions.ts),
+// - the UI: the API layer of the app runs it (here: React Router loaders and the operations' API route, see src/routeOperations.server.ts),
 // - the AI assistants: operations with AI metadata are the tools of the chat assistant and the MCP server (toolsFromOperations).
 // So there is one input schema, one existence check and one error semantics per operation. Independent of the API layer and the
 // AI framework: an operation is plain data plus a handler, it doesn't import anything stack-specific.
@@ -39,7 +39,7 @@ export function defineOperation<Input extends z.ZodType, Output>(operation: Oper
     return operation;
 }
 
-// The input an operation accepts (before parsing), e.g. the data of a server function
+// The input an operation accepts (before parsing), e.g. what the client submits
 export type OperationInput<Op extends Operation> = z.input<Op["input"]>;
 
 export type OperationOutput<Op extends Operation> = Awaited<ReturnType<Op["handler"]>>;
@@ -67,13 +67,6 @@ export async function runOperation<Input extends z.ZodType, Output>(
     input: unknown,
 ): Promise<Output> {
     return operation.handler(ctx, parseOperationInput(operation, input));
-}
-
-// Types the input of an API adapter by the operation without validating it (runOperation validates it), e.g. a server function's
-// validator: `.validator(operationInput<typeof todoOperations.createTodo>)`. Only refers to the operation's type, so client code that
-// imports the adapter doesn't import the operation (server code).
-export function operationInput<Op extends Operation>(input: OperationInput<Op>): OperationInput<Op> {
-    return input;
 }
 
 // The tools for the AI assistants (chat assistant, MCP server): the operations with AI metadata, named like the operations, scoped to the user.

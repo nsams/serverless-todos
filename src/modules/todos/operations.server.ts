@@ -9,7 +9,7 @@ import { getTodoRepository, type Todo } from "./db/todos.server";
 import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "./limits";
 import { parseTodoSearch, todoSearchSchema } from "./todoSearch";
 
-// The operations of the todos module (src/operations.ts): used by the UI (server functions in lists.functions.ts, todos.functions.ts)
+// The operations of the todos module (src/operations.ts): used by the UI (the routes' loaders and the operations' API route, src/routes/api.ts)
 // and, the ones with AI metadata, as tools of the chat assistant and the MCP server. Every operation is scoped to the user (ctx.userId).
 
 const maxSearchResults = 50;

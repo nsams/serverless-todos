@@ -1,32 +1,30 @@
-import { linkOptions, useNavigate } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
+import { href, useNavigate } from "react-router";
 
 import { NavigationList } from "~/components/NavigationList";
 
+import { useLists, useTodoOperations } from "../client";
 import { maxListNameLength } from "../limits";
-import { createList } from "../lists.functions";
-import { useLists } from "../navigation";
 
 // The user's lists in the app's sidebar
 export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
     const lists = useLists();
+    const { run } = useTodoOperations();
     const navigate = useNavigate();
-    const createListFn = useServerFn(createList);
 
     return (
         <NavigationList
             items={lists.map((list) => ({
                 id: list.id,
                 name: list.name,
-                link: linkOptions({ to: "/lists/$listId", params: { listId: list.id } }),
+                to: href("/lists/:listId", { listId: list.id }),
                 count: list.openCount,
                 countLabel: `${list.openCount} open`,
             }))}
             createLabel="New list"
             maxNameLength={maxListNameLength}
             onCreate={async (name) => {
-                const list = await createListFn({ data: { name } });
-                await navigate({ to: "/lists/$listId", params: { listId: list.id } });
+                const list = await run("createList", { name });
+                await navigate(href("/lists/:listId", { listId: list.id }));
             }}
             onNavigate={onNavigate}
         />
