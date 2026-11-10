@@ -55,8 +55,12 @@ export function parseOperationInput<Input extends z.ZodType>(operation: Operatio
 }
 
 // Runs an operation with untrusted input: what every API layer and the AI tools call
-export async function runOperation<Op extends Operation>(operation: Op, ctx: OperationContext, input: unknown): Promise<OperationOutput<Op>> {
-    return (await operation.handler(ctx, parseOperationInput(operation, input))) as OperationOutput<Op>;
+export async function runOperation<Input extends z.ZodType, Output>(
+    operation: Operation<Input, Output>,
+    ctx: OperationContext,
+    input: unknown,
+): Promise<Output> {
+    return operation.handler(ctx, parseOperationInput(operation, input));
 }
 
 // Types the input of an API adapter by the operation without validating it (runOperation validates it), e.g. a server function's
@@ -69,25 +73,20 @@ export function operationInput<Op extends Operation>(input: OperationInput<Op>):
 // The tools for the AI assistants (chat assistant, MCP server): the operations with AI metadata, named like the operations, scoped to the user.
 // module: the id of the module the operations belong to (the chat tells the client which modules' data changed).
 export function toolsFromOperations(module: string, operations: Operations, ctx: OperationContext): Record<string, AppTool> {
-    return Object.fromEntries(
-        Object.entries(operations).flatMap(([name, operation]) =>
-            operation.ai
-                ? [
-                      [
-                          name,
-                          {
-                              module,
-                              title: operation.ai.title,
-                              description: operation.ai.description,
-                              inputSchema: operation.input,
-                              effect: operation.effect,
-                              execute: async (input: unknown) => toJson(await runOperation(operation, ctx, input)),
-                          } satisfies AppTool,
-                      ],
-                  ]
-                : [],
-        ),
-    );
+    const tools: Record<string, AppTool> = {};
+    for (const [name, operation] of Object.entries(operations)) {
+        if (operation.ai) {
+            tools[name] = {
+                module,
+                title: operation.ai.title,
+                description: operation.ai.description,
+                inputSchema: operation.input,
+                effect: operation.effect,
+                execute: async (input) => toJson(await runOperation(operation, ctx, input)),
+            };
+        }
+    }
+    return tools;
 }
 
 // The model gets JSON, e.g. dates as ISO strings
