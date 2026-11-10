@@ -19,7 +19,7 @@ export function createClient<App extends Hono<any, any, any>>(moduleId: string):
 export const userClient = hc<typeof userApi>("/api", { fetch: fetchApi });
 
 // Error responses throw the operations' errors (src/errors.ts), so the forms show a ValidationError's message and a page shows
-// a NotFoundError as "not found" (src/client/root.tsx)
+// a NotFoundError as its 404 page (loadPageQuery, src/moduleQueries.ts)
 async function fetchApi(input: RequestInfo | URL, init?: RequestInit) {
     const response = await fetch(input, init);
     if (response.ok) {

@@ -5,8 +5,8 @@ import { useInvalidateModule } from "~/moduleQueries";
 
 import { useShowError } from "./ErrorSnackbar";
 
-// Runs a change (e.g. a server function) without a form to show its error in: an error is shown in the snackbar. The module's data
-// is reloaded afterwards, also after an error (e.g. the grid shows the stored state again, like the done checkbox of a todo).
+// Runs a change (e.g. a request with the module's API client) without a form to show its error in: an error is shown in the snackbar.
+// The module's data is reloaded afterwards, also after an error (e.g. the grid shows the stored state again, like the done checkbox of a todo).
 export function useMutate(moduleId: string) {
     const invalidate = useInvalidateModule(moduleId);
     const showError = useShowError();
