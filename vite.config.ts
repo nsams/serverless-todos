@@ -42,7 +42,8 @@ function cloudflarePlugins(): PluginOption[] {
     ];
 }
 
-// bunny.net: an Edge Script is a single file: all dependencies bundled, no chunks (dynamic imports inlined), minified (script size limit).
+// bunny.net: the app is one module (scripts/bunnyBuild.ts loads it from the Storage Zone): all dependencies bundled, no chunks (dynamic
+// imports inlined), minified.
 // libSQL over HTTP: its web client (the default one has native bindings).
 const bunnyBuild = {
     ssr: { noExternal: true },
@@ -61,8 +62,8 @@ export default defineConfig(({ command }) =>
             tanstackStart({
                 // the server entry of the platform (relative to src/); on Cloudflare also `main` in wrangler.jsonc
                 server: { entry: platform === "bunny" ? "server.bunny.ts" : "server.cloudflare.ts" },
-                // bunny.net: the app's pages are rendered in the browser only (ssr: "data-only", src/routes/_app.tsx), so the script needn't
-                // contain their components (script size and startup time limits). Only applies to the server build (the client keeps them).
+                // bunny.net: the app's pages are rendered in the browser only (ssr: "data-only", src/routes/_app.tsx), so the app module needn't
+                // contain their components (smaller, faster to load). Only applies to the server build (the client keeps them).
                 ...(platform === "bunny" && {
                     router: { codeSplittingOptions: { deleteNodes: ["component", "errorComponent", "notFoundComponent"] } },
                 }),

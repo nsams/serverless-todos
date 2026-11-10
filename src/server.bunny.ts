@@ -6,8 +6,12 @@ import { type Database, setPlatform } from "./platform/platform.server";
 import { handleRequest } from "./server";
 import { userFromEmail } from "./user";
 
-// Server entry on bunny.net Edge Scripting (PLATFORM=bunny, see vite.config.ts): a standalone script, built into one file
-// (dist/server/server.bunny.js). In development it runs in Node (`npm run dev:bunny`).
+// Server entry on bunny.net Edge Scripting (PLATFORM=bunny, see vite.config.ts). In development it runs in Node (`npm run dev:bunny`).
+//
+// The build (dist/server/server.bunny.js, one file) isn't the deployed Edge Script: Edge Scripting limits the script's startup time,
+// and parsing the app takes too long. scripts/bunnyBuild.ts turns it into a module in the Storage Zone and generates the Edge Script:
+// a small loader that imports the app with the first request (see there).
+//
 // - database: libSQL, the Bunny Database in BUNNY_DATABASE_URL / BUNNY_DATABASE_AUTH_TOKEN (over HTTP: the build uses
 //   @libsql/client/web), in development a SQLite file (.data/app.db). Migrations: scripts/migrate.ts, run by the deployment.
 // - static files (dist/client/assets): uploaded to a Storage Zone by the deployment, served from ASSETS_URL (see serveAsset)
@@ -40,7 +44,7 @@ function databaseUrl() {
 
 const oidcConfig = oidcConfigFromEnv(getEnv);
 
-const handler = {
+export default {
     async fetch(request: Request): Promise<Response> {
         request = withPublicUrl(request);
         if (new URL(request.url).pathname.startsWith(assetsPath)) {
@@ -51,13 +55,6 @@ const handler = {
         return withoutCaching(response);
     },
 };
-
-// TanStack Start's server entry (its dev server calls it)
-export default handler;
-
-// On bunny.net: the script's request handler (Bunny.v1.serve is what the Edge Scripting SDK's BunnySDK.net.http.serve calls)
-const bunny = (globalThis as { Bunny?: { v1?: { serve?: (handler: (request: Request) => Promise<Response>) => void } } }).Bunny;
-bunny?.v1?.serve?.((request) => handler.fetch(request));
 
 async function authenticateRequest(request: Request): Promise<AuthResult> {
     if (oidcConfig) {
