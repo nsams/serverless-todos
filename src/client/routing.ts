@@ -28,8 +28,7 @@ export function defineRoute<const Path extends `/${string}`, Search extends obje
         path,
         validateSearch,
         // e.g. listRoute.href({ listId }, { page: 2 }) → "/lists/abc?page=2"
-        href: (...[params, search]: HrefArgs<Path, Search>) =>
-            generatePath<string>(path, params) + stringifySearch((search ?? {}) as Record<string, unknown>),
+        href: (...[params, search]: HrefArgs<Path, Search>) => generatePath<string>(path, params) + stringifySearch(search ?? {}),
         // the route's params, on its page: the page is only rendered for its path, so its params are set
         useParams: () => useParams() as RouteParams<Path>,
         // the route's search params, on its page (the same object while they don't change)

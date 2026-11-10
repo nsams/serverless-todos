@@ -11,7 +11,7 @@ export function parseSearch(searchStr: string) {
     return search;
 }
 
-export function stringifySearch(search: Record<string, unknown>) {
+export function stringifySearch(search: object) {
     const searchParams = new URLSearchParams();
     for (const [key, value] of Object.entries(search)) {
         for (const item of [value ?? []].flat()) {
