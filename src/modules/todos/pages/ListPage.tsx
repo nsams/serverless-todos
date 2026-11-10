@@ -4,10 +4,9 @@ import { alpha } from "@mui/material/styles";
 import { DataGridPro, getGridBooleanOperators, getGridDateOperators, getGridStringOperators, GridActionsCellItem } from "@mui/x-data-grid-pro";
 import { type InferRequestType, parseResponse } from "hono/client";
 import { type FormEvent, useState } from "react";
-import { generatePath, type LoaderFunctionArgs, replace, useLoaderData, useNavigate, useRevalidator } from "react-router";
 
 import { useChatPage } from "~/chat/useChatPage";
-import { pathParam } from "~/client/params";
+import { useModuleRevalidator } from "~/client/routing";
 import { CollectionHeader } from "~/components/CollectionHeader";
 import { useShowError } from "~/components/ErrorSnackbar";
 import { useDocumentTitle } from "~/components/useDocumentTitle";
@@ -15,43 +14,30 @@ import { useMutate } from "~/components/useMutate";
 import { useServerGrid } from "~/components/useServerGrid";
 import { fromDateString, toDateString, useToday } from "~/dates";
 import { errorMessage } from "~/errors";
-import { type GridColumns, lastPageWithRows, supportedOperators, validateGridSearch } from "~/gridSearch";
-import { readSearch, stringifySearch } from "~/searchParams";
+import { type GridColumns, supportedOperators } from "~/gridSearch";
 
 import { todosClient } from "../api";
 import { todosChatPage } from "../chatPage";
 import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "../limits";
+import { todosModuleId } from "../moduleId";
 import { useLists } from "../navigation";
 import { isOverdue } from "../overdue";
-import { listPath, listsPath } from "../paths";
-import { parseTodoSearch, todoFields } from "../todoSearch";
+import { listRoute, listsRoute } from "../routes";
+import { todoFields } from "../todoSearch";
 
-// The todos of a list in a grid (pagination, sorting, filtering on the server, state in the URL)
-export async function listLoader({ params, request }: LoaderFunctionArgs) {
-    const listId = pathParam(params, "listId");
-    const search = readSearch(new URL(request.url).search, validateGridSearch);
-    const result = await parseResponse(todosClient.lists[":listId"].todos.$get({ param: { listId }, query: search }));
+// The todos of a list in a grid (pagination, sorting, filtering on the server, state in the URL), see listRoute
 
-    // e.g. after deleting the last todo of the last page
-    const lastPage = lastPageWithRows(parseTodoSearch(search), result.todos.length, result.totalCount);
-    if (lastPage !== undefined) {
-        throw replace(generatePath(listPath, { listId }) + stringifySearch({ ...search, page: lastPage || undefined }));
-    }
-
-    return result;
-}
-
-type Todo = Awaited<ReturnType<typeof listLoader>>["todos"][number];
+type Todo = ReturnType<typeof listRoute.useLoaderData>["todos"][number];
 
 export function ListPage() {
-    const { list, todos, totalCount } = useLoaderData<typeof listLoader>();
+    const { list, todos, totalCount } = listRoute.useLoaderData();
     const lists = useLists();
-    const { revalidate } = useRevalidator();
+    const { revalidate } = useModuleRevalidator(todosModuleId);
     const showError = useShowError();
-    const mutate = useMutate();
+    const mutate = useMutate(todosModuleId);
     const today = useToday();
     const { updateSearch, gridProps } = useServerGrid({
-        validateSearch: validateGridSearch,
+        validateSearch: listRoute.validateSearch,
         fields: todoFields,
         rowCount: totalCount,
         dateOnlyFields: ["dueDate"],
@@ -200,8 +186,7 @@ export function ListPage() {
 }
 
 function ListHeader({ list }: { list: { id: string; name: string } }) {
-    const { revalidate } = useRevalidator();
-    const navigate = useNavigate();
+    const { revalidate, navigate } = useModuleRevalidator(todosModuleId);
 
     return (
         <CollectionHeader
@@ -215,10 +200,8 @@ function ListHeader({ list }: { list: { id: string; name: string } }) {
             }}
             onDelete={async () => {
                 await parseResponse(todosClient.lists[":listId"].$delete({ param: { listId: list.id } }));
-                // redirects to the first remaining list (or creates a new one)
-                await navigate(listsPath, { replace: true });
-                // the sidebar's lists aren't reloaded by the navigation (the app layout's loader data is reused)
-                await revalidate();
+                // redirects to the first remaining list (or creates a new one); also removes the list from the sidebar
+                await navigate(listsRoute.href(), { replace: true });
             }}
         />
     );

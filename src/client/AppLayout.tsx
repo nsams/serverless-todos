@@ -2,25 +2,19 @@ import { Chatbot, Hamburger, Logout } from "@dextinity/admin-icons";
 import { AppBar, Box, CircularProgress, Divider, Drawer, IconButton, ListSubheader, Toolbar, Typography } from "@mui/material";
 import { parseResponse } from "hono/client";
 import { Fragment, lazy, Suspense, useState } from "react";
-import { Outlet, type ShouldRevalidateFunctionArgs, useLoaderData } from "react-router";
+import { Outlet, useLoaderData } from "react-router";
 
 import { userClient } from "~/api/client";
 import { appName } from "~/app";
-import { appModules, loadNavigationData } from "~/modules/registry";
+import { appModules } from "~/modules/registry";
 
 import { RouteErrorMessage } from "./root";
 
 // Layout of the app pages: app bar and the navigation of the modules in a sidebar
 
+// The authenticated user (the modules' navigation data is loaded by routes of their own, see src/client/router.tsx)
 export async function appLoader() {
-    const [user, navigation] = await Promise.all([parseResponse(userClient.user.$get()), loadNavigationData()]);
-    return { user, navigation };
-}
-
-// The navigation data (e.g. the lists in the sidebar) isn't reloaded by navigations between the pages, only by an explicit
-// revalidation (useRevalidator, e.g. after creating a list)
-export function shouldRevalidateApp({ currentUrl, nextUrl, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {
-    return currentUrl.href === nextUrl.href && defaultShouldRevalidate;
+    return { user: await parseResponse(userClient.user.$get()) };
 }
 
 const drawerWidth = 260;

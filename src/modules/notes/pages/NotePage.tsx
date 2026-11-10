@@ -2,22 +2,11 @@ import { ArrowLeft, Delete, Move } from "@dextinity/admin-icons";
 import { Box, Container, IconButton, Menu, MenuItem, Paper, Stack, Tab, Tabs, TextField, Tooltip, Typography } from "@mui/material";
 import { parseResponse } from "hono/client";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import {
-    generatePath,
-    Link,
-    type LoaderFunctionArgs,
-    replace,
-    useLoaderData,
-    useLocation,
-    useNavigate,
-    useParams,
-    useRevalidator,
-    useRouteError,
-} from "react-router";
+import { Link, useRouteError } from "react-router";
 
 import { useChatPage } from "~/chat/useChatPage";
-import { pathParam } from "~/client/params";
 import { isNotFoundError, RouteErrorMessage } from "~/client/root";
+import { useModuleRevalidator } from "~/client/routing";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { useShowError } from "~/components/ErrorSnackbar";
 import { useDocumentTitle } from "~/components/useDocumentTitle";
@@ -26,25 +15,16 @@ import { notesClient } from "../api";
 import { notesChatPage } from "../chatPage";
 import { MarkdownPreview } from "../components/MarkdownPreview";
 import { maxNoteBodyLength, maxNoteTitleLength } from "../limits";
+import { notesModuleId } from "../moduleId";
 import { useNotebooks } from "../navigation";
-import { notebookPath, notePath } from "../paths";
+import { notebookRoute, noteRoute } from "../routes";
 
-// A note in the editor. The search params are the state of the notebook's grid (NotebookPage.tsx), kept for the back link.
-export async function noteLoader({ params, request }: LoaderFunctionArgs) {
-    const notebookId = pathParam(params, "notebookId");
-    const noteId = pathParam(params, "noteId");
-    const note = await parseResponse(notesClient.notes[":id"].$get({ param: { id: noteId } }));
-    // e.g. moved to another notebook by the assistant
-    if (note.notebookId !== notebookId) {
-        throw replace(generatePath(notePath, { notebookId: note.notebookId, noteId }) + new URL(request.url).search);
-    }
-    return note;
-}
+// A note in the editor (see noteRoute). The search params are the state of the notebook's grid (NotebookPage.tsx), kept for the back link.
 
-type Note = Awaited<ReturnType<typeof noteLoader>>;
+type Note = ReturnType<typeof noteRoute.useLoaderData>;
 
 export function NotePage() {
-    const note = useLoaderData<typeof noteLoader>();
+    const note = noteRoute.useLoaderData();
     useDocumentTitle(note.title);
     // what the assistant gets to know about the page
     useChatPage(notesChatPage, { notebookId: note.notebookId, noteId: note.id });
@@ -73,12 +53,12 @@ export function NotePageErrorBoundary() {
 
 // The note's notebook with the grid state it was left in (the search params)
 function useNotebookLink(notebookId: string) {
-    return { pathname: generatePath(notebookPath, { notebookId }), search: useLocation().search };
+    return notebookRoute.href({ notebookId }, noteRoute.useSearch());
 }
 
 // The back link to the notebook's grid (in the state it was left) above the editor
 function NotePageLayout({ children }: { children: ReactNode }) {
-    const notebookId = pathParam(useParams(), "notebookId");
+    const { notebookId } = noteRoute.useParams();
     const notebookLink = useNotebookLink(notebookId);
     const notebook = useNotebooks().find((item) => item.id === notebookId);
     return (
@@ -106,10 +86,9 @@ const autosaveDelay = 1000;
 type Values = { title: string; body: string };
 
 function NoteEditor({ note }: { note: Note }) {
-    const { revalidate } = useRevalidator();
-    const navigate = useNavigate();
+    const { navigate } = useModuleRevalidator(notesModuleId);
     const showError = useShowError();
-    const { search } = useLocation();
+    const search = noteRoute.useSearch();
     const notebookLink = useNotebookLink(note.notebookId);
 
     const [draft, setDraft] = useState<Values>({ title: note.title, body: note.body });
@@ -202,9 +181,8 @@ function NoteEditor({ note }: { note: Note }) {
             deleting.current = false;
             throw error;
         }
+        // also updates the sidebar's note counts
         await navigate(notebookLink, { replace: true });
-        // the sidebar's note counts aren't reloaded by the navigation (the app layout's loader data is reused)
-        await revalidate();
     };
 
     const handleMove = async (notebookId: string) => {
@@ -221,8 +199,7 @@ function NoteEditor({ note }: { note: Note }) {
             showError("Moving the note failed, please try again.");
             return;
         }
-        await navigate({ pathname: generatePath(notePath, { notebookId, noteId: note.id }), search });
-        await revalidate();
+        await navigate(noteRoute.href({ notebookId, noteId: note.id }, search));
     };
 
     return (

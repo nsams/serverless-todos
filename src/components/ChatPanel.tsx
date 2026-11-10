@@ -11,6 +11,7 @@ import { useRevalidator } from "react-router";
 import { chatAgentPath, type ChatMessage, type ChatRequestBody } from "~/chat/chat";
 import { useChatChanges } from "~/chat/useChatChanges";
 import { useChatPageGetter } from "~/chat/useChatPage";
+import { reloadModules } from "~/client/routing";
 import { toDateString } from "~/dates";
 import { appModules } from "~/modules/registry";
 
@@ -34,9 +35,9 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
         body: (): ChatRequestBody => ({ today: toDateString(new Date()), page: getChatPage() }),
     });
 
-    // A tool changed the data of modules (reported by the agent, src/chat/agent.server.ts): reload the page data. The router's loaders
-    // aren't split by module (the layout loads all modules' navigation data), so everything is reloaded.
-    useChatChanges(messages, () => void revalidate());
+    // A tool changed the data of modules (reported by the agent, src/chat/agent.server.ts): reload exactly their data (the loaders
+    // of their routes, incl. their navigation data)
+    useChatChanges(messages, (modules) => void reloadModules(modules, revalidate));
 
     const adapter = useMemo(
         (): ChatAdapter => ({

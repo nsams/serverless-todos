@@ -5,6 +5,7 @@ import type { z } from "zod";
 
 import type { ApiEnv } from "~/api/hono.server";
 import type { ChatContext } from "~/chat/chatPage";
+import type { NavigationData } from "~/client/routing";
 import type { OperationEffect, Operations } from "~/operations";
 
 // The app consists of a core (app shell, authentication, chat assistant, MCP server, database connection) and feature modules.
@@ -16,14 +17,15 @@ import type { OperationEffect, Operations } from "~/operations";
 export type AppModule = {
     // unique: the ServerModule's id, the path of its REST API (/api/<id>)
     id: string;
-    // the module's pages (React Router, see src/client/routing.ts), rendered in the app layout (src/client/AppLayout.tsx)
+    // the module's pages (React Router, see src/client/routing.ts), rendered in the app layout (src/client/AppLayout.tsx). They are
+    // reloaded with the module's data only (reloadModules).
     routes: RouteObject[];
     // shown in the app's sidebar
     navigation?: {
         // heading of the module's section in the sidebar
         title: string;
-        // loaded by the app layout (src/client/AppLayout.tsx), reloaded after changes; the module reads it with useNavigationData
-        loader: () => Promise<unknown>;
+        // the data of the sidebar (e.g. the lists), loaded for every page of the app layout (defineNavigationData)
+        data: NavigationData;
         // onNavigate: closes the sidebar on small screens
         Component: ComponentType<{ onNavigate: () => void }>;
     };

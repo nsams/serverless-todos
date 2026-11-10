@@ -1,24 +1,25 @@
 import { parseResponse } from "hono/client";
-import { generatePath, useNavigate } from "react-router";
 
+import { useModuleRevalidator } from "~/client/routing";
 import { NavigationList } from "~/components/NavigationList";
 
 import { todosClient } from "../api";
 import { maxListNameLength } from "../limits";
+import { todosModuleId } from "../moduleId";
 import { useLists } from "../navigation";
-import { listPath } from "../paths";
+import { listRoute } from "../routes";
 
 // The user's lists in the app's sidebar
 export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
     const lists = useLists();
-    const navigate = useNavigate();
+    const { navigate } = useModuleRevalidator(todosModuleId);
 
     return (
         <NavigationList
             items={lists.map((list) => ({
                 id: list.id,
                 name: list.name,
-                link: generatePath(listPath, { listId: list.id }),
+                link: listRoute.href({ listId: list.id }),
                 count: list.openCount,
                 countLabel: `${list.openCount} open`,
             }))}
@@ -26,7 +27,8 @@ export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
             maxNameLength={maxListNameLength}
             onCreate={async (name) => {
                 const list = await parseResponse(todosClient.lists.$post({ json: { name } }));
-                await navigate(generatePath(listPath, { listId: list.id }));
+                // also shows the new list in the sidebar
+                await navigate(listRoute.href({ listId: list.id }));
             }}
             onNavigate={onNavigate}
         />
