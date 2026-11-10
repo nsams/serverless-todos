@@ -19,10 +19,11 @@ export async function loader({ context }: Route.LoaderArgs) {
 
 // Reloaded when React Router would reload it: after every change (e.g. the new list in the sidebar; not after changes that opt out, e.g.
 // autosaving a note, see useOperations), explicit reloads (useRevalidator, e.g. after the chat assistant changed something) and redirects
-// while reloading (e.g. a moved note). But not when only the search params change (React Router reloads all loaders then), e.g. on every
-// change of a grid's state.
+// while reloading (e.g. a moved note). But not when only the search params of the page change (React Router reloads all loaders then),
+// e.g. on every change of a grid's state. A redirect after a change can arrive as a plain navigation to another page (e.g. deleting a
+// list → /lists → the first remaining list), which must reload the sidebar also when the old page had search params.
 export function shouldRevalidate({ formMethod, currentUrl, nextUrl, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {
-    return defaultShouldRevalidate && (formMethod !== undefined || currentUrl.search === nextUrl.search);
+    return defaultShouldRevalidate && (formMethod !== undefined || currentUrl.pathname !== nextUrl.pathname || currentUrl.search === nextUrl.search);
 }
 
 const drawerWidth = 260;
