@@ -1,38 +1,68 @@
-
+# Deployment to bunny.net Edge Scripting (see README "Deployment (bunny.net)"). Created by bunny.net's GitHub integration (script 102000,
+# authenticated with GitHub's OIDC token, no deploy key), extended: bunny.net may overwrite this file when the integration's settings
+# are changed in the dashboard; then add the steps below again.
+#
+# Builds (npm run build:bunny), applies the pending migrations to the Bunny Database, uploads the static files and the app module to the
+# Storage Zone and deploys the Edge Script: a loader that imports the app module with the first request (scripts/bunnyBuild.ts).
 name: Deploy Bunny Scripting Script
 
 on:
-  push:
-    branches:
-      - bunny
+    push:
+        branches:
+            - bunny
 
 permissions:
-  id-token: write
-  contents: read
+    id-token: write
+    contents: read
+
+concurrency:
+    group: bunny-deploy
+    cancel-in-progress: false
 
 jobs:
-  update-script:
-    runs-on: ubuntu-latest
+    update-script:
+        runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v3
+        steps:
+            - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v3
-        with:
-          node-version: '22'
+            - uses: actions/setup-node@v4
+              with:
+                  node-version-file: .nvmrc
+                  cache: npm
 
-      - uses: denoland/setup-deno@v1
-        with:
-          deno-version: v1.x
+            - name: Install
+              run: npm ci
 
-      - name: Install
-        run: "npm install"
+            - name: Build
+              run: npm run build:bunny
 
-      - name: Build
-        run: "npm run build:bunny"
+            # before the new script is deployed: the running script must keep working with the new schema (see README "Database")
+            - name: Apply migrations
+              run: node scripts/migrate.ts
+              env:
+                  BUNNY_DATABASE_URL: ${{ secrets.BUNNY_DATABASE_URL }}
+                  BUNNY_DATABASE_AUTH_TOKEN: ${{ secrets.BUNNY_DATABASE_AUTH_TOKEN }}
 
-      - name: Publish the script to Bunny
-        uses: "BunnyWay/actions/deploy-script@main"
-        with:
-          script_id: 102000
-          file: "dist/server/server.bunny.js"
+            # file names with content hash: the files of the running script stay, the new script finds its files
+            - name: Upload static files and app module
+              run: |
+                  if [ -z "$STORAGE_ZONE" ] || [ -z "$STORAGE_PASSWORD" ]; then
+                      echo "::error::Set the variable BUNNY_STORAGE_ZONE and the secret BUNNY_STORAGE_PASSWORD (see README)"
+                      exit 1
+                  fi
+                  cd dist/client
+                  find assets server -type f | while read -r file; do
+                      curl --fail --silent --show-error -X PUT "https://${STORAGE_HOST}/${STORAGE_ZONE}/${file}" \
+                          -H "AccessKey: ${STORAGE_PASSWORD}" --data-binary "@${file}"
+                  done
+              env:
+                  STORAGE_HOST: ${{ vars.BUNNY_STORAGE_HOST || 'storage.bunnycdn.com' }}
+                  STORAGE_ZONE: ${{ vars.BUNNY_STORAGE_ZONE }}
+                  STORAGE_PASSWORD: ${{ secrets.BUNNY_STORAGE_PASSWORD }}
+
+            - name: Publish the script to Bunny
+              uses: BunnyWay/actions/deploy-script@main
+              with:
+                  script_id: 102000
+                  file: dist/bunny/script.js
