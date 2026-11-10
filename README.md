@@ -64,7 +64,7 @@ Todos module (`src/modules/todos/`):
 
 - `module.ts`, `module.server.ts`: the module's definition (`AppModule` with its routes and sidebar navigation, `ServerModule` exported as `serverModule`); `moduleId.ts`: its id
 - `operations.server.ts`: the module's operations (list, create, rename, delete lists; find, create, update, delete todos; a list's page of todos for the grid): one definition each for the UI and the AI assistants (the ones with AI metadata are the tools of the chat assistant and the MCP server)
-- `api.server.ts`: the module's tRPC router, one line per operation the UI uses (`query(todoOperations.listTodos)`); `api.ts`: its client `todosApi` and the types of its results (`TodosApiOutputs`)
+- `api.server.ts`: the module's tRPC router, one line per operation the UI uses (`query(todoOperations.listTodos)`); `api.ts`: its client `todosApi`
 - `routes.tsx`: the routes (`defineRoute`): `/lists` (redirects to the user's first list, creates a list "Todos" if the user has none), `/lists/:listId` (todos of a list; grid state (pagination, sorting, filtering) lives in the URL, `todoSearch.ts` with `src/gridSearch.ts`; its query: `todosApi.listTodos`); `pages/list.tsx`: the list's page, loaded with the route (code splitting)
 - `components/ListsNavigation.tsx`: the user's lists in the sidebar (the same query also feeds the pages, e.g. the "move to" menu)
 - `db/`: database schema and repositories (`update`, `rename`, `delete` return the affected row, `undefined` if no row of the user matched); length limits in `limits.ts`

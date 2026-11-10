@@ -61,7 +61,7 @@ async function withOperationErrors<T>(promise: Promise<T>) {
 
 // The key all queries and mutations of a module start with (the clients' keyPrefix: [[moduleId], [procedure], { input }]), so a change
 // reloads exactly the data of its module
-export function moduleKey(moduleId: string): QueryKey {
+function moduleKey(moduleId: string): QueryKey {
     return [[moduleId]];
 }
 
