@@ -1,6 +1,8 @@
 import { useCallback } from "react";
 import { useRevalidator } from "react-router";
 
+import { errorMessage } from "~/errors";
+
 import { useShowError } from "./ErrorSnackbar";
 
 // Runs a change (e.g. an API request) without a form to show its error in: an error is shown in the snackbar. The page data is
@@ -9,12 +11,12 @@ export function useMutate() {
     const { revalidate } = useRevalidator();
     const showError = useShowError();
     return useCallback(
-        async (mutation: Promise<unknown>, errorMessage = "Saving failed, please try again.") => {
+        async (mutation: Promise<unknown>, fallbackMessage?: string) => {
             try {
                 await mutation;
             } catch (error) {
-                console.error(error);
-                showError(errorMessage);
+                // a ValidationError's message, otherwise the fallback
+                showError(errorMessage(error, fallbackMessage));
             }
             await revalidate();
         },

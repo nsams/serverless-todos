@@ -1,13 +1,13 @@
 import { parseResponse } from "hono/client";
 
-import { api } from "~/api/client";
 import { useNavigationData } from "~/modules/navigation";
 
-export const notesModuleId = "notes";
+import { notesClient } from "./api";
+import { notesModuleId } from "./moduleId";
 
 // The user's notebooks with their number of notes: the navigation data of the module, loaded by the app layout
 export function loadNotebooks() {
-    return parseResponse(api.notebooks.$get());
+    return parseResponse(notesClient.notebooks.$get());
 }
 
 export function useNotebooks() {

@@ -1,8 +1,7 @@
 import { parseResponse } from "hono/client";
 import { generatePath, replace, type RouteObject } from "react-router";
 
-import { api } from "~/api/client";
-
+import { todosClient } from "./api";
 import { listPath, listsPath } from "./paths";
 import { listLoader, ListPage } from "./routes/ListPage";
 
@@ -13,7 +12,7 @@ export const todosRoutes: RouteObject[] = [
         id: listsPath,
         path: listsPath,
         loader: async () => {
-            const { id } = await parseResponse(api.lists.default.$post());
+            const { id } = await parseResponse(todosClient.lists.default.$post());
             return replace(generatePath(listPath, { listId: id }));
         },
     },

@@ -4,7 +4,6 @@ import { parseResponse } from "hono/client";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
     generatePath,
-    isRouteErrorResponse,
     Link,
     type LoaderFunctionArgs,
     replace,
@@ -16,13 +15,15 @@ import {
     useRouteError,
 } from "react-router";
 
-import { api, loadResponse } from "~/api/client";
+import { useChatPage } from "~/chat/useChatPage";
 import { pathParam } from "~/client/params";
-import { RouteErrorMessage } from "~/client/root";
+import { isNotFoundError, RouteErrorMessage } from "~/client/root";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { useShowError } from "~/components/ErrorSnackbar";
 import { useDocumentTitle } from "~/components/useDocumentTitle";
 
+import { notesClient } from "../api";
+import { notesChatPage } from "../chatPage";
 import { MarkdownPreview } from "../components/MarkdownPreview";
 import { maxNoteBodyLength, maxNoteTitleLength } from "../limits";
 import { useNotebooks } from "../navigation";
@@ -32,7 +33,7 @@ import { notebookPath, notePath } from "../paths";
 export async function noteLoader({ params, request }: LoaderFunctionArgs) {
     const notebookId = pathParam(params, "notebookId");
     const noteId = pathParam(params, "noteId");
-    const note = await loadResponse(api.notes[":noteId"].$get({ param: { noteId } }));
+    const note = await parseResponse(notesClient.notes[":id"].$get({ param: { id: noteId } }));
     // e.g. moved to another notebook by the assistant
     if (note.notebookId !== notebookId) {
         throw replace(generatePath(notePath, { notebookId: note.notebookId, noteId }) + new URL(request.url).search);
@@ -45,6 +46,8 @@ type Note = Awaited<ReturnType<typeof noteLoader>>;
 export function NotePage() {
     const note = useLoaderData<typeof noteLoader>();
     useDocumentTitle(note.title);
+    // what the assistant gets to know about the page
+    useChatPage(notesChatPage, { notebookId: note.notebookId, noteId: note.id });
     return (
         <NotePageLayout>
             {/* a fresh editor (draft, save state) per note */}
@@ -56,7 +59,7 @@ export function NotePage() {
 // e.g. deleted by the assistant while open
 export function NotePageErrorBoundary() {
     const error = useRouteError();
-    if (!isRouteErrorResponse(error) || error.status !== 404) {
+    if (!isNotFoundError(error)) {
         return <RouteErrorMessage />;
     }
     return (
@@ -138,8 +141,9 @@ function NoteEditor({ note }: { note: Note }) {
         saveQueue.current = saveQueue.current.then(async () => {
             setStatus("saving");
             try {
-                const { updatedAt } = await parseResponse(api.notes[":noteId"].$patch({ param: { noteId: note.id }, json: values }));
-                setSaved({ ...values, updatedAt: Date.parse(updatedAt) });
+                const { updated } = await parseResponse(notesClient.notes[":id"].$patch({ param: { id: note.id }, json: values }));
+                setSaved({ ...values, updatedAt: Date.parse(updated.updatedAt) });
+                // nothing to reload: the notes list (title, excerpt) is loaded when the notebook is opened again
                 setStatus("saved");
             } catch (error) {
                 console.error(error);
@@ -193,7 +197,7 @@ function NoteEditor({ note }: { note: Note }) {
     const handleDelete = async () => {
         deleting.current = true;
         try {
-            await parseResponse(api.notes[":noteId"].$delete({ param: { noteId: note.id } }));
+            await parseResponse(notesClient.notes[":id"].$delete({ param: { id: note.id } }));
         } catch (error) {
             deleting.current = false;
             throw error;
@@ -211,7 +215,7 @@ function NoteEditor({ note }: { note: Note }) {
             await save(values);
         }
         try {
-            await parseResponse(api.notes[":noteId"].$patch({ param: { noteId: note.id }, json: { notebookId } }));
+            await parseResponse(notesClient.notes[":id"].$patch({ param: { id: note.id }, json: { notebookId } }));
         } catch (error) {
             console.error(error);
             showError("Moving the note failed, please try again.");

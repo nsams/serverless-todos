@@ -1,9 +1,9 @@
 import { parseResponse } from "hono/client";
 import { generatePath, useNavigate } from "react-router";
 
-import { api } from "~/api/client";
 import { NavigationList } from "~/components/NavigationList";
 
+import { todosClient } from "../api";
 import { maxListNameLength } from "../limits";
 import { useLists } from "../navigation";
 import { listPath } from "../paths";
@@ -25,13 +25,8 @@ export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
             createLabel="New list"
             maxNameLength={maxListNameLength}
             onCreate={async (name) => {
-                const response = await api.lists.$post({ json: { name } });
-                if (response.status === 422) {
-                    return (await response.json()).error;
-                }
-                const { id } = await parseResponse(response);
-                await navigate(generatePath(listPath, { listId: id }));
-                return null;
+                const list = await parseResponse(todosClient.lists.$post({ json: { name } }));
+                await navigate(generatePath(listPath, { listId: list.id }));
             }}
             onNavigate={onNavigate}
         />

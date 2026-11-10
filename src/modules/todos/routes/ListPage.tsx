@@ -1,19 +1,12 @@
 import { Add, Delete, Move, Warning } from "@dextinity/admin-icons";
 import { Box, Button, Checkbox, Container, Paper, Stack, TextField } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import {
-    DataGridPro,
-    getGridBooleanOperators,
-    getGridDateOperators,
-    getGridStringOperators,
-    GridActionsCellItem,
-    type GridColDef,
-} from "@mui/x-data-grid-pro";
+import { DataGridPro, getGridBooleanOperators, getGridDateOperators, getGridStringOperators, GridActionsCellItem } from "@mui/x-data-grid-pro";
 import { type InferRequestType, parseResponse } from "hono/client";
 import { type FormEvent, useState } from "react";
 import { generatePath, type LoaderFunctionArgs, replace, useLoaderData, useNavigate, useRevalidator } from "react-router";
 
-import { api, loadResponse } from "~/api/client";
+import { useChatPage } from "~/chat/useChatPage";
 import { pathParam } from "~/client/params";
 import { CollectionHeader } from "~/components/CollectionHeader";
 import { useShowError } from "~/components/ErrorSnackbar";
@@ -21,9 +14,12 @@ import { useDocumentTitle } from "~/components/useDocumentTitle";
 import { useMutate } from "~/components/useMutate";
 import { useServerGrid } from "~/components/useServerGrid";
 import { fromDateString, toDateString, useToday } from "~/dates";
-import { lastPageWithRows, supportedOperators, validateGridSearch } from "~/gridSearch";
-import { readSearch, stringifySearch, toQuery } from "~/searchParams";
+import { errorMessage } from "~/errors";
+import { type GridColumns, lastPageWithRows, supportedOperators, validateGridSearch } from "~/gridSearch";
+import { readSearch, stringifySearch } from "~/searchParams";
 
+import { todosClient } from "../api";
+import { todosChatPage } from "../chatPage";
 import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "../limits";
 import { useLists } from "../navigation";
 import { isOverdue } from "../overdue";
@@ -34,7 +30,7 @@ import { parseTodoSearch, todoFields } from "../todoSearch";
 export async function listLoader({ params, request }: LoaderFunctionArgs) {
     const listId = pathParam(params, "listId");
     const search = readSearch(new URL(request.url).search, validateGridSearch);
-    const result = await loadResponse(api.lists[":listId"].todos.$get({ param: { listId }, query: toQuery(search) }));
+    const result = await parseResponse(todosClient.lists[":listId"].todos.$get({ param: { listId }, query: search }));
 
     // e.g. after deleting the last todo of the last page
     const lastPage = lastPageWithRows(parseTodoSearch(search), result.todos.length, result.totalCount);
@@ -61,11 +57,13 @@ export function ListPage() {
         dateOnlyFields: ["dueDate"],
     });
     useDocumentTitle(list.name);
+    // what the assistant gets to know about the page
+    useChatPage(todosChatPage, { listId: list.id });
 
-    const updateTodo = (todoId: string, changes: InferRequestType<(typeof api.todos)[":todoId"]["$patch"]>["json"]) =>
-        parseResponse(api.todos[":todoId"].$patch({ param: { todoId }, json: changes }));
+    const updateTodo = (id: string, changes: InferRequestType<(typeof todosClient.todos)[":id"]["$patch"]>["json"]) =>
+        parseResponse(todosClient.todos[":id"].$patch({ param: { id }, json: changes }));
 
-    const columns: GridColDef<Todo>[] = [
+    const columns: GridColumns<Todo, typeof todoFields> = [
         {
             field: "done",
             headerName: "Done",
@@ -135,7 +133,7 @@ export function ListPage() {
                     key="delete"
                     icon={<Delete />}
                     label="Delete"
-                    onClick={() => void mutate(parseResponse(api.todos[":todoId"].$delete({ param: { todoId: row.id } })))}
+                    onClick={() => void mutate(parseResponse(todosClient.todos[":id"].$delete({ param: { id: row.id } })))}
                 />,
                 ...lists
                     .filter((otherList) => otherList.id !== list.id)
@@ -193,10 +191,7 @@ export function ListPage() {
                             }
                             return { ...newRow, title };
                         }}
-                        onProcessRowUpdateError={(error) => {
-                            console.error(error);
-                            showError("Saving failed, please try again.");
-                        }}
+                        onProcessRowUpdateError={(error) => showError(errorMessage(error))}
                     />
                 </Paper>
             </Stack>
@@ -215,16 +210,11 @@ function ListHeader({ list }: { list: { id: string; name: string } }) {
             deleteText={`“${list.name}” and all its todos will be deleted.`}
             maxNameLength={maxListNameLength}
             onRename={async (name) => {
-                const response = await api.lists[":listId"].$patch({ param: { listId: list.id }, json: { name } });
-                if (response.status === 422) {
-                    return (await response.json()).error;
-                }
-                await parseResponse(response);
+                await parseResponse(todosClient.lists[":listId"].$patch({ param: { listId: list.id }, json: { name } }));
                 await revalidate();
-                return null;
             }}
             onDelete={async () => {
-                await parseResponse(api.lists[":listId"].$delete({ param: { listId: list.id } }));
+                await parseResponse(todosClient.lists[":listId"].$delete({ param: { listId: list.id } }));
                 // redirects to the first remaining list (or creates a new one)
                 await navigate(listsPath, { replace: true });
                 // the sidebar's lists aren't reloaded by the navigation (the app layout's loader data is reused)
@@ -244,25 +234,21 @@ function CreateTodoForm({ listId, onCreated }: { listId: string; onCreated: () =
         const formData = new FormData(form);
         setPending(true);
         try {
-            const response = await api.lists[":listId"].todos.$post({
-                param: { listId },
-                json: {
-                    title: String(formData.get("title") ?? ""),
-                    description: String(formData.get("description") ?? ""),
-                    dueDate: String(formData.get("dueDate") ?? "") || null,
-                },
-            });
-            if (response.status === 422) {
-                setError((await response.json()).error);
-                return;
-            }
-            await parseResponse(response);
+            await parseResponse(
+                todosClient.lists[":listId"].todos.$post({
+                    param: { listId },
+                    json: {
+                        title: String(formData.get("title") ?? ""),
+                        description: String(formData.get("description") ?? ""),
+                        dueDate: String(formData.get("dueDate") ?? "") || null,
+                    },
+                }),
+            );
             setError(null);
             form.reset();
             onCreated();
         } catch (error) {
-            console.error(error);
-            setError("Saving failed, please try again.");
+            setError(errorMessage(error));
         } finally {
             setPending(false);
         }

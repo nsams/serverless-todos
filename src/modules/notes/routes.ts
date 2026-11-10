@@ -1,8 +1,7 @@
 import { parseResponse } from "hono/client";
 import { generatePath, replace, type RouteObject } from "react-router";
 
-import { api } from "~/api/client";
-
+import { notesClient } from "./api";
 import { notebookPath, notebooksPath, notePath } from "./paths";
 import { notebookLoader, NotebookPage } from "./routes/NotebookPage";
 import { noteLoader, NotePage, NotePageErrorBoundary } from "./routes/NotePage";
@@ -14,7 +13,7 @@ export const notesRoutes: RouteObject[] = [
         id: notebooksPath,
         path: notebooksPath,
         loader: async () => {
-            const { id } = await parseResponse(api.notebooks.default.$post());
+            const { id } = await parseResponse(notesClient.notebooks.default.$post());
             return replace(generatePath(notebookPath, { notebookId: id }));
         },
     },

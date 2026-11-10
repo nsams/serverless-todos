@@ -1,11 +1,11 @@
 import { Add, Delete, Move, Search } from "@dextinity/admin-icons";
 import { Box, Button, Container, InputAdornment, Link as MuiLink, Paper, Stack, TextField, Typography } from "@mui/material";
-import { DataGridPro, getGridDateOperators, getGridStringOperators, GridActionsCellItem, type GridColDef } from "@mui/x-data-grid-pro";
+import { DataGridPro, getGridDateOperators, getGridStringOperators, GridActionsCellItem } from "@mui/x-data-grid-pro";
 import { parseResponse } from "hono/client";
 import { useState } from "react";
 import { generatePath, Link, type LoaderFunctionArgs, replace, useLoaderData, useNavigate, useRevalidator } from "react-router";
 
-import { api, loadResponse } from "~/api/client";
+import { useChatPage } from "~/chat/useChatPage";
 import { pathParam } from "~/client/params";
 import { CollectionHeader } from "~/components/CollectionHeader";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
@@ -13,9 +13,11 @@ import { NameDialog } from "~/components/NameDialog";
 import { useDocumentTitle } from "~/components/useDocumentTitle";
 import { useMutate } from "~/components/useMutate";
 import { useServerGrid } from "~/components/useServerGrid";
-import { lastPageWithRows, supportedOperators } from "~/gridSearch";
-import { readSearch, stringifySearch, toQuery } from "~/searchParams";
+import { type GridColumns, lastPageWithRows, supportedOperators } from "~/gridSearch";
+import { readSearch, stringifySearch } from "~/searchParams";
 
+import { notesClient } from "../api";
+import { notesChatPage } from "../chatPage";
 import { plainExcerpt } from "../excerpt";
 import { maxNotebookNameLength, maxNoteTitleLength } from "../limits";
 import { useNotebooks } from "../navigation";
@@ -27,7 +29,7 @@ import { notebookPath, notebooksPath, notePath } from "../paths";
 export async function notebookLoader({ params, request }: LoaderFunctionArgs) {
     const notebookId = pathParam(params, "notebookId");
     const search = readSearch(new URL(request.url).search, validateNoteSearch);
-    const result = await loadResponse(api.notebooks[":notebookId"].notes.$get({ param: { notebookId }, query: toQuery(search) }));
+    const result = await parseResponse(notesClient.notebooks[":notebookId"].notes.$get({ param: { notebookId }, query: search }));
 
     // e.g. after deleting the last note of the last page
     const lastPage = lastPageWithRows(parseNoteSearch(search), result.notes.length, result.totalCount);
@@ -54,12 +56,14 @@ export function NotebookPage() {
         rowCount: totalCount,
     });
     useDocumentTitle(notebook.name);
+    // what the assistant gets to know about the page
+    useChatPage(notesChatPage, { notebookId: notebook.id });
 
     // the note in the editor, with the grid state for its back link
     const noteLink = (noteId: string) => ({ pathname: generatePath(notePath, { notebookId: notebook.id, noteId }), search: stringifySearch(search) });
     const openNote = (noteId: string) => void navigate(noteLink(noteId));
 
-    const columns: GridColDef<NoteSummary>[] = [
+    const columns: GridColumns<NoteSummary, typeof noteFields> = [
         {
             field: "title",
             headerName: "Title",
@@ -121,7 +125,7 @@ export function NotebookPage() {
                             onClick={() =>
                                 // also reloads the sidebar's note counts
                                 void mutate(
-                                    parseResponse(api.notes[":noteId"].$patch({ param: { noteId: row.id }, json: { notebookId: otherNotebook.id } })),
+                                    parseResponse(notesClient.notes[":id"].$patch({ param: { id: row.id }, json: { notebookId: otherNotebook.id } })),
                                     "Moving the note failed, please try again.",
                                 )
                             }
@@ -184,7 +188,7 @@ export function NotebookPage() {
                 onClose={() => setNoteToDelete(null)}
                 onDelete={async () => {
                     if (noteToDelete) {
-                        await parseResponse(api.notes[":noteId"].$delete({ param: { noteId: noteToDelete.id } }));
+                        await parseResponse(notesClient.notes[":id"].$delete({ param: { id: noteToDelete.id } }));
                         // also the sidebar's note counts
                         await revalidate();
                     }
@@ -200,16 +204,11 @@ function NewNoteButton({ notebookId }: { notebookId: string }) {
     const [dialogOpen, setDialogOpen] = useState(false);
 
     const handleCreate = async (title: string) => {
-        const response = await api.notebooks[":notebookId"].notes.$post({ param: { notebookId }, json: { title } });
-        if (response.status === 422) {
-            return (await response.json()).error;
-        }
-        const { id } = await parseResponse(response);
+        const { created } = await parseResponse(notesClient.notebooks[":notebookId"].notes.$post({ param: { notebookId }, json: { title } }));
         setDialogOpen(false);
-        await navigate(generatePath(notePath, { notebookId, noteId: id }));
+        await navigate(generatePath(notePath, { notebookId, noteId: created.id }));
         // the sidebar's note counts aren't reloaded by the navigation (the app layout's loader data is reused)
         await revalidate();
-        return null;
     };
 
     return (
@@ -241,16 +240,11 @@ function NotebookHeader({ notebook }: { notebook: Notebook }) {
             deleteText={`“${notebook.name}” and all its notes will be deleted.`}
             maxNameLength={maxNotebookNameLength}
             onRename={async (name) => {
-                const response = await api.notebooks[":notebookId"].$patch({ param: { notebookId: notebook.id }, json: { name } });
-                if (response.status === 422) {
-                    return (await response.json()).error;
-                }
-                await parseResponse(response);
+                await parseResponse(notesClient.notebooks[":notebookId"].$patch({ param: { notebookId: notebook.id }, json: { name } }));
                 await revalidate();
-                return null;
             }}
             onDelete={async () => {
-                await parseResponse(api.notebooks[":notebookId"].$delete({ param: { notebookId: notebook.id } }));
+                await parseResponse(notesClient.notebooks[":notebookId"].$delete({ param: { notebookId: notebook.id } }));
                 // redirects to the first remaining notebook (or creates a new one)
                 await navigate(notebooksPath, { replace: true });
                 // the sidebar's notebooks aren't reloaded by the navigation (the app layout's loader data is reused)

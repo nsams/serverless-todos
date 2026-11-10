@@ -1,7 +1,7 @@
 import { Add } from "@dextinity/admin-icons";
 import { Divider, List, ListItemButton, ListItemIcon, ListItemText, Typography } from "@mui/material";
 import { useState } from "react";
-import { Link, useMatch, useRevalidator } from "react-router";
+import { NavLink, useMatch, useRevalidator } from "react-router";
 
 import { NameDialog } from "./NameDialog";
 
@@ -21,8 +21,8 @@ type Props = {
     // e.g. "New list": button and dialog title
     createLabel: string;
     maxNameLength: number;
-    // creates an item and navigates to it; returns an error message, or null on success
-    onCreate: (name: string) => Promise<string | null>;
+    // creates an item and navigates to it; throws a ValidationError with a message for the user, e.g. for an empty name
+    onCreate: (name: string) => Promise<void>;
     // closes the sidebar on small screens
     onNavigate: () => void;
 };
@@ -33,14 +33,11 @@ export function NavigationList({ items, createLabel, maxNameLength, onCreate, on
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
     const handleCreate = async (name: string) => {
-        const error = await onCreate(name);
-        if (error === null) {
-            setCreateDialogOpen(false);
-            onNavigate();
-            // the new item: the sidebar's data isn't reloaded by the navigation (the app layout's loader data is reused)
-            await revalidate();
-        }
-        return error;
+        await onCreate(name);
+        setCreateDialogOpen(false);
+        onNavigate();
+        // the new item: the sidebar's data isn't reloaded by the navigation (the app layout's loader data is reused)
+        await revalidate();
     };
 
     return (
@@ -72,10 +69,10 @@ export function NavigationList({ items, createLabel, maxNameLength, onCreate, on
 }
 
 function NavigationListItem({ item, onNavigate }: { item: NavigationItem; onNavigate: () => void }) {
-    // also active on the item's sub pages (e.g. a note of a notebook)
+    // also active on the item's sub pages (e.g. a note of a notebook), like NavLink (which sets aria-current)
     const active = useMatch({ path: item.link, end: false }) !== null;
     return (
-        <ListItemButton component={Link} to={item.link} selected={active} onClick={onNavigate}>
+        <ListItemButton component={NavLink} to={item.link} selected={active} onClick={onNavigate}>
             <ListItemText primary={item.name} slotProps={{ primary: { noWrap: true } }} />
             {item.count !== undefined && item.count > 0 && (
                 <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }} aria-label={item.countLabel}>

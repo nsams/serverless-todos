@@ -1,24 +1,24 @@
-import { createApi } from "~/api/hono.server";
-import type { ChatPage } from "~/chat/chat";
+import type { ChatPage } from "~/chat/chatPage";
+import { toolsFromOperations } from "~/operations";
 
-import { notesApi } from "./notes/api.server";
-import { notesServerModule } from "./notes/module.server";
-import { todosApi } from "./todos/api.server";
-import { todosServerModule } from "./todos/module.server";
 import type { AppTool, ServerModule } from "./types";
 
-// The modules of the app (server part). App shell part: registry.ts.
-const serverModules: ServerModule[] = [todosServerModule, notesServerModule];
+// The modules of the app (server part): the `serverModule` export of every src/modules/<module>/module.server.ts, so a new module
+// needs no entry here. App shell part: registry.ts.
+export const serverModules = Object.entries(
+    import.meta.glob<ServerModule | undefined>("./*/module.server.ts", { eager: true, import: "serverModule" }),
+).map(([path, module]) => {
+    if (!module) {
+        throw new Error(`${path} doesn't export serverModule`);
+    }
+    return module;
+});
 
-// The REST APIs of the modules, mounted at /api (src/api/api.server.ts). Chained (not built in a loop over the modules),
-// so the type of the API, and with it the typed client, knows every route.
-export const modulesApi = createApi().route("/", todosApi).route("/", notesApi);
-
-// The tools of all modules for the AI assistants, scoped to the user
+// The tools of all modules for the AI assistants (the operations with AI metadata), scoped to the user
 export function createTools(userId: string): Record<string, AppTool> {
     const tools: Record<string, AppTool> = {};
     for (const module of serverModules) {
-        for (const [name, tool] of Object.entries(module.createTools(userId))) {
+        for (const [name, tool] of Object.entries(toolsFromOperations(module.id, module.operations, { userId }))) {
             if (Object.hasOwn(tools, name)) {
                 throw new Error(`Tool ${name} is defined by more than one module`);
             }

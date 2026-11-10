@@ -4,7 +4,7 @@ import { parseResponse } from "hono/client";
 import { Fragment, lazy, Suspense, useState } from "react";
 import { Outlet, type ShouldRevalidateFunctionArgs, useLoaderData } from "react-router";
 
-import { api } from "~/api/client";
+import { userClient } from "~/api/client";
 import { appName } from "~/app";
 import { appModules, loadNavigationData } from "~/modules/registry";
 
@@ -13,7 +13,7 @@ import { RouteErrorMessage } from "./root";
 // Layout of the app pages: app bar and the navigation of the modules in a sidebar
 
 export async function appLoader() {
-    const [user, navigation] = await Promise.all([parseResponse(api.user.$get()), loadNavigationData()]);
+    const [user, navigation] = await Promise.all([parseResponse(userClient.user.$get()), loadNavigationData()]);
     return { user, navigation };
 }
 
