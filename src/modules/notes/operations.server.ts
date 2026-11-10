@@ -8,7 +8,7 @@ import { getNoteRepository, type Note } from "./db/notes.server";
 import { maxNoteBodyLength, maxNotebookNameLength, maxNoteTitleLength } from "./limits";
 import { noteSearchSchema, parseNoteSearch } from "./noteSearch";
 
-// The operations of the notes module (src/operations.ts): used by the UI (server functions in notebooks.functions.ts, notes.functions.ts)
+// The operations of the notes module (src/operations.ts): used by the UI (the module's API, api.server.ts)
 // and, the ones with AI metadata, as tools of the chat assistant and the MCP server. Every operation is scoped to the user (ctx.userId).
 
 const maxSearchResults = 50;
