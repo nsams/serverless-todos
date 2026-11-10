@@ -1,6 +1,7 @@
 import { Add, Delete, Move, Search } from "@dextinity/admin-icons";
 import { Box, Button, Container, InputAdornment, Link as MuiLink, Paper, Stack, TextField, Typography } from "@mui/material";
 import { DataGridPro, getGridDateOperators, getGridStringOperators, GridActionsCellItem } from "@mui/x-data-grid-pro";
+import { useQueryClient } from "@tanstack/react-query";
 import { type InferResponseType, parseResponse } from "hono/client";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
@@ -21,7 +22,7 @@ import { plainExcerpt } from "../excerpt";
 import { maxNotebookNameLength, maxNoteTitleLength } from "../limits";
 import { notesModuleId } from "../moduleId";
 import { noteFields } from "../noteSearch";
-import { notesQuery, useNotebooks } from "../queries";
+import { noteQuery, notesQuery, useNotebooks } from "../queries";
 import { notebookRoute, notebooksRoute, noteRoute } from "../routes";
 
 type NoteSummary = InferResponseType<(typeof notesClient.notebooks)[":notebookId"]["notes"]["$get"], 200>["notes"][number];
@@ -37,6 +38,7 @@ export default function NotebookPage() {
     } = usePageQuery(notesQuery, { notebookId, ...search });
     const notebooks = useNotebooks();
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
     const mutate = useMutate(notesModuleId);
     const invalidate = useInvalidateModule(notesModuleId);
     const [noteToDelete, setNoteToDelete] = useState<NoteSummary | null>(null);
@@ -162,6 +164,17 @@ export default function NotebookPage() {
                         }}
                         localeText={{ noRowsLabel: search.q || hasFilter ? "No notes found." : "No notes yet." }}
                         sx={{ "& .MuiDataGrid-row": { cursor: "pointer" } }}
+                        // the note is loaded ahead while the pointer is over its row, so the editor shows it right away when it is opened
+                        slotProps={{
+                            row: {
+                                onMouseEnter: (event) => {
+                                    const noteId = event.currentTarget.dataset.id;
+                                    if (noteId) {
+                                        void queryClient.prefetchQuery(noteQuery(noteId));
+                                    }
+                                },
+                            },
+                        }}
                     />
                 </Paper>
             </Stack>

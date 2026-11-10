@@ -16,6 +16,9 @@ export type NavigationItem = {
     count?: number;
     // accessible name of the count, e.g. "3 open"
     countLabel?: string;
+    // loads the data of the item's page ahead when the user is about to open it (pointer over the item, keyboard focus), so the page
+    // shows it right away (the cache keeps it for its staleTime, src/client/queries.ts)
+    prefetch?: () => void;
 };
 
 type Props = {
@@ -78,7 +81,14 @@ function NavigationListItem({ item, onNavigate }: { item: NavigationItem; onNavi
     // also active on the item's sub pages (e.g. a note of a notebook), like NavLink (which sets aria-current)
     const active = useMatch({ path: item.link, end: false }) !== null;
     return (
-        <ListItemButton component={NavLink} to={item.link} selected={active} onClick={onNavigate}>
+        <ListItemButton
+            component={NavLink}
+            to={item.link}
+            selected={active}
+            onClick={onNavigate}
+            onMouseEnter={item.prefetch}
+            onFocus={item.prefetch}
+        >
             <ListItemText primary={item.name} slotProps={{ primary: { noWrap: true } }} />
             {item.count !== undefined && item.count > 0 && (
                 <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }} aria-label={item.countLabel}>
