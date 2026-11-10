@@ -6,17 +6,24 @@ import { type NavigateOptions, type RouteObject, type ShouldRevalidateFunction, 
 // moduleShouldRevalidate; a change (in the UI: useRevalidateModule, useMutate, useNavigateAfterChange; by the assistant:
 // src/components/ChatPanel.tsx) marks its module while the loaders run again.
 
-const changedModules = new Set<string>();
+// module id → number of reloads running for it: counted, so a reload that ends doesn't unmark a module another one (e.g. after a change
+// by the assistant during a change in the UI) still reloads
+const changedModules = new Map<string, number>();
 
 async function whileChanged(moduleIds: string[], load: () => Promise<void>) {
     for (const moduleId of moduleIds) {
-        changedModules.add(moduleId);
+        changedModules.set(moduleId, (changedModules.get(moduleId) ?? 0) + 1);
     }
     try {
         await load();
     } finally {
         for (const moduleId of moduleIds) {
-            changedModules.delete(moduleId);
+            const count = (changedModules.get(moduleId) ?? 1) - 1;
+            if (count > 0) {
+                changedModules.set(moduleId, count);
+            } else {
+                changedModules.delete(moduleId);
+            }
         }
     }
 }
