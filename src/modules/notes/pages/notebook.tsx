@@ -12,7 +12,7 @@ import { NameDialog } from "~/components/NameDialog";
 import { useMutate } from "~/components/useMutate";
 import { useServerGrid } from "~/components/useServerGrid";
 import { type GridColumns, supportedOperators } from "~/gridSearch";
-import { linkProps, usePageTitle } from "~/routing";
+import { linkProps, useLeaveDeleted, usePageTitle } from "~/routing";
 
 import { notesApi } from "../api";
 import { notesChatPage } from "../chatPage";
@@ -203,12 +203,14 @@ function NewNoteButton({ notebookId }: { notebookId: string }) {
 }
 
 function NotebookHeader({ notebook }: { notebook: { id: string; name: string } }) {
-    const navigate = useNavigate();
+    const leave = useLeaveDeleted();
     const renameNotebook = useMutation(notesApi.renameNotebook.mutationOptions());
     // shows the first remaining notebook (or creates a new one); before the module's data is reloaded, so the deleted notebook isn't
     // loaded again
     const deleteNotebook = useMutation(
-        notesApi.deleteNotebook.mutationOptions({ onSuccess: () => navigate(notebooksRoute.href(), { replace: true }) }),
+        notesApi.deleteNotebook.mutationOptions({
+            onSuccess: () => leave(notebooksRoute.href(), notesApi.listNotes.queryFilter({ notebookId: notebook.id })),
+        }),
     );
 
     return (

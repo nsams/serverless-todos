@@ -4,7 +4,6 @@ import { alpha } from "@mui/material/styles";
 import { DataGridPro, getGridBooleanOperators, getGridDateOperators, getGridStringOperators, GridActionsCellItem } from "@mui/x-data-grid-pro";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
-import { useNavigate } from "react-router";
 
 import { useChatPage } from "~/chat/useChatPage";
 import { CollectionHeader } from "~/components/CollectionHeader";
@@ -15,7 +14,7 @@ import { fromDateString, toDateString, useToday } from "~/dates";
 import { errorMessage } from "~/errors";
 import { type GridColumns, supportedOperators } from "~/gridSearch";
 import type { OperationInput } from "~/operations";
-import { usePageTitle } from "~/routing";
+import { useLeaveDeleted, usePageTitle } from "~/routing";
 
 import { todosApi } from "../api";
 import { todosChatPage } from "../chatPage";
@@ -177,10 +176,12 @@ export default function ListPage() {
 }
 
 function ListHeader({ list }: { list: { id: string; name: string } }) {
-    const navigate = useNavigate();
+    const leave = useLeaveDeleted();
     const renameList = useMutation(todosApi.renameList.mutationOptions());
     // shows the first remaining list (or creates a new one); before the module's data is reloaded, so the deleted list isn't loaded again
-    const deleteList = useMutation(todosApi.deleteList.mutationOptions({ onSuccess: () => navigate(listsRoute.href(), { replace: true }) }));
+    const deleteList = useMutation(
+        todosApi.deleteList.mutationOptions({ onSuccess: () => leave(listsRoute.href(), todosApi.listTodos.queryFilter({ listId: list.id })) }),
+    );
 
     return (
         <CollectionHeader

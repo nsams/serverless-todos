@@ -2,13 +2,13 @@ import { ArrowLeft, Delete, Move } from "@dextinity/admin-icons";
 import { Box, Container, IconButton, Menu, MenuItem, Paper, Stack, Tab, Tabs, TextField, Tooltip, Typography } from "@mui/material";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { Link, Navigate, useNavigate } from "react-router";
+import { Link, Navigate } from "react-router";
 
 import { queryClient } from "~/api/client";
 import { useChatPage } from "~/chat/useChatPage";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { useShowError } from "~/components/ErrorSnackbar";
-import { linkProps, usePageTitle } from "~/routing";
+import { linkProps, useLeaveDeleted, usePageTitle } from "~/routing";
 
 import { notesApi } from "../api";
 import { notesChatPage } from "../chatPage";
@@ -70,7 +70,7 @@ const autosaveDelay = 1000;
 type Values = { title: string; body: string };
 
 function NoteEditor({ note }: { note: NoteView }) {
-    const navigate = useNavigate();
+    const leave = useLeaveDeleted();
     const showError = useShowError();
     const search = noteRoute.useSearch();
     // the note's query gets the saved note (no request); the notebooks' grids are reloaded (title and excerpt, when shown again), the sidebar
@@ -90,7 +90,7 @@ function NoteEditor({ note }: { note: NoteView }) {
     // leaves the page before the module's data (e.g. the sidebar's note counts) is reloaded, so the deleted note isn't loaded again
     const deleteNote = useMutation(
         notesApi.deleteNote.mutationOptions({
-            onSuccess: () => navigate(notebookRoute.href({ notebookId: note.notebookId }, search), { replace: true }),
+            onSuccess: () => leave(notebookRoute.href({ notebookId: note.notebookId }, search), notesApi.getNote.queryFilter({ id: note.id })),
         }),
     );
 

@@ -1,6 +1,6 @@
-import { type QueryKey, usePrefetchQuery, useSuspenseQuery, type UseSuspenseQueryOptions } from "@tanstack/react-query";
+import { type QueryFilters, type QueryKey, usePrefetchQuery, useSuspenseQuery, type UseSuspenseQueryOptions } from "@tanstack/react-query";
 import { type ComponentType, lazy, useEffect, useMemo } from "react";
-import { type PathParam, useLocation, useParams } from "react-router";
+import { type PathParam, useLocation, useNavigate, useParams } from "react-router";
 
 import { queryClient } from "~/api/client";
 import { appName } from "~/app";
@@ -119,7 +119,6 @@ export function defineRoute<
         useSearch,
         // the page's data (query), loaded before the page is shown
         useData,
-        validateSearch,
     };
 }
 
@@ -131,6 +130,19 @@ function buildPath(path: string, params: Partial<Record<string, string>>) {
 // Props for a react-router Link (e.g. `<Button component={Link} {...linkProps(link)}>`): preloads the page on hover and focus
 export function linkProps({ href, preload }: RouteLink) {
     return { to: href, onMouseEnter: preload, onFocus: preload };
+}
+
+// Leaves a page whose entity was deleted (e.g. a list), in the delete mutation's onSuccess: `leave(listsRoute.href(), filter)`. A navigation
+// is a transition, so the page stays until the next one is ready: its data (filter, e.g. todosApi.listTodos.queryFilter({ listId })) is
+// removed first, so the reload after the mutation doesn't load it again meanwhile (and the page doesn't throw its 404).
+export function useLeaveDeleted() {
+    const navigate = useNavigate();
+    return (to: Href, ...filters: QueryFilters[]) => {
+        for (const filter of filters) {
+            queryClient.removeQueries(filter);
+        }
+        void navigate(to, { replace: true });
+    };
 }
 
 // The page title, e.g. "Work – Todos"; without a name just the app name
