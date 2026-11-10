@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, createLink, Navigate, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
-import { appName } from "~/app";
+import { pageHead } from "~/app";
 import { useChatPage } from "~/chat/useChatPage";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { useShowError } from "~/components/ErrorSnackbar";
@@ -26,7 +26,7 @@ export const Route = createFileRoute("/_app/notes/$notebookId/$noteId")({
         const note = await queryClient.fetchQuery(noteQuery(noteId));
         return { title: note.title };
     },
-    head: ({ loaderData }) => ({ meta: [{ title: loaderData ? `${loaderData.title} – ${appName}` : appName }] }),
+    head: ({ loaderData }) => pageHead(loaderData?.title),
     component: NotePage,
     // e.g. deleted by the assistant while open
     notFoundComponent: () => (
@@ -129,7 +129,7 @@ function NoteEditor({ note }: { note: NoteView }) {
         saveQueue.current = saveQueue.current.then(async () => {
             setStatus("saving");
             try {
-                const { updated } = await updateNote({ data: { id: note.id, ...values } });
+                const { updated } = await updateNote({ data: { id: note.id, title: values.title, body: values.body } });
                 setSaved({ ...values, updatedAt: updated.updatedAt.getTime() });
                 setStatus("saved");
                 queryClient.setQueryData(noteQuery(note.id).queryKey, updated);

@@ -5,7 +5,7 @@ import { DataGridPro, getGridBooleanOperators, getGridDateOperators, getGridStri
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 
-import { appName } from "~/app";
+import { pageHead } from "~/app";
 import { useChatPage } from "~/chat/useChatPage";
 import { CollectionHeader } from "~/components/CollectionHeader";
 import { useShowError } from "~/components/ErrorSnackbar";
@@ -34,7 +34,7 @@ export const Route = createFileRoute("/_app/lists/$listId")({
         const { list } = await queryClient.fetchQuery(todosQuery({ listId, ...deps }));
         return { title: list.name };
     },
-    head: ({ loaderData }) => ({ meta: [{ title: loaderData ? `${loaderData.title} – ${appName}` : appName }] }),
+    head: ({ loaderData }) => pageHead(loaderData?.title),
     component: Todos,
 });
 

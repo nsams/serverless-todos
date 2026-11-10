@@ -4,7 +4,7 @@ import { DataGridPro, getGridDateOperators, getGridStringOperators, GridActionsC
 import { createFileRoute, createLink, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
-import { appName } from "~/app";
+import { pageHead } from "~/app";
 import { useChatPage } from "~/chat/useChatPage";
 import { CollectionHeader } from "~/components/CollectionHeader";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
@@ -33,7 +33,7 @@ export const Route = createFileRoute("/_app/notes/$notebookId/")({
         const { notebook } = await queryClient.fetchQuery(notesQuery({ ...deps, notebookId }));
         return { title: notebook.name };
     },
-    head: ({ loaderData }) => ({ meta: [{ title: loaderData ? `${loaderData.title} – ${appName}` : appName }] }),
+    head: ({ loaderData }) => pageHead(loaderData?.title),
     component: NotebookPage,
 });
 
