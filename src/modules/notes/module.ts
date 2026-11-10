@@ -1,4 +1,5 @@
 import type { AppModule } from "~/modules/types";
+import { NoContent } from "~/routes/root";
 
 import { notesModuleId } from "./moduleId";
 import { notebooksNavigation } from "./navigation";
@@ -9,7 +10,8 @@ import { notebookRoute, notebooksRoute, noteRoute } from "./routes";
 export const notesModule: AppModule = {
     id: notesModuleId,
     routes: [
-        notebooksRoute.route,
+        // only redirects
+        { ...notebooksRoute.route, Component: NoContent },
         // the pages are loaded with their route (code splitting), the loaders don't wait for them
         { ...notebookRoute.route, lazy: () => import("./pages/notebook") },
         { ...noteRoute.route, lazy: () => import("./pages/note") },

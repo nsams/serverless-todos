@@ -1,4 +1,5 @@
 import type { AppModule } from "~/modules/types";
+import { NoContent } from "~/routes/root";
 
 import { todosModuleId } from "./moduleId";
 import { listsNavigation } from "./navigation";
@@ -8,7 +9,8 @@ import { listRoute, listsRoute } from "./routes";
 export const todosModule: AppModule = {
     id: todosModuleId,
     routes: [
-        listsRoute.route,
+        // only redirects
+        { ...listsRoute.route, Component: NoContent },
         // the page is loaded with the route (code splitting), its loader doesn't wait for it
         { ...listRoute.route, lazy: () => import("./pages/list") },
     ],

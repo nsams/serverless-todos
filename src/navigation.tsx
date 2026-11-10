@@ -23,11 +23,11 @@ export function defineNavigation<Data>(
         Component,
     }: {
         title: string;
-        loader: () => Promise<Data>;
+        loader: (options: { signal: AbortSignal }) => Promise<Data>;
         Component: ComponentType<{ data: Data; onNavigate: () => void }>;
     },
 ) {
-    const { id, loader: routeLoader, useLoaderData } = defineLoader(`navigation:${moduleId}`, loader);
+    const { id, loader: routeLoader, useLoaderData } = defineLoader(`navigation:${moduleId}`, ({ request }) => loader({ signal: request.signal }));
 
     function NavigationComponent({ onNavigate }: { onNavigate: () => void }) {
         return <Component data={useLoaderData()} onNavigate={onNavigate} />;
