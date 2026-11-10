@@ -1,68 +1,42 @@
 import { Add, Delete, Move, Warning } from "@dextinity/admin-icons";
 import { Box, Button, Checkbox, Container, Paper, Stack, TextField } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import {
-    DataGridPro,
-    getGridBooleanOperators,
-    getGridDateOperators,
-    getGridStringOperators,
-    GridActionsCellItem,
-    type GridColDef,
-} from "@mui/x-data-grid-pro";
+import { DataGridPro, getGridBooleanOperators, getGridDateOperators, getGridStringOperators, GridActionsCellItem } from "@mui/x-data-grid-pro";
 import { type FormEvent, useState } from "react";
-import { data, href, redirect, useNavigate } from "react-router";
+import { href, useNavigate } from "react-router";
 
 import { appName } from "~/app";
+import { useChatPage } from "~/chat/useChatPage";
 import { CollectionHeader } from "~/components/CollectionHeader";
 import { useShowError } from "~/components/ErrorSnackbar";
-import { useIntents } from "~/components/useIntents";
 import { useMutate } from "~/components/useMutate";
 import { useServerGrid } from "~/components/useServerGrid";
-import { userContext } from "~/context";
 import { fromDateString, toDateString, useToday } from "~/dates";
-import { lastPageWithRows, supportedOperators, validateGridSearch } from "~/gridSearch";
-import { clientIntentAction, intentAction } from "~/intents";
-import { parseSearch, stringifySearch } from "~/searchParams";
+import { errorMessage } from "~/errors";
+import { type GridColumns, supportedOperators, validateGridSearch } from "~/gridSearch";
+import type { OperationInput } from "~/operations";
+import { loadGridOperation } from "~/routeOperations.server";
+import { stringifySearch } from "~/searchParams";
 
-import { getListRepository } from "../db/lists.server";
-import { getTodoRepository, type Todo } from "../db/todos.server";
-import { type ListIntents, listIntents } from "../intents.server";
+import { todosChatPage } from "../chatPage";
+import { useLists, useTodoOperations } from "../client";
 import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "../limits";
-import { useLists } from "../navigation";
+import { todoOperations, type TodoView } from "../operations.server";
 import { isOverdue } from "../overdue";
-import { parseTodoSearch, todoFields } from "../todoSearch";
+import { todoFields } from "../todoSearch";
 import type { Route } from "./+types/lists.$listId";
 
 // The todos of a list (one page, sorted and filtered as in the URL)
 export async function loader({ params: { listId }, url, context }: Route.LoaderArgs) {
-    const user = context.get(userContext);
-    const list = await getListRepository().get(user.id, listId);
-    if (!list) {
-        throw data("List not found", { status: 404 });
-    }
-    const search = validateGridSearch(parseSearch(url.search));
-    const { page, pageSize, sort, filter } = parseTodoSearch(search);
-    const { rows, totalCount } = await getTodoRepository().list(user.id, listId, { offset: page * pageSize, limit: pageSize, sort, filter });
-
-    // e.g. after deleting the last todo of the last page
-    const lastPage = lastPageWithRows({ page, pageSize }, rows.length, totalCount);
-    if (lastPage !== undefined) {
-        throw redirect(href("/lists/:listId", { listId }) + stringifySearch({ ...search, page: lastPage || undefined }));
-    }
-
-    return { list, todos: rows, totalCount };
+    return loadGridOperation(todoOperations.listTodos, { context, url }, { listId }, (result) => result.todos);
 }
-
-// renames and deletes the list, creates, changes and deletes its todos
-export const action = intentAction(listIntents);
-export const clientAction = clientIntentAction;
 
 export const meta: Route.MetaFunction = ({ loaderData }) => [{ title: loaderData ? `${loaderData.list.name} – ${appName}` : appName }];
 
 export default function Todos({ loaderData: { list, todos, totalCount } }: Route.ComponentProps) {
     const lists = useLists();
     const navigate = useNavigate();
-    const { submit } = useIntents<ListIntents>(href("/lists/:listId", { listId: list.id }));
+    const { run } = useTodoOperations();
     const showError = useShowError();
     const mutate = useMutate();
     const today = useToday();
@@ -74,7 +48,10 @@ export default function Todos({ loaderData: { list, todos, totalCount } }: Route
         dateOnlyFields: ["dueDate"],
     });
 
-    const columns: GridColDef<Todo>[] = [
+    // what the assistant gets to know about the page
+    useChatPage(todosChatPage, { listId: list.id });
+
+    const columns: GridColumns<TodoView, typeof todoFields> = [
         {
             field: "done",
             headerName: "Done",
@@ -84,7 +61,7 @@ export default function Todos({ loaderData: { list, todos, totalCount } }: Route
             renderCell: ({ row }) => (
                 <Checkbox
                     checked={row.done}
-                    onChange={(event) => void mutate(submit("updateTodo", { id: row.id, done: event.target.checked }))}
+                    onChange={(event) => void mutate(run("updateTodo", { id: row.id, done: event.target.checked }))}
                     slotProps={{ input: { "aria-label": `Mark “${row.title}” as ${row.done ? "open" : "done"}` } }}
                 />
             ),
@@ -138,12 +115,7 @@ export default function Todos({ loaderData: { list, todos, totalCount } }: Route
             field: "actions",
             type: "actions",
             getActions: ({ row }) => [
-                <GridActionsCellItem
-                    key="delete"
-                    icon={<Delete />}
-                    label="Delete"
-                    onClick={() => void mutate(submit("deleteTodo", { id: row.id }))}
-                />,
+                <GridActionsCellItem key="delete" icon={<Delete />} label="Delete" onClick={() => void mutate(run("deleteTodo", { id: row.id }))} />,
                 ...lists
                     .filter((otherList) => otherList.id !== list.id)
                     .map((otherList) => (
@@ -152,7 +124,7 @@ export default function Todos({ loaderData: { list, todos, totalCount } }: Route
                             icon={<Move />}
                             label={`Move to “${otherList.name}”`}
                             showInMenu
-                            onClick={() => void mutate(submit("updateTodo", { id: row.id, listId: otherList.id }))}
+                            onClick={() => void mutate(run("updateTodo", { id: row.id, listId: otherList.id }))}
                         />
                     )),
             ],
@@ -192,20 +164,19 @@ export default function Todos({ loaderData: { list, todos, totalCount } }: Route
                                 // a todo needs a title
                                 return oldRow;
                             }
-                            const changes = {
-                                ...(title !== oldRow.title && { title }),
-                                ...(newRow.description !== oldRow.description && { description: newRow.description }),
-                                ...(newRow.dueDate !== oldRow.dueDate && { dueDate: newRow.dueDate }),
+                            // the changed fields (unchanged ones are undefined, so they aren't sent); typed by the operation, so renaming
+                            // one of its fields breaks the build
+                            const changes: Omit<OperationInput<typeof todoOperations.updateTodo>, "id"> = {
+                                title: title !== oldRow.title ? title : undefined,
+                                description: newRow.description !== oldRow.description ? newRow.description : undefined,
+                                dueDate: newRow.dueDate !== oldRow.dueDate ? newRow.dueDate : undefined,
                             };
-                            if (Object.keys(changes).length > 0) {
-                                await submit("updateTodo", { id: newRow.id, ...changes });
+                            if (Object.values(changes).some((value) => value !== undefined)) {
+                                await run("updateTodo", { id: newRow.id, ...changes });
                             }
                             return { ...newRow, title };
                         }}
-                        onProcessRowUpdateError={(error) => {
-                            console.error(error);
-                            showError("Saving failed, please try again.");
-                        }}
+                        onProcessRowUpdateError={(error) => showError(errorMessage(error))}
                     />
                 </Paper>
             </Stack>
@@ -214,7 +185,7 @@ export default function Todos({ loaderData: { list, todos, totalCount } }: Route
 }
 
 function ListHeader({ list }: { list: { id: string; name: string } }) {
-    const { submit } = useIntents<ListIntents>(href("/lists/:listId", { listId: list.id }));
+    const { run, runAndNavigate } = useTodoOperations();
 
     return (
         <CollectionHeader
@@ -222,17 +193,17 @@ function ListHeader({ list }: { list: { id: string; name: string } }) {
             kind="list"
             deleteText={`“${list.name}” and all its todos will be deleted.`}
             maxNameLength={maxListNameLength}
-            onRename={async (name) => (await submit("renameList", { name }))?.error ?? null}
-            // goes to the first remaining list (or a new one)
-            onDelete={async () => {
-                await submit("deleteList", {});
+            onRename={async (name) => {
+                await run("renameList", { listId: list.id, name });
             }}
+            // goes to the first remaining list (or a new one)
+            onDelete={() => runAndNavigate("deleteList", { listId: list.id }, href("/lists"))}
         />
     );
 }
 
 function CreateTodoForm({ listId }: { listId: string }) {
-    const { submit } = useIntents<ListIntents>(href("/lists/:listId", { listId }));
+    const { run } = useTodoOperations();
     const [pending, setPending] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -242,19 +213,16 @@ function CreateTodoForm({ listId }: { listId: string }) {
         const formData = new FormData(form);
         setPending(true);
         try {
-            const result = await submit("createTodo", {
+            await run("createTodo", {
+                listId,
                 title: String(formData.get("title") ?? ""),
                 description: String(formData.get("description") ?? ""),
                 dueDate: String(formData.get("dueDate") ?? "") || null,
             });
-            const error = result?.error ?? null;
-            setError(error);
-            if (error === null) {
-                form.reset();
-            }
+            setError(null);
+            form.reset();
         } catch (error) {
-            console.error(error);
-            setError("Saving failed, please try again.");
+            setError(errorMessage(error));
         } finally {
             setPending(false);
         }

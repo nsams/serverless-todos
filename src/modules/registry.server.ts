@@ -1,27 +1,30 @@
-import type { ChatPage } from "~/chat/chat";
+import type { ChatPage } from "~/chat/chatPage";
+import { type OperationContext, toolsFromOperations } from "~/operations";
 
 import { notesServerModule } from "./notes/module.server";
-import { notesModuleId } from "./notes/navigation";
 import { todosServerModule } from "./todos/module.server";
-import { todosModuleId } from "./todos/navigation";
 import type { AppTool, ServerModule } from "./types";
 
-// The modules of the app (server part), in the order of the app shell part (registry.ts)
-const serverModules: Record<string, ServerModule> = { [todosModuleId]: todosServerModule, [notesModuleId]: notesServerModule };
+// The modules of the app (server part). App shell part: registry.ts.
+const serverModules: ServerModule[] = [todosServerModule, notesServerModule];
+
+// An operation of a module, e.g. for the operations' API route (src/routes/api.ts); undefined if there is none with these names
+export function findOperation(moduleId: string, name: string) {
+    const operations = serverModules.find((module) => module.id === moduleId)?.operations;
+    return operations && Object.hasOwn(operations, name) ? operations[name] : undefined;
+}
 
 // Navigation data of all modules by module id, loaded by the app layout (src/routes/_app.tsx), read by the modules with useNavigationData
-export async function loadNavigationData(userId: string) {
-    const entries = await Promise.all(
-        Object.entries(serverModules).map(async ([id, module]) => [id, await module.loadNavigation?.(userId)] as const),
-    );
+export async function loadNavigationData(ctx: OperationContext): Promise<Record<string, unknown>> {
+    const entries = await Promise.all(serverModules.map(async ({ id, navigation }) => [id, await navigation?.(ctx)] as const));
     return Object.fromEntries(entries);
 }
 
-// The tools of all modules for the AI assistants, scoped to the user
+// The tools of all modules for the AI assistants (the operations with AI metadata), scoped to the user
 export function createTools(userId: string): Record<string, AppTool> {
     const tools: Record<string, AppTool> = {};
-    for (const module of Object.values(serverModules)) {
-        for (const [name, tool] of Object.entries(module.createTools(userId))) {
+    for (const module of serverModules) {
+        for (const [name, tool] of Object.entries(toolsFromOperations(module.id, module.operations, { userId }))) {
             if (Object.hasOwn(tools, name)) {
                 throw new Error(`Tool ${name} is defined by more than one module`);
             }
@@ -31,10 +34,10 @@ export function createTools(userId: string): Record<string, AppTool> {
     return tools;
 }
 
-export const toolsInstructions = Object.values(serverModules).flatMap((module) => module.instructions);
+export const toolsInstructions = serverModules.flatMap((module) => module.instructions);
 
 // What the user is looking at in the app, for the chat assistant
 export async function getChatContext(userId: string, page: ChatPage | undefined) {
-    const contexts = await Promise.all(Object.values(serverModules).map((module) => module.chatContext?.(userId, page) ?? []));
+    const contexts = await Promise.all(serverModules.map((module) => module.chatContext?.(userId, page) ?? []));
     return contexts.flat();
 }

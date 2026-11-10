@@ -1,7 +1,7 @@
 import { Add } from "@dextinity/admin-icons";
 import { Divider, List, ListItemButton, ListItemIcon, ListItemText, Typography } from "@mui/material";
 import { useState } from "react";
-import { Link, matchPath, useLocation } from "react-router";
+import { matchPath, NavLink, useLocation } from "react-router";
 
 import { NameDialog } from "./NameDialog";
 
@@ -21,8 +21,8 @@ type Props = {
     // e.g. "New list": button and dialog title
     createLabel: string;
     maxNameLength: number;
-    // creates an item and goes to it; returns an error message, or null on success
-    onCreate: (name: string) => Promise<string | null>;
+    // creates an item and goes to it; throws a ValidationError with a message for the user, e.g. for an empty name
+    onCreate: (name: string) => Promise<void>;
     // closes the sidebar on small screens
     onNavigate: () => void;
 };
@@ -33,12 +33,9 @@ export function NavigationList({ items, createLabel, maxNameLength, onCreate, on
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
     const handleCreate = async (name: string) => {
-        const error = await onCreate(name);
-        if (error === null) {
-            setCreateDialogOpen(false);
-            onNavigate();
-        }
-        return error;
+        await onCreate(name);
+        setCreateDialogOpen(false);
+        onNavigate();
     };
 
     return (
@@ -47,7 +44,8 @@ export function NavigationList({ items, createLabel, maxNameLength, onCreate, on
                 {items.map((item) => (
                     <ListItemButton
                         key={item.id}
-                        component={Link}
+                        // NavLink: aria-current="page" on the active item
+                        component={NavLink}
                         to={item.to}
                         // also active on the item's sub pages and with search params (e.g. a grid's filters)
                         selected={matchPath({ path: item.to, end: false }, pathname) !== null}

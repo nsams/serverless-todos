@@ -1,4 +1,4 @@
-import { index, layout, type RouteConfig } from "@react-router/dev/routes";
+import { index, layout, route, type RouteConfig } from "@react-router/dev/routes";
 
 import { notesRoutes } from "./modules/notes/routes";
 import { todosRoutes } from "./modules/todos/routes";
@@ -7,8 +7,10 @@ import { todosRoutes } from "./modules/todos/routes";
 // src/modules/<module>/ (route config routes.ts, route modules in routes/), mounted into the app layout. Paths are relative to src/.
 export default [
     index("routes/index.tsx"),
-    // id: read by useNavigationData (src/modules/navigation.ts)
-    layout("routes/_app.tsx", { id: "app" }, [
+    // the modules' operations for the UI (useOperations, src/modules/client.ts)
+    route("api/:module/:operation", "routes/api.ts"),
+    // its loader data is read by useNavigationData (src/modules/client.ts)
+    layout("routes/_app.tsx", [
         // /lists, /lists/:listId
         ...todosRoutes,
         // /notes, /notes/:notebookId, /notes/:notebookId/:noteId

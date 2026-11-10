@@ -1,30 +1,27 @@
 import { ArrowLeft, Delete, Move } from "@dextinity/admin-icons";
 import { Box, Container, IconButton, Menu, MenuItem, Paper, Stack, Tab, Tabs, TextField, Tooltip, Typography } from "@mui/material";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { data, href, isRouteErrorResponse, Link, replace, useLocation, useParams } from "react-router";
+import { href, isRouteErrorResponse, Link, replace, useLocation, useParams } from "react-router";
 
 import { appName } from "~/app";
+import { useChatPage } from "~/chat/useChatPage";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { useShowError } from "~/components/ErrorSnackbar";
-import { useIntents } from "~/components/useIntents";
-import { userContext } from "~/context";
-import { clientIntentAction, intentAction } from "~/intents";
+import { errorMessage } from "~/errors";
+import { loadOperation } from "~/routeOperations.server";
 import { parseSearch, stringifySearch } from "~/searchParams";
 
+import { notesChatPage } from "../chatPage";
+import { useNotebooks, useNoteOperations } from "../client";
 import { MarkdownPreview } from "../components/MarkdownPreview";
-import { getNoteRepository, type Note } from "../db/notes.server";
-import { type NoteIntents, noteIntents } from "../intents.server";
 import { maxNoteBodyLength, maxNoteTitleLength } from "../limits";
-import { useNotebooks } from "../navigation";
 import { validateNoteSearch } from "../noteSearch";
+import { noteOperations, type NoteView } from "../operations.server";
 import type { Route } from "./+types/notes.$notebookId.$noteId";
 
 // A note in the editor. The search params are the state of the notebook's grid (notes.$notebookId.index.tsx), kept for the back link.
 export async function loader({ params: { notebookId, noteId }, url, context }: Route.LoaderArgs) {
-    const note = await getNoteRepository().get(context.get(userContext).id, noteId);
-    if (!note) {
-        throw data("Note not found", { status: 404 });
-    }
+    const note = await loadOperation(noteOperations.getNote, context, { id: noteId });
     // e.g. moved to another notebook (by the user or the assistant)
     if (note.notebookId !== notebookId) {
         throw replace(href("/notes/:notebookId/:noteId", { notebookId: note.notebookId, noteId }) + url.search);
@@ -32,13 +29,12 @@ export async function loader({ params: { notebookId, noteId }, url, context }: R
     return note;
 }
 
-// saves and deletes the note
-export const action = intentAction(noteIntents);
-export const clientAction = clientIntentAction;
-
 export const meta: Route.MetaFunction = ({ loaderData }) => [{ title: loaderData ? `${loaderData.title} – ${appName}` : appName }];
 
 export default function NotePage({ loaderData: note }: Route.ComponentProps) {
+    // what the assistant gets to know about the page
+    useChatPage(notesChatPage, { notebookId: note.notebookId, noteId: note.id });
+
     return (
         <NotePageLayout>
             {/* a fresh editor (draft, save state) per note */}
@@ -61,28 +57,23 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
     );
 }
 
-// The URL of the action: the note's URL with the grid state, the action goes back to it when the note is deleted
-function useActionUrl() {
-    const { pathname, search } = useLocation();
-    return pathname + search;
-}
-
-// The back link to the notebook's grid (in the state it was left) above the editor
-function NotePageLayout({ children }: { children: ReactNode }) {
+// The notebook's grid in the state it was left (the note's search params)
+function useNotebookUrl() {
     const { notebookId = "" } = useParams();
     const search = validateNoteSearch(parseSearch(useLocation().search));
+    return { notebookId, notebookUrl: href("/notes/:notebookId", { notebookId }) + stringifySearch(search) };
+}
+
+// The back link to the notebook's grid above the editor
+function NotePageLayout({ children }: { children: ReactNode }) {
+    const { notebookId, notebookUrl } = useNotebookUrl();
     const notebook = useNotebooks().find((item) => item.id === notebookId);
     return (
         <Container sx={{ py: 4 }}>
             <Stack spacing={2}>
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                     <Tooltip title="Back to the notebook">
-                        <IconButton
-                            component={Link}
-                            to={href("/notes/:notebookId", { notebookId }) + stringifySearch(search)}
-                            edge="start"
-                            aria-label="Back to the notebook"
-                        >
+                        <IconButton component={Link} to={notebookUrl} edge="start" aria-label="Back to the notebook">
                             <ArrowLeft />
                         </IconButton>
                     </Tooltip>
@@ -101,8 +92,10 @@ const autosaveDelay = 1000;
 
 type Values = { title: string; body: string };
 
-function NoteEditor({ note }: { note: Note }) {
-    const { submit, send } = useIntents<NoteIntents>(useActionUrl());
+function NoteEditor({ note }: { note: NoteView }) {
+    const { run, runAndNavigate } = useNoteOperations();
+    const { notebookUrl } = useNotebookUrl();
+    const { search } = useLocation();
     const showError = useShowError();
 
     const [draft, setDraft] = useState<Values>({ title: note.title, body: note.body });
@@ -134,16 +127,13 @@ function NoteEditor({ note }: { note: Note }) {
         saveQueue.current = saveQueue.current.then(async () => {
             setStatus("saving");
             try {
-                // (the page data is reloaded afterwards, e.g. the note's title in the sidebar's notebook)
-                const result = await submit("updateNote", values);
-                if (result) {
-                    setSaved({ ...values, updatedAt: result.updatedAt.getTime() });
-                }
+                // nothing else on the page changes: no reload of the page's data (on every autosave)
+                const { updated } = await run("updateNote", { id: note.id, ...values }, { revalidate: false });
+                setSaved({ ...values, updatedAt: updated.updatedAt.getTime() });
                 setStatus("saved");
             } catch (error) {
-                console.error(error);
                 setStatus("error");
-                showError("Saving the note failed, please try again.");
+                showError(errorMessage(error, "Saving the note failed, please try again."));
             }
         });
         return saveQueue.current;
@@ -172,8 +162,8 @@ function NoteEditor({ note }: { note: Note }) {
     useEffect(() => {
         return () => {
             if (unsaved.current && !deleting.current) {
-                // also when the page is left: not with the editor's fetcher, which is gone with the editor
-                send("updateNote", unsaved.current);
+                // also when the page is left (the submission outlives the editor)
+                run("updateNote", { id: note.id, ...unsaved.current }, { revalidate: false }).catch(console.error);
             }
         };
         // only on unmount
@@ -194,14 +184,13 @@ function NoteEditor({ note }: { note: Note }) {
     const handleDelete = async () => {
         deleting.current = true;
         try {
-            await submit("deleteNote", {});
+            await runAndNavigate("deleteNote", { id: note.id }, notebookUrl);
         } catch (error) {
             deleting.current = false;
             throw error;
         }
     };
 
-    // the reloaded page goes to the note's new URL (see the loader)
     const handleMove = async (notebookId: string) => {
         // the move would be treated as a change made elsewhere: save first
         if (unsaved.current) {
@@ -210,10 +199,14 @@ function NoteEditor({ note }: { note: Note }) {
             await save(values);
         }
         try {
-            await submit("updateNote", { notebookId });
+            // the note's new URL, with the grid state
+            await runAndNavigate(
+                "updateNote",
+                { id: note.id, notebookId },
+                href("/notes/:notebookId/:noteId", { notebookId, noteId: note.id }) + search,
+            );
         } catch (error) {
-            console.error(error);
-            showError("Moving the note failed, please try again.");
+            showError(errorMessage(error, "Moving the note failed, please try again."));
         }
     };
 

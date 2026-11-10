@@ -1,17 +1,15 @@
-import { href } from "react-router";
+import { href, useNavigate } from "react-router";
 
 import { NavigationList } from "~/components/NavigationList";
-import { useIntents } from "~/components/useIntents";
 
-import type { ListsIntents } from "../intents.server";
+import { useLists, useTodoOperations } from "../client";
 import { maxListNameLength } from "../limits";
-import { useLists } from "../navigation";
 
 // The user's lists in the app's sidebar
 export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
     const lists = useLists();
-    // the action of the index route /lists
-    const { submit } = useIntents<ListsIntents>(`${href("/lists")}?index`);
+    const { run } = useTodoOperations();
+    const navigate = useNavigate();
 
     return (
         <NavigationList
@@ -24,8 +22,10 @@ export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
             }))}
             createLabel="New list"
             maxNameLength={maxListNameLength}
-            // goes to the new list
-            onCreate={async (name) => (await submit("createList", { name }))?.error ?? null}
+            onCreate={async (name) => {
+                const list = await run("createList", { name });
+                await navigate(href("/lists/:listId", { listId: list.id }));
+            }}
             onNavigate={onNavigate}
         />
     );

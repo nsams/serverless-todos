@@ -1,17 +1,15 @@
-import { href } from "react-router";
+import { href, useNavigate } from "react-router";
 
 import { NavigationList } from "~/components/NavigationList";
-import { useIntents } from "~/components/useIntents";
 
-import type { NotebooksIntents } from "../intents.server";
+import { useNotebooks, useNoteOperations } from "../client";
 import { maxNotebookNameLength } from "../limits";
-import { useNotebooks } from "../navigation";
 
 // The user's notebooks in the app's sidebar
 export function NotebooksNavigation({ onNavigate }: { onNavigate: () => void }) {
     const notebooks = useNotebooks();
-    // the action of the index route /notes
-    const { submit } = useIntents<NotebooksIntents>(`${href("/notes")}?index`);
+    const { run } = useNoteOperations();
+    const navigate = useNavigate();
 
     return (
         <NavigationList
@@ -24,8 +22,10 @@ export function NotebooksNavigation({ onNavigate }: { onNavigate: () => void }) 
             }))}
             createLabel="New notebook"
             maxNameLength={maxNotebookNameLength}
-            // goes to the new notebook
-            onCreate={async (name) => (await submit("createNotebook", { name }))?.error ?? null}
+            onCreate={async (name) => {
+                const notebook = await run("createNotebook", { name });
+                await navigate(href("/notes/:notebookId", { notebookId: notebook.id }));
+            }}
             onNavigate={onNavigate}
         />
     );

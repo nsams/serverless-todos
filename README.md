@@ -35,6 +35,7 @@ The local D1 database can be browsed and queried in the Cloudflare Local Explore
 ```bash
 npx wrangler d1 execute DB --local --command "SELECT * FROM todos"
 npm run db:reset  # delete the local database and re-apply all migrations
+npm run db:seed   # insert test data (scripts/fixtures.ts) for DEV_USER_EMAIL
 ```
 
 ## Structure
@@ -45,42 +46,83 @@ Core:
 
 - `src/server.ts`: worker entry, passes `ctx.access` (Cloudflare Access) to the app as request context (`src/context.ts`), routes chat requests to the user's chat agent and MCP requests to the MCP server, everything else to React Router (`react-router.config.ts`, app directory `src/`)
 - `src/root.tsx`: root route: HTML document, theme, error boundary (also 404), and the middleware that rejects every request not authenticated by Cloudflare Access (`src/auth.server.ts`) and passes the user (identified by email) to the loaders and actions as context (`userContext`)
-- `src/routes.ts`: the [route config](https://reactrouter.com/start/framework/routing): the core routes in `src/routes/`, the routes of each module from its folder (`src/modules/<module>/routes.ts`, route modules in `routes/`). The route modules' types (`import type { Route } from "./+types/<file>"`, `href()`) are generated into `.react-router/types/` by `react-router typegen` (`npm run typegen`, also on `dev`/`build`; not committed)
+- `src/routes.ts`: the [route config](https://reactrouter.com/start/framework/routing): the core routes in `src/routes/`, the routes of each module from its folder (`src/modules/<module>/routes.ts`, route modules in `routes/`). The route modules' types (`import type { Route } from "./+types/<file>"`, `href()`) are generated into `.react-router/types/` by `react-router typegen` (`npm run typegen`, part of `lint:tsc`, also on `dev`/`build`; not committed)
 - `src/routes/index.tsx`: start page, redirects to `startPath` (`src/modules/registry.ts`)
-- `src/routes/_app.tsx`: layout (app bar, the navigation of the modules in a sidebar); its loader loads the navigation data of the modules (`ServerModule.loadNavigation`), reloaded after every change, not on navigations
-- `src/intents.ts`, `src/components/useIntents.ts`: changes (see [Data loading and changes](#data-loading-and-changes))
-- `src/modules/types.ts`: the interfaces of a module: `AppModule` (app shell: navigation with its heading in the sidebar, chat suggestions), `ServerModule` (tools for the AI assistants, their instructions, chat context), `AppTool`
+- `src/routes/_app.tsx`: layout (app bar, the navigation of the modules in a sidebar, the chat panel); its loader loads the navigation data of the modules (`ServerModule.navigation`), reloaded after changes, not on navigations
+- `src/routes/api.ts`, `src/routeOperations.server.ts`, `src/modules/client.ts`: the API layer over the operations (see [Data loading and changes](#data-loading-and-changes))
+- `src/modules/types.ts`: the interfaces of a module: `AppModule` (app shell: navigation with its heading in the sidebar, chat suggestions), `ServerModule` (the module's operations, its navigation data, instructions for the AI assistants, chat context), `AppTool`
+- `src/operations.ts`: the operation layer (see [Operations](#operations-one-definition-for-ui-chat-and-mcp)): `defineOperation`, `runOperation`, `toolsFromOperations`; `src/errors.ts`: `NotFoundError`, `ValidationError`, `errorMessage` (independent of the stack, shared by server and client)
 - `src/modules/registry.ts`, `src/modules/registry.server.ts`: the modules of the app
-- `src/chat/`: chat assistant (see [Chat assistant](#chat-assistant)), `src/components/ChatPanel.tsx`: its UI
+- `src/chat/`: chat assistant (see [Chat assistant](#chat-assistant)): the agent, its tools, the page context (`chatPage.ts`, `useChatPage.tsx`) and the reload after changes (`useChatChanges.ts`); `src/components/ChatPanel.tsx`: its UI
 - `src/mcp/`: MCP server (see [MCP server](#mcp-server-external-ai-clients))
-- `src/db/db.server.ts`: database connection; `src/dates.ts`: calendar dates (`YYYY-MM-DD`) without time zone, the user's local date; `src/searchParams.ts`: search params serialization; `src/gridSearch.ts`, `src/db/filters.server.ts`, `src/components/useServerGrid.ts`: DataGrids with server-side pagination, sorting and filtering, their state in the URL (search params parsing in the loader and the component, the grid's props, the SQL for sorting and filtering); `src/components/`: shared components and hooks used by the modules (e.g. `NavigationList` for the sidebar, `CollectionHeader` (heading with rename and delete), `ConfirmDeleteDialog`, `NameDialog`, `useMutate`)
+- `src/db/db.server.ts`: database connection; `src/dates.ts`: calendar dates (`YYYY-MM-DD`) without time zone, the user's local date; `src/searchParams.ts`: search params serialization; `src/gridSearch.ts`, `src/db/filters.server.ts`, `src/components/useServerGrid.ts`: DataGrids with server-side pagination, sorting and filtering, their state in the URL (one zod schema per grid for the search params and the operation's input, sorting and filters typed by the grid's fields, typed columns, the grid's props, the SQL for sorting and filtering); `src/components/`: shared components and hooks used by the modules (e.g. `NavigationList` for the sidebar, `CollectionHeader` (heading with rename and delete), `ConfirmDeleteDialog`, `NameDialog`, `useMutate`)
+- `scripts/`: Node scripts (run with Node's TypeScript support, no build step): test data (`fixtures.ts`, `seed.ts`) and Preview deployments (`preview.ts`)
 
 Todos module (`src/modules/todos/`):
 
-- `module.ts`, `module.server.ts`: the module's definition (`AppModule`, `ServerModule`)
-- `routes.ts` (route config, ids in `routeIds.ts`), `routes/`: `/lists` (redirects to the user's first list, creates a list "Todos" if the user has none), `/lists/:listId` (todos of a list; grid state (pagination, sorting, filtering) lives in the URL, `todoSearch.ts` with `src/gridSearch.ts`). The route modules load their data in their loaders (directly from the repositories).
-- `components/ListsNavigation.tsx`: the user's lists in the sidebar (navigation data loaded by the app layout, `navigation.ts`)
-- `intents.server.ts`: the changes, intents of the routes' actions (input validated with zod; length limits in `limits.ts`)
-- `db/`: database schema and repositories
-- `tools.server.ts`: the tools that manage lists and todos, for the chat assistant and the MCP server
+- `module.ts`, `module.server.ts`: the module's definition (`AppModule`, `ServerModule` with `defineServerModule`); `moduleId.ts`: its id
+- `operations.server.ts`: the module's operations (list, create, rename, delete lists; find, create, update, delete todos; a list's page of todos for the grid): one definition each for the UI and the AI assistants (the ones with AI metadata are the tools of the chat assistant and the MCP server; length limits in `limits.ts`)
+- `routes.ts` (route config), `routes/`: `/lists` (redirects to the user's first list, creates a list "Todos" if the user has none), `/lists/:listId` (todos of a list; grid state (pagination, sorting, filtering) lives in the URL, `todoSearch.ts` with `src/gridSearch.ts`). The loaders run the module's operations.
+- `client.ts`: the module's server data on the client, typed by the server module: `useTodoOperations()` (changes), `useLists()` (the sidebar's data)
+- `components/ListsNavigation.tsx`: the user's lists in the sidebar
+- `db/`: database schema and repositories (`update`, `rename`, `delete` return the affected row, `undefined` if no row of the user matched)
+- `chatPage.ts`: what the module's pages tell the chat assistant (schema), see [Chat assistant](#chat-assistant)
 - `overdue.ts`: whether a todo is overdue is decided in the browser with the user's local date
 
 Notes module (`src/modules/notes/`), same structure:
 
 - `routes/`: `/notes` (redirects to the user's first notebook, creates a notebook "Notes" if the user has none), `/notes/:notebookId` (the notebook's notes in a grid like the todos (`noteSearch.ts`), plus a search in title and body (`?q=`); a click on a row opens the note), `/notes/:notebookId/:noteId` (editor, keeps the grid state for its back link: title, body in Markdown with preview (`components/MarkdownPreview.tsx`, `markdown-to-jsx`, raw HTML isn't rendered), saved automatically shortly after typing stops and when leaving the note, move to another notebook, delete)
-- `components/NotebooksNavigation.tsx`: the user's notebooks in the sidebar (`navigation.ts`)
-- `routes.ts`, `routeIds.ts`, `intents.server.ts`, `db/`, `limits.ts`: like in the todos module
-- `tools.server.ts`: the tools that manage notebooks and notes (find, read, create, update, append to, move, delete). Together with the todo tools the assistant can e.g. turn a note into todos, without the modules knowing each other.
+- `components/NotebooksNavigation.tsx`: the user's notebooks in the sidebar
+- `operations.server.ts`, `routes.ts`, `client.ts`, `db/`, `chatPage.ts`, `limits.ts`: like in the todos module. The operations with AI metadata are the tools that manage notebooks and notes (find, read, create, update, append to, move, delete). Together with the todo tools the assistant can e.g. turn a note into todos, without the modules knowing each other.
 - The editor takes over changes made elsewhere (e.g. by the assistant) when the page data is reloaded, unless it has unsaved changes; it tells them from its own saves by `updatedAt`.
 
-A new module gets its own folder with the same structure and is added to `src/modules/registry.ts`, `src/modules/registry.server.ts` and `src/routes.ts`. Its tables are picked up by `drizzle.config.ts` (`src/modules/*/db/schema.ts`).
+A new module gets its own folder with the same structure and is added to `src/modules/registry.ts`, `src/modules/registry.server.ts` and `src/routes.ts`. Its tables are picked up by `drizzle.config.ts` (`src/modules/*/db/schema.ts`). In short:
+
+1. `moduleId.ts`, `db/schema.ts` (then `npm run db:generate`) and the repositories in `db/`.
+2. `operations.server.ts`: the module's operations (see below) and the instructions for the model.
+3. `module.server.ts` (`defineServerModule`: `id`, `operations`, `navigation`, `instructions`, `chatContext` with `defineChatContext`), `client.ts` (`useOperations`, `useNavigationData` typed by the server module) and `module.ts` (`AppModule`: navigation, chat suggestions).
+4. `routes.ts` and `routes/`: the pages, their loaders run the operations (`loadOperation`, `loadGridOperation`); `chatPage.ts`: the schema of what the pages tell the assistant, reported with `useChatPage`.
 
 ## Data loading and changes
 
-- **Loading**: every page has a [loader](https://reactrouter.com/start/framework/data-loading) (runs on the server, also for client-side navigations via `.data` requests) that reads from the repositories for the user in `userContext`, e.g. `src/modules/todos/routes/lists.$listId.tsx` loads one page of todos as in the search params. A missing list or note is a 404 (`throw data(..., { status: 404 })`, error boundary).
-- **Changes**: the [actions](https://reactrouter.com/start/framework/actions) of the routes, each with named intents (`src/intents.ts`), e.g. the action of `/lists/:listId` renames or deletes the list and creates, changes or deletes its todos (`src/modules/todos/intents.server.ts`). The components submit them as JSON with a fetcher (`useIntents`, `src/components/useIntents.ts`) and can await the intent's result (e.g. "Name is required" in a dialog, the note's new `updatedAt`); intents that leave the page (create a list, delete a note, ...) redirect. After every action React Router reloads the data of the page (all loaders, e.g. also the sidebar's counts), so there is no manual reloading.
-- **Errors**: the routes' `clientAction` (`clientIntentAction`) turns a failed action (server or network error) into a rejected `useIntents` promise, so the caller shows the error (snackbar) instead of the error boundary replacing the page (e.g. the note editor keeps its unsaved changes).
+- **Loading**: every page has a [loader](https://reactrouter.com/start/framework/data-loading) (runs on the server, also for client-side navigations via one `.data` request for all loaders of the page) that runs the module's operations for the user in `userContext` (`loadOperation`, `src/routeOperations.server.ts`), e.g. `src/modules/todos/routes/lists.$listId.tsx` loads one page of todos as in the search params (`loadGridOperation`: the operation's input schema validates the search params, an empty page after the last one redirects to the last page). A `NotFoundError` is a 404 page. Dates stay `Date`s on the client (turbo-stream), loader data is typed by the typegen.
+- **Changes**: one [resource route](https://reactrouter.com/how-to/resource-routes) for all modules, `POST /api/<module>/<operation>` (`src/routes/api.ts`), runs a module's operation (effect `write` or `delete`) with the JSON body as input. Components call it with `useOperations` (`src/modules/client.ts`, per module e.g. `useTodoOperations()` in `src/modules/todos/client.ts`): `run("createList", { name })` is typed by the operation (name, input, result) and resolves with the operation's result once React Router has reloaded the page's data (all loaders, e.g. also the sidebar's counts), so there is no manual reloading; `runAndNavigate(...)` goes to another page afterwards (e.g. away from a deleted list), `{ revalidate: false }` skips the reload (the note editor's autosave). The submissions don't depend on the component (a fetcher per call) and aren't tied to a page, so any component can change any module's data.
+- **Errors**: mapped once (`src/routeOperations.server.ts`): a `ValidationError` (e.g. "Name is required") or `NotFoundError` of the operation is thrown again by `run` on the client, so the forms show its message (`errorMessage`); other failures (server or network errors) are rejected too instead of the error boundary replacing the page (e.g. the note editor keeps its unsaved changes).
+- **Reloading the sidebar**: the app layout's loader (all modules' navigation data) is reloaded after changes and explicit reloads, not on navigations or changes of the search params (`shouldRevalidate` in `src/routes/_app.tsx`).
 - **CSRF**: React Router rejects actions whose `Origin` doesn't match the app's origin.
+
+### Operations: one definition for UI, chat and MCP
+
+Every domain operation is defined once in the module's `operations.server.ts` (`src/operations.ts`): its input schema (zod, `.describe()` texts are shown to the model), its effect (`read`, `write`, `delete`), optionally AI metadata (title and description) and the handler with the whole business logic, incl. existence and ownership checks. Handlers throw `NotFoundError` or `ValidationError` (`src/errors.ts`), whose messages reach the user (form) and the model (tool error).
+
+- **UI**: loaders run the read operations (`loadOperation`), components run the changes through the operations' API route (`useOperations`). No adapter per operation.
+- **Chat assistant and MCP server**: the operations with AI metadata are their tools, named like the operation's key (`toolsFromOperations`). An operation without AI metadata is only used by the UI (e.g. a grid's page of rows), one the UI doesn't call only by the AI assistants (e.g. `findTodos`, `appendToNote`).
+- **Reload after a tool changed data**: derived from the operation's module and effect (see [Chat assistant](#chat-assistant)).
+
+Adding an operation, e.g. to mark all todos of a list as done:
+
+```ts
+// src/modules/todos/operations.server.ts, in todoOperations
+completeList: defineOperation({
+    input: z.object({ listId: z.string() }),
+    effect: "write",
+    // remove `ai` for an operation only the UI uses
+    ai: { title: "Complete todo list", description: "Marks all todos of a list as done." },
+    handler: async ({ userId }, { listId }) => {
+        await getList(userId, listId); // NotFoundError → error for the form, error message for the model
+        // completeAll: a new repository method
+        return { completed: await getTodoRepository().completeAll(userId, listId) };
+    },
+}),
+```
+
+```tsx
+// in a component: typed by the operation
+const { run } = useTodoOperations();
+await run("completeList", { listId });
+```
+
+That's all: the chat assistant and the MCP server offer the tool `completeList` (deleting operations need the user's confirmation), and after the assistant ran it the chat panel reloads the page data.
 
 ## Authentication
 
@@ -96,10 +138,11 @@ Denied requests are logged with the reason (Workers Logs).
 The assistant (chat panel, robot button in the app bar) works with the tools of all modules, e.g. manages the user's lists and todos in natural language, e.g. "Lege ein Todo mit dem Titel „Milch holen“ an", or summarizes a note and turns it into todos.
 
 - **Agent** (`src/chat/agent.server.ts`): an `AIChatAgent` ([Cloudflare Agents SDK](https://developers.cloudflare.com/agents/)), a Durable Object per user (instance name = user id). It keeps the chat history in its SQLite storage, streams the answers over a WebSocket (resumed after reconnects, in sync across tabs) and calls the model with the [AI SDK](https://ai-sdk.dev) (`streamText`).
-- **Tools** (`AppTool` of the modules, e.g. `src/modules/todos/tools.server.ts`, as AI SDK tools in `src/chat/tools.server.ts`): e.g. list/create/rename/delete lists, find/create/update/delete todos, find/read/create/update notes, directly on the repositories (the agent runs in the same worker, it doesn't go through the MCP server). The user id comes from the authentication, never from the model. Deleting needs the user's confirmation in the chat (`needsApproval`). The client sends its local date and the current page (route and params) with every message (`src/chat/chat.ts`), for relative due dates; the modules turn the page into context for the system prompt (`ServerModule.chatContext`), e.g. the current list as default list for new todos, or the open note.
+- **Tools** (the operations with AI metadata of the modules, e.g. `src/modules/todos/operations.server.ts`, as `AppTool`s (`toolsFromOperations`) and as AI SDK tools in `src/chat/tools.server.ts`): e.g. list/create/rename/delete lists, find/create/update/delete todos, find/read/create/update notes, the same operations the UI uses (the agent runs in the same worker, it doesn't go through the MCP server). The user id comes from the authentication, never from the model. Deleting needs the user's confirmation in the chat (`needsApproval`).
+- **Page context**: the client sends its local date (for relative due dates) and the page shown with every message (`src/chat/chat.ts`). Each module describes what its pages show with a zod schema (`src/modules/<module>/chatPage.ts`, `defineChatPage`), a page reports it with `useChatPage(todosChatPage, { listId })` (`src/chat/useChatPage.tsx`, typed by the schema), and the server module turns it into context for the system prompt (`ServerModule.chatContext`, `defineChatContext` validates it with the schema), e.g. the current list as default list for new todos, or the open note. The server doesn't depend on routes.
 - **Routing/auth** (`src/server.ts`): the client connects to `/chat-agent`; the worker authenticates the request like any other (Cloudflare Access), rejects foreign origins (WebSockets aren't protected by CORS) and forwards it to the agent of the authenticated user. The Agents SDK's default routes (`/agents/...`) are not exposed.
 - **Model** (`src/chat/model.server.ts`, `AI_MODEL` in `wrangler.jsonc`, default `@cf/zai-org/glm-4.7-flash`): a [Workers AI](https://developers.cloudflare.com/workers-ai/) model with function calling ([catalog](https://developers.cloudflare.com/ai/models/), e.g. also `@cf/moonshotai/kimi-k2.6`): run by Cloudflare, billed through the Cloudflare account (Workers AI pricing), no provider API key. Via the AI binding (`createAI` from `agents/models/ai-sdk`); in development via the AI Gateway REST API (see [Development](#development)). Requests go through the AI Gateway `AI_GATEWAY_ID` (default `default`, created on first use): logs, spend limits, rate limits.
-- **UI** (`src/components/ChatPanel.tsx`): [MUI X Chat](https://mui.com/x/react-chat/) (`ChatBox`, alpha) renders the conversation of `useAgentChat`: its messages are controlled by `useAgentChat`, its adapter forwards sending, stopping and tool approvals. After a tool changed data (`AppModule.chat.mutatingToolNames`) the page data is reloaded (`useRevalidator`).
+- **UI** (`src/components/ChatPanel.tsx`): [MUI X Chat](https://mui.com/x/react-chat/) (`ChatBox`, alpha) renders the conversation of `useAgentChat`: its messages are controlled by `useAgentChat`, its adapter forwards sending, stopping and tool approvals. After a tool whose operation writes or deletes, the agent adds a `changes` data part with the module's id to its answer (`src/chat/agent.server.ts`); `useChatChanges` reports it once and the page data is reloaded (`useRevalidator`: all loaders of the page in one request, as the layout loads all modules' navigation data).
 
 Setup (once per Cloudflare account): set a spend limit on the AI Gateway (dashboard → AI → AI Gateway). Some Workers AI models need the Workers Paid plan.
 
@@ -145,13 +188,42 @@ Migrations are applied before the new code is deployed (`npm run deploy`), so th
 
 ## Deployment (Cloudflare)
 
-Deploy with `npm run deploy` (build, apply pending D1 migrations, deploy), either locally or with [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/) (Git integration): leave the build command empty and set the deploy command to `npm run deploy`.
+Deploy with `npm run deploy` (build, apply pending D1 migrations, deploy, [delete databases of deleted Previews](#preview-deployments)), either locally or with [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/) (Git integration): leave the build command empty and set the deploy command to `npm run deploy`.
 
 1. The D1 database doesn't need to be created manually: `wrangler.jsonc` has no `database_id`, so the first `wrangler deploy` creates a database named `serverless-todos` (or connects to an existing one with that name). As `npm run deploy` applies the migrations before deploying, the very first deployment (no database yet) is done with `npm run build && npx wrangler deploy`, followed by `npm run deploy`.
 2. Set up Cloudflare Access (Zero Trust dashboard):
     1. Add Microsoft Entra ID as identity provider (Settings → Authentication → Login methods), see the [Cloudflare docs](https://developers.cloudflare.com/cloudflare-one/identity/idp-integration/entra-id/).
-    2. Protect the `workers.dev` URL: Workers & Pages → serverless-todos → Settings → Domains & Routes → `workers.dev` → Enable Cloudflare Access. This creates an Access application for the URL (preview URLs are disabled in `wrangler.jsonc`).
+    2. Protect the `workers.dev` URL: Workers & Pages → serverless-todos → Settings → Domains & Routes → `workers.dev` → Enable Cloudflare Access. This creates an Access application for the URL (Preview URLs get their own, see [Preview deployments](#preview-deployments)).
     3. Edit that Access application (Zero Trust → Access → Applications): use Entra ID as the only login method and a policy that allows the intended users (e.g. an Entra group or email domain).
     4. For the MCP server: turn on managed OAuth on that Access application, see [MCP server](#mcp-server-external-ai-clients).
     5. Set `ACCESS_TEAM_DOMAIN` (`https://<team-name>.cloudflareaccess.com`, see Zero Trust → Settings → Team name and domain) and `ACCESS_AUD` (the Application Audience (AUD) Tag on the application's overview) in `wrangler.jsonc`.
 3. Deploy: `npm run deploy`
+
+## Preview deployments
+
+Every branch (and so every pull request) gets its own [Worker Preview](https://developers.cloudflare.com/workers/previews/) with its own D1 database filled with test data, created by Workers Builds (no GitHub Actions or secrets in GitHub). The Cloudflare GitHub app comments the Preview URL (`https://<branch>-serverless-todos.<subdomain>.workers.dev`) on the pull request.
+
+How it works (`scripts/preview.ts`):
+
+- On every push to a branch other than `main`, Workers Builds runs `npm run preview:deploy`:
+    1. Creates the D1 database `serverless-todos-preview-<branch>-<hash>` if it doesn't exist yet. The branch is stored in a table `_preview` in the database (not part of the Drizzle schema).
+    2. Applies the pending migrations, like `npm run deploy` does in production. The database is kept between pushes, so testers' data survives a push and the migrations are tested on existing data.
+    3. Inserts the test data (`scripts/fixtures.ts`) for every email in the build variable `PREVIEW_FIXTURE_USERS`, once per database. Data belongs to the Access user's email, so these are the emails of the people testing Previews.
+    4. Builds with the database in the `previews` config (`vite.config.ts`) and deploys the Preview with `wrangler preview --name <branch>`. Previews use the `previews` block of `wrangler.jsonc`, not the production settings: new bindings and vars have to be added there too.
+- The chat assistant works in Previews too (same model and AI Gateway as production, costs go to the same account). Every Preview gets its own Durable Object namespace from Cloudflare, so chat histories are separate per Preview and deleted with it.
+- When the branch is deleted (GitHub deletes it after merging the pull request, see setup), Workers Builds deletes its Preview. Cloudflare doesn't delete the D1 database with it, so `npm run preview:cleanup` deletes the databases whose Preview no longer exists. As a safety net for branches that are never deleted, it also deletes Previews not deployed for 30 days (build variable `PREVIEW_TTL_DAYS`) together with their database; a later push to the branch creates them again, with fresh test data.
+- Cleanup runs after every production deploy (= after every merge) and every Preview deploy, so nothing is cleaned up while there are no builds. It never fails the deployment, keeps a database whenever it can't tell whether its Preview exists, and skips databases created less than an hour ago (their Preview may not exist yet). It checks Previews with the Cloudflare API if `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are set, otherwise with `wrangler preview secret list` (fails with "was not found" for a deleted Preview); the log says which one is used.
+
+To reset a Preview's database, delete it (`npx wrangler d1 list` shows the name, `npx wrangler d1 delete <name>`) and retry the Preview's latest build in the dashboard.
+
+A pull request closed without merging keeps its Preview and database until its branch is deleted (GitHub offers to delete it when closing the pull request) or the Preview expires.
+
+### Setup
+
+1. Protect the Preview URLs with Cloudflare Access: Workers & Pages → serverless-todos → Settings → Domains & Routes → Preview URLs → Enable Cloudflare Access. Configure that Access application like the production one (Entra ID, allowed users) and set its Application Audience (AUD) Tag as `previews.vars.ACCESS_AUD` in `wrangler.jsonc`. Without it the app rejects every request to a Preview (403). To use the MCP server of a Preview (`https://<branch>-serverless-todos.<subdomain>.workers.dev/mcp`), turn on managed OAuth on that Access application too (see [MCP server](#mcp-server-external-ai-clients)).
+2. Workers Builds (Workers & Pages → serverless-todos → Settings → Build):
+    1. Branch control: enable Preview builds. Workers connected to Builds before Worker Previews show a "Set up Worker Previews" banner first: the switch can't be undone.
+    2. Preview command: `npm run preview:deploy` (build command stays empty).
+    3. Variables and secrets: add `PREVIEW_FIXTURE_USERS` with the testers' emails (comma separated). Optionally `PREVIEW_TTL_DAYS` (default 30).
+    4. The build token needs permission to edit D1 (it already applies the production migrations in `npm run deploy`).
+3. GitHub (repository settings → General → Pull Requests): enable "Automatically delete head branches", so merging a pull request deletes its branch and with it the Preview.

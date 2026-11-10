@@ -12,8 +12,8 @@ type Props = {
     // what deleting deletes, e.g. "“Work” and all its todos will be deleted."
     deleteText: string;
     maxNameLength: number;
-    // returns an error message, or null on success
-    onRename: (name: string) => Promise<string | null>;
+    // throws a ValidationError with a message for the user, e.g. for an empty name
+    onRename: (name: string) => Promise<void>;
     // deletes the collection and leaves the page
     onDelete: () => Promise<void>;
 };
@@ -24,11 +24,8 @@ export function CollectionHeader({ name, kind, deleteText, maxNameLength, onRena
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
     const handleRename = async (newName: string) => {
-        const error = await onRename(newName);
-        if (error === null) {
-            setRenameDialogOpen(false);
-        }
-        return error;
+        await onRename(newName);
+        setRenameDialogOpen(false);
     };
 
     return (
