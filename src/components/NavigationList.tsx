@@ -1,6 +1,6 @@
 import { Add } from "@dextinity/admin-icons";
 import { Divider, List, ListItemButton, ListItemIcon, ListItemText, Typography } from "@mui/material";
-import { createLink, type LinkOptions, useRouter } from "@tanstack/react-router";
+import { createLink, type LinkOptions } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { NameDialog } from "./NameDialog";
@@ -23,7 +23,7 @@ type Props = {
     // e.g. "New list": button and dialog title
     createLabel: string;
     maxNameLength: number;
-    // creates an item and navigates to it; throws a ValidationError with a message for the user, e.g. for an empty name
+    // creates an item, navigates to it and reloads the items; throws a ValidationError with a message for the user, e.g. for an empty name
     onCreate: (name: string) => Promise<void>;
     // closes the sidebar on small screens
     onNavigate: () => void;
@@ -31,15 +31,12 @@ type Props = {
 
 // A module's items in the app's sidebar (e.g. the todo lists, the notebooks) with a button to create one
 export function NavigationList({ items, createLabel, maxNameLength, onCreate, onNavigate }: Props) {
-    const router = useRouter();
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
     const handleCreate = async (name: string) => {
         await onCreate(name);
         setCreateDialogOpen(false);
         onNavigate();
-        // the new item: the sidebar's data isn't reloaded by the navigation (the layout route's loader data is reused)
-        await router.invalidate();
     };
 
     return (

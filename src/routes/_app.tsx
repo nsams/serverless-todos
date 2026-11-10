@@ -1,20 +1,27 @@
 import { Chatbot, Hamburger, Logout } from "@dextinity/admin-icons";
-import { AppBar, Box, CircularProgress, Divider, Drawer, IconButton, ListSubheader, Toolbar, Typography } from "@mui/material";
+import { AppBar, Box, CircularProgress, Divider, Drawer, IconButton, ListSubheader, Skeleton, Toolbar, Typography } from "@mui/material";
+import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { Fragment, lazy, Suspense, useState } from "react";
 
 import { appName } from "~/app";
-import { appModules, loadNavigationData } from "~/modules/registry";
+import { appModules } from "~/modules/registry";
 import { getCurrentUser } from "~/user.functions";
 
 // Layout of the app pages: app bar and the navigation of the modules in a sidebar
 export const Route = createFileRoute("/_app")({
-    loader: async () => {
-        const [user, navigation] = await Promise.all([getCurrentUser(), loadNavigationData()]);
-        return { user, navigation };
+    loader: async ({ context: { queryClient } }) => {
+        // not awaited: the page doesn't wait for the sidebar, each module's navigation is shown when its data is there
+        for (const { navigation } of appModules) {
+            void navigation?.prefetch(queryClient);
+        }
+        await queryClient.ensureQueryData(userQuery);
     },
     component: AppLayout,
 });
+
+// The authenticated user (doesn't change while the app is open)
+const userQuery = queryOptions({ queryKey: ["user"], queryFn: () => getCurrentUser(), staleTime: Infinity });
 
 const drawerWidth = 260;
 const chatWidth = 420;
@@ -23,7 +30,7 @@ const chatWidth = 420;
 const ChatPanel = lazy(() => import("~/components/ChatPanel"));
 
 function AppLayout() {
-    const { user } = Route.useLoaderData();
+    const { data: user } = useSuspenseQuery(userQuery);
     const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
     const [chatOpen, setChatOpen] = useState(false);
     // stays mounted once opened, so the conversation (and a running answer) survives closing the panel
@@ -46,7 +53,9 @@ function AppLayout() {
                             <ListSubheader component="h2" disableSticky sx={{ pt: 1, lineHeight: 2.5 }}>
                                 {navigation.title}
                             </ListSubheader>
-                            <navigation.Component onNavigate={() => setMobileDrawerOpen(false)} />
+                            <Suspense fallback={<NavigationSkeleton />}>
+                                <navigation.Component onNavigate={() => setMobileDrawerOpen(false)} />
+                            </Suspense>
                         </Fragment>
                     ),
             )}
@@ -112,6 +121,17 @@ function AppLayout() {
                     </Suspense>
                 )}
             </Drawer>
+        </Box>
+    );
+}
+
+// Shown while a module's navigation data is loading
+function NavigationSkeleton() {
+    return (
+        <Box sx={{ px: 2, py: 1 }}>
+            {[0, 1, 2].map((index) => (
+                <Skeleton key={index} height={40} />
+            ))}
         </Box>
     );
 }

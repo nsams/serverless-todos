@@ -1,17 +1,19 @@
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { linkOptions, useNavigate } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 
 import { NavigationList } from "~/components/NavigationList";
+import { useInvalidateModule } from "~/moduleQueries";
 
 import { maxNotebookNameLength } from "../limits";
-import { useNotebooks } from "../navigation";
+import { notesModuleId } from "../moduleId";
 import { createNotebook } from "../notebooks.functions";
+import { notebooksQuery } from "../queries";
 
 // The user's notebooks in the app's sidebar
 export function NotebooksNavigation({ onNavigate }: { onNavigate: () => void }) {
-    const notebooks = useNotebooks();
+    const { data: notebooks } = useSuspenseQuery(notebooksQuery);
     const navigate = useNavigate();
-    const createNotebookFn = useServerFn(createNotebook);
+    const invalidate = useInvalidateModule(notesModuleId);
 
     return (
         <NavigationList
@@ -25,8 +27,9 @@ export function NotebooksNavigation({ onNavigate }: { onNavigate: () => void }) 
             createLabel="New notebook"
             maxNameLength={maxNotebookNameLength}
             onCreate={async (name) => {
-                const notebook = await createNotebookFn({ data: { name } });
+                const notebook = await createNotebook({ data: { name } });
                 await navigate({ to: "/notes/$notebookId", params: { notebookId: notebook.id } });
+                void invalidate();
             }}
             onNavigate={onNavigate}
         />

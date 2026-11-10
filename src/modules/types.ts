@@ -1,3 +1,4 @@
+import type { QueryClient } from "@tanstack/react-query";
 import type { ComponentType } from "react";
 import type { z } from "zod";
 
@@ -11,15 +12,16 @@ import type { OperationEffect, Operations } from "~/operations";
 
 // The part of a module the app shell uses (browser and server rendering)
 export type AppModule = {
-    // unique; key of the module's navigation data
+    // unique; the first part of the keys of the module's queries (src/moduleQueries.ts)
     id: string;
     // shown in the app's sidebar
     navigation?: {
         // heading of the module's section in the sidebar
         title: string;
-        // loaded by the app layout (src/routes/_app.tsx) for every page; the module reads it with useNavigationData
-        loader: () => Promise<unknown>;
-        // onNavigate: closes the sidebar on small screens
+        // starts loading the module's navigation data (e.g. its lists), on every page of the app layout (src/routes/_app.tsx);
+        // the page doesn't wait for it
+        prefetch: (queryClient: QueryClient) => Promise<void>;
+        // reads the navigation data with its query (shown when it is loaded); onNavigate: closes the sidebar on small screens
         Component: ComponentType<{ onNavigate: () => void }>;
     };
     chat?: {

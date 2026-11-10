@@ -3,7 +3,7 @@ import { Close, Delete } from "@dextinity/admin-icons";
 import { Alert, Box, IconButton, Toolbar, Tooltip, Typography } from "@mui/material";
 import { ChatBox } from "@mui/x-chat";
 import type { ChatAdapter, ChatMessage as MuiChatMessage, ChatMessagePart } from "@mui/x-chat/headless";
-import { useRouter } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAgent } from "agents/react";
 import { getToolName, isToolUIPart } from "ai";
 import { useMemo } from "react";
@@ -22,7 +22,7 @@ const suggestions = appModules.flatMap((module) => module.chat?.suggestions ?? [
 // after reconnects, tool approvals. MUI X Chat only renders it: its messages are controlled by useAgentChat's messages and its adapter
 // forwards sending, stopping and approvals to useAgentChat.
 export default function ChatPanel({ onClose }: { onClose: () => void }) {
-    const router = useRouter();
+    const queryClient = useQueryClient();
     // what the user is looking at (reported by the page with useChatPage)
     const getChatPage = useChatPageGetter();
 
@@ -34,9 +34,13 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
         body: (): ChatRequestBody => ({ today: toDateString(new Date()), page: getChatPage() }),
     });
 
-    // A tool changed the data of modules (reported by the agent, src/chat/agent.server.ts): reload the page data. The router's loaders
-    // aren't split by module (the layout loads all modules' navigation data), so everything is reloaded.
-    useChatChanges(messages, () => void router.invalidate());
+    // A tool changed the data of modules (reported by the agent, src/chat/agent.server.ts): reload exactly their data (the keys of a
+    // module's queries start with its id, src/moduleQueries.ts)
+    useChatChanges(messages, (modules) => {
+        for (const module of modules) {
+            void queryClient.invalidateQueries({ queryKey: [module] });
+        }
+    });
 
     const adapter = useMemo(
         (): ChatAdapter => ({

@@ -1,17 +1,18 @@
-import { type DataGridProProps, type GridFilterModel, GridLogicOperator, type GridSortModel } from "@mui/x-data-grid-pro";
+import { type DataGridProProps, type GridFilterModel, GridLogicOperator, type GridSortModel, type GridValidRowModel } from "@mui/x-data-grid-pro";
 import { useRouterState } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-import { type GridFields, type GridSearch, pageSizeOptions, parseGridSearch, serializeFilterValue } from "~/gridSearch";
+import { type GridFields, type GridSearch, lastPageWithRows, pageSizeOptions, parseGridSearch, serializeFilterValue } from "~/gridSearch";
 
-type Options<Search extends GridSearch, Fields extends GridFields> = {
+type Options<Row extends GridValidRowModel, Search extends GridSearch, Fields extends GridFields> = {
     // the route's validateSearch
     validateSearch: (search: unknown) => Search;
     // the sortable and filterable fields
     fields: Fields;
     // changes the route's search params, e.g. with the route's useNavigate
     navigate: (search: Search, options: { replace: boolean }) => void;
-    // the number of rows on the server (with the filters applied)
+    // the rows of the page and the number of rows on the server (with the filters applied)
+    rows: Row[];
     rowCount: number;
     // fields with calendar date filters (YYYY-MM-DD), e.g. a due date
     dateOnlyFields?: (keyof Fields & string)[];
@@ -19,13 +20,14 @@ type Options<Search extends GridSearch, Fields extends GridFields> = {
 
 // A DataGrid with server-side pagination, sorting and filtering whose state lives in the URL (see src/gridSearch.ts):
 // gridProps connect the grid to the URL, the route's loader loads the rows for it (parseGridSearch on the server).
-export function useServerGrid<Search extends GridSearch, Fields extends GridFields>({
+export function useServerGrid<Row extends GridValidRowModel, Search extends GridSearch, Fields extends GridFields>({
     validateSearch,
     fields,
     navigate,
+    rows,
     rowCount,
     dateOnlyFields = [],
-}: Options<Search, Fields>) {
+}: Options<Row, Search, Fields>) {
     // Use the pending location while loading, otherwise the grid would show the old state until the loader is done (e.g. reset a filter value while typing)
     const search = validateSearch(useRouterState({ select: (state) => state.location.search }));
     const loading = useRouterState({ select: (state) => state.status === "pending" && state.location.href !== state.resolvedLocation?.href });
@@ -40,6 +42,16 @@ export function useServerGrid<Search extends GridSearch, Fields extends GridFiel
     });
     const paginationModel = useStableValue({ page, pageSize });
 
+    // The page is empty, but there are rows on earlier pages (e.g. after deleting the last row of the last page): go to the last page with rows
+    const lastPage = loading ? undefined : lastPageWithRows({ page, pageSize }, rows.length, rowCount);
+    useEffect(() => {
+        if (lastPage !== undefined) {
+            navigate({ ...search, page: lastPage || undefined }, { replace: true });
+        }
+        // once per empty page (navigate and search are new on every render)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [lastPage]);
+
     // Changes search params, e.g. a search field next to the grid (also goes back to the first page)
     const updateSearch = (values: Partial<Search>, { replace = false } = {}) => navigate({ ...search, page: undefined, ...values }, { replace });
 
@@ -48,6 +60,7 @@ export function useServerGrid<Search extends GridSearch, Fields extends GridFiel
         paginationMode: "server",
         sortingMode: "server",
         filterMode: "server",
+        rows,
         rowCount,
         loading,
         pageSizeOptions,

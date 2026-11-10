@@ -1,15 +1,16 @@
 import robotoFlexCss from "@fontsource-variable/roboto-flex?url";
 import { Container, CssBaseline, Typography } from "@mui/material";
 import { ThemeProvider } from "@mui/material/styles";
-import { createRootRoute, type ErrorComponentProps, HeadContent, Scripts } from "@tanstack/react-router";
+import { createRootRouteWithContext, type ErrorComponentProps, HeadContent, Scripts } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import { appName } from "~/app";
 import { ChatPageProvider } from "~/chat/useChatPage";
 import { ErrorSnackbarProvider } from "~/components/ErrorSnackbar";
+import type { RouterContext } from "~/router";
 import { theme } from "~/theme";
 
-export const Route = createRootRoute({
+export const Route = createRootRouteWithContext<RouterContext>()({
     head: () => ({
         meta: [{ charSet: "utf-8" }, { name: "viewport", content: "width=device-width, initial-scale=1" }, { title: appName }],
         links: [{ rel: "stylesheet", href: robotoFlexCss }],

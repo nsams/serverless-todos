@@ -2,7 +2,7 @@ import type { AppModule } from "~/modules/types";
 
 import { NotebooksNavigation } from "./components/NotebooksNavigation";
 import { notesModuleId } from "./moduleId";
-import { listNotebooks } from "./notebooks.functions";
+import { notebooksQuery } from "./queries";
 
 // The notes module (notebooks and Markdown notes), app shell part. Server part: module.server.ts;
 // routes: routes/ (/notes, /notes/$notebookId, /notes/$notebookId/$noteId).
@@ -10,7 +10,7 @@ export const notesModule: AppModule = {
     id: notesModuleId,
     navigation: {
         title: "Notes",
-        loader: () => listNotebooks(),
+        prefetch: (queryClient) => queryClient.prefetchQuery(notebooksQuery),
         Component: NotebooksNavigation,
     },
     chat: {

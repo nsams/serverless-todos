@@ -1,17 +1,19 @@
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { linkOptions, useNavigate } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 
 import { NavigationList } from "~/components/NavigationList";
+import { useInvalidateModule } from "~/moduleQueries";
 
 import { maxListNameLength } from "../limits";
 import { createList } from "../lists.functions";
-import { useLists } from "../navigation";
+import { todosModuleId } from "../moduleId";
+import { listsQuery } from "../queries";
 
 // The user's lists in the app's sidebar
 export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
-    const lists = useLists();
+    const { data: lists } = useSuspenseQuery(listsQuery);
     const navigate = useNavigate();
-    const createListFn = useServerFn(createList);
+    const invalidate = useInvalidateModule(todosModuleId);
 
     return (
         <NavigationList
@@ -25,8 +27,9 @@ export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
             createLabel="New list"
             maxNameLength={maxListNameLength}
             onCreate={async (name) => {
-                const list = await createListFn({ data: { name } });
+                const list = await createList({ data: { name } });
                 await navigate({ to: "/lists/$listId", params: { listId: list.id } });
+                void invalidate();
             }}
             onNavigate={onNavigate}
         />
