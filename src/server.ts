@@ -24,6 +24,11 @@ export default {
         if (pathname === mcpPath) {
             return handleMcp(request, ctx.access);
         }
+        // React Router checks the origin of actions only for page and `.data` requests, not for resource routes (e.g. the operations' API
+        // route, src/routes/api.ts): reject changes from other sites for all of them
+        if (request.method !== "GET" && request.method !== "HEAD" && isForeignOrigin(request)) {
+            return new Response("Forbidden", { status: 403 });
+        }
         const context = new RouterContextProvider();
         context.set(accessContext, ctx.access);
         return handleAppRequest(request, context);
