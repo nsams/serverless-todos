@@ -17,8 +17,9 @@ import type { OperationEffect, Operations } from "~/operations";
 export type AppModule = {
     // unique: the ServerModule's id, the path of its REST API (/api/<id>)
     id: string;
-    // the module's pages (React Router, see src/client/routing.ts), rendered in the app layout (src/client/AppLayout.tsx). They are
-    // reloaded with the module's data only (reloadModules).
+    // the module's pages (React Router, see src/client/routing.ts), rendered in the app layout (src/client/AppLayout.tsx); pages that only
+    // redirect (a loader without a component) are mounted outside it (src/client/router.tsx). They are reloaded with the module's data
+    // only (reloadModules).
     routes: RouteObject[];
     // shown in the app's sidebar
     navigation?: {

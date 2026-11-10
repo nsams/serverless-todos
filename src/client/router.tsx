@@ -9,6 +9,13 @@ import { moduleShouldRevalidate } from "./routing";
 
 // The routes of the app (React Router, data mode): the start page, and the pages of the modules (AppModule.routes) in the app layout.
 // The loaders load the page data from the REST API with the modules' typed clients (e.g. src/modules/todos/api.ts).
+const moduleRoutes = appModules.flatMap((module) => module.routes.map((route) => withModule(module, route)));
+
+// Pages that only redirect (a loader without a component, e.g. /lists to the user's first list), like the start page: outside the app
+// layout, so its data (the user, the navigation) is loaded once, for the page they redirect to (on the initial load React Router runs
+// every loader again after a redirect)
+const isRedirect = (route: RouteObject) => !route.Component && !route.element && !route.lazy && !route.children;
+
 export const router = createBrowserRouter([
     {
         Component: Root,
@@ -17,6 +24,7 @@ export const router = createBrowserRouter([
         children: [
             // start page: redirects to a module's page
             { index: true, loader: startRoute.route.loader },
+            ...moduleRoutes.filter(isRedirect),
             {
                 Component: AppLayout,
                 loader: appLoader,
@@ -26,7 +34,7 @@ export const router = createBrowserRouter([
                     // errors of the pages are shown in the layout
                     {
                         ErrorBoundary: PageErrorBoundary,
-                        children: appModules.flatMap((module) => module.routes.map((route) => withModule(module, route))),
+                        children: moduleRoutes.filter((route) => !isRedirect(route)),
                     },
                 ]),
             },
