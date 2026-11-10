@@ -27,10 +27,14 @@ export const Route = createFileRoute("/_app")({
     // scripts anyway), it would only cost CPU time per page view and need hydration-safe components: e.g. dates formatted in the
     // user's time zone (the grids' date columns, useToday) would differ between the server and the browser.
     ssr: "data-only",
-    loader: async ({ context: { queryClient } }) => {
-        // not awaited: the page doesn't wait for the sidebar, each module's navigation is shown when its data is there
-        for (const { navigation } of appModules) {
-            void navigation?.prefetch(queryClient);
+    loader: async ({ context: { queryClient }, cause }) => {
+        // Not awaited: the page doesn't wait for the sidebar, each module's navigation is shown when its data is there. Only when the
+        // app is opened: then the navigation queries keep themselves up to date (reloaded with their module's data, or when stale and
+        // shown again), so the loaders running again (e.g. after a change in one module) don't reload every module's navigation.
+        if (cause === "enter") {
+            for (const { navigation } of appModules) {
+                void navigation?.prefetch(queryClient);
+            }
         }
         await queryClient.ensureQueryData(userQuery);
     },

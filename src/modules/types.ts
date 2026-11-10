@@ -18,8 +18,8 @@ export type AppModule = {
     navigation?: {
         // heading of the module's section in the sidebar
         title: string;
-        // starts loading the module's navigation data (e.g. its lists), on every page of the app layout (src/routes/_app.tsx);
-        // the page doesn't wait for it
+        // starts loading the module's navigation data (e.g. its lists) when the app is opened (src/routes/_app.tsx); the page doesn't
+        // wait for it
         prefetch: (queryClient: QueryClient) => Promise<void>;
         // reads the navigation data with its query (shown when it is loaded); onNavigate: closes the sidebar on small screens
         Component: ComponentType<{ onNavigate: () => void }>;
