@@ -1,6 +1,18 @@
 import { Chatbot, Hamburger, Logout } from "@dextinity/admin-icons";
-import { AppBar, Box, CircularProgress, Divider, Drawer, IconButton, ListSubheader, Skeleton, Toolbar, Typography } from "@mui/material";
-import { useQuery } from "@tanstack/react-query";
+import {
+    AppBar,
+    Box,
+    CircularProgress,
+    Divider,
+    Drawer,
+    IconButton,
+    LinearProgress,
+    ListSubheader,
+    Skeleton,
+    Toolbar,
+    Typography,
+} from "@mui/material";
+import { useIsFetching, useQuery } from "@tanstack/react-query";
 import { Fragment, lazy, Suspense, useState } from "react";
 import { Outlet } from "react-router";
 
@@ -23,6 +35,9 @@ const ChatPanel = lazy(() => import("~/components/ChatPanel"));
 export function AppLayout() {
     // the user doesn't change while the app is open; the page doesn't wait for it
     const user = useQuery({ ...coreApi.user.queryOptions(), staleTime: Infinity }).data;
+    // Data loaded for the first time, e.g. the next page's: the router keeps showing the current page meanwhile (a transition), this
+    // shows that something is happening. Not shown for reloads of data that is shown already.
+    const loading = useIsFetching({ predicate: (query) => query.state.data === undefined }) > 0;
     const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
     const [chatOpen, setChatOpen] = useState(false);
     // stays mounted once opened, so the conversation (and a running answer) survives closing the panel
@@ -59,6 +74,7 @@ export function AppLayout() {
         <ChatPageProvider>
             <Box sx={{ display: "flex" }}>
                 <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}>
+                    {loading && <LinearProgress color="secondary" sx={{ position: "absolute", top: 0, left: 0, right: 0, height: 2 }} />}
                     <Toolbar>
                         <IconButton
                             color="inherit"
