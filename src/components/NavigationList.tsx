@@ -3,6 +3,8 @@ import { Divider, List, ListItemButton, ListItemIcon, ListItemText, Typography }
 import { useState } from "react";
 import { NavLink, useMatch } from "react-router";
 
+import { useModuleRevalidator } from "~/client/routing";
+
 import { NameDialog } from "./NameDialog";
 
 export type NavigationItem = {
@@ -17,25 +19,29 @@ export type NavigationItem = {
 };
 
 type Props = {
+    // the module whose items they are: its data is reloaded with the navigation to a created item (e.g. the new list in the sidebar)
+    moduleId: string;
     items: NavigationItem[];
     // e.g. "New list": button and dialog title
     createLabel: string;
     maxNameLength: number;
-    // creates an item and navigates to it (reloading the module's navigation data); throws a ValidationError with a message for the
-    // user, e.g. for an empty name
-    onCreate: (name: string) => Promise<void>;
+    // creates an item and returns the path of its page (opened then); throws a ValidationError with a message for the user, e.g. for
+    // an empty name
+    onCreate: (name: string) => Promise<string>;
     // closes the sidebar on small screens
     onNavigate: () => void;
 };
 
 // A module's items in the app's sidebar (e.g. the todo lists, the notebooks) with a button to create one
-export function NavigationList({ items, createLabel, maxNameLength, onCreate, onNavigate }: Props) {
+export function NavigationList({ moduleId, items, createLabel, maxNameLength, onCreate, onNavigate }: Props) {
+    const { navigate } = useModuleRevalidator(moduleId);
     const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
     const handleCreate = async (name: string) => {
-        await onCreate(name);
+        const link = await onCreate(name);
         setCreateDialogOpen(false);
         onNavigate();
+        await navigate(link);
     };
 
     return (

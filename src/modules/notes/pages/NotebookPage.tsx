@@ -216,22 +216,18 @@ function NewNoteButton({ notebookId }: { notebookId: string }) {
 }
 
 function NotebookHeader({ notebook }: { notebook: Notebook }) {
-    const { revalidate, navigate } = useModuleRevalidator(notesModuleId);
-
     return (
         <CollectionHeader
+            moduleId={notesModuleId}
             name={notebook.name}
             kind="notebook"
             deleteText={`“${notebook.name}” and all its notes will be deleted.`}
             maxNameLength={maxNotebookNameLength}
-            onRename={async (name) => {
-                await parseResponse(notesClient.notebooks[":notebookId"].$patch({ param: { notebookId: notebook.id }, json: { name } }));
-                await revalidate();
-            }}
+            onRename={(name) => parseResponse(notesClient.notebooks[":notebookId"].$patch({ param: { notebookId: notebook.id }, json: { name } }))}
             onDelete={async () => {
                 await parseResponse(notesClient.notebooks[":notebookId"].$delete({ param: { notebookId: notebook.id } }));
-                // redirects to the first remaining notebook (or creates a new one); also removes the notebook from the sidebar
-                await navigate(notebooksRoute.href(), { replace: true });
+                // redirects to the first remaining notebook (or creates a new one)
+                return notebooksRoute.href();
             }}
         />
     );

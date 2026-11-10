@@ -1,6 +1,5 @@
 import { parseResponse } from "hono/client";
 
-import { useModuleRevalidator } from "~/client/routing";
 import { NavigationList } from "~/components/NavigationList";
 
 import { todosClient } from "../api";
@@ -12,10 +11,10 @@ import { listRoute } from "../routes";
 // The user's lists in the app's sidebar
 export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
     const lists = useLists();
-    const { navigate } = useModuleRevalidator(todosModuleId);
 
     return (
         <NavigationList
+            moduleId={todosModuleId}
             items={lists.map((list) => ({
                 id: list.id,
                 name: list.name,
@@ -27,8 +26,7 @@ export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
             maxNameLength={maxListNameLength}
             onCreate={async (name) => {
                 const list = await parseResponse(todosClient.lists.$post({ json: { name } }));
-                // also shows the new list in the sidebar
-                await navigate(listRoute.href({ listId: list.id }));
+                return listRoute.href({ listId: list.id });
             }}
             onNavigate={onNavigate}
         />

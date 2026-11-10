@@ -1,6 +1,5 @@
 import { parseResponse } from "hono/client";
 
-import { useModuleRevalidator } from "~/client/routing";
 import { NavigationList } from "~/components/NavigationList";
 
 import { notesClient } from "../api";
@@ -12,10 +11,10 @@ import { notebookRoute } from "../routes";
 // The user's notebooks in the app's sidebar
 export function NotebooksNavigation({ onNavigate }: { onNavigate: () => void }) {
     const notebooks = useNotebooks();
-    const { navigate } = useModuleRevalidator(notesModuleId);
 
     return (
         <NavigationList
+            moduleId={notesModuleId}
             items={notebooks.map((notebook) => ({
                 id: notebook.id,
                 name: notebook.name,
@@ -27,8 +26,7 @@ export function NotebooksNavigation({ onNavigate }: { onNavigate: () => void }) 
             maxNameLength={maxNotebookNameLength}
             onCreate={async (name) => {
                 const notebook = await parseResponse(notesClient.notebooks.$post({ json: { name } }));
-                // also shows the new notebook in the sidebar
-                await navigate(notebookRoute.href({ notebookId: notebook.id }));
+                return notebookRoute.href({ notebookId: notebook.id });
             }}
             onNavigate={onNavigate}
         />

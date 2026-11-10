@@ -186,22 +186,18 @@ export function ListPage() {
 }
 
 function ListHeader({ list }: { list: { id: string; name: string } }) {
-    const { revalidate, navigate } = useModuleRevalidator(todosModuleId);
-
     return (
         <CollectionHeader
+            moduleId={todosModuleId}
             name={list.name}
             kind="list"
             deleteText={`“${list.name}” and all its todos will be deleted.`}
             maxNameLength={maxListNameLength}
-            onRename={async (name) => {
-                await parseResponse(todosClient.lists[":listId"].$patch({ param: { listId: list.id }, json: { name } }));
-                await revalidate();
-            }}
+            onRename={(name) => parseResponse(todosClient.lists[":listId"].$patch({ param: { listId: list.id }, json: { name } }))}
             onDelete={async () => {
                 await parseResponse(todosClient.lists[":listId"].$delete({ param: { listId: list.id } }));
-                // redirects to the first remaining list (or creates a new one); also removes the list from the sidebar
-                await navigate(listsRoute.href(), { replace: true });
+                // redirects to the first remaining list (or creates a new one)
+                return listsRoute.href();
             }}
         />
     );
