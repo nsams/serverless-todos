@@ -2,24 +2,30 @@ import { type DataGridProProps, type GridFilterModel, GridLogicOperator, type Gr
 import { useRouterState } from "@tanstack/react-router";
 import { useState } from "react";
 
-import { type GridFieldConfig, type GridSearch, pageSizeOptions, parseGridSearch, serializeFilterValue } from "~/gridSearch";
+import { type GridFields, type GridSearch, pageSizeOptions, parseGridSearch, serializeFilterValue } from "~/gridSearch";
 
-type Options<Search extends GridSearch> = {
+type Options<Search extends GridSearch, Fields extends GridFields> = {
     // the route's validateSearch
     validateSearch: (search: unknown) => Search;
     // the sortable and filterable fields
-    fields: Record<string, GridFieldConfig>;
+    fields: Fields;
     // changes the route's search params, e.g. with the route's useNavigate
     navigate: (search: Search, options: { replace: boolean }) => void;
     // the number of rows on the server (with the filters applied)
     rowCount: number;
     // fields with calendar date filters (YYYY-MM-DD), e.g. a due date
-    dateOnlyFields?: string[];
+    dateOnlyFields?: (keyof Fields & string)[];
 };
 
 // A DataGrid with server-side pagination, sorting and filtering whose state lives in the URL (see src/gridSearch.ts):
 // gridProps connect the grid to the URL, the route's loader loads the rows for it (parseGridSearch on the server).
-export function useServerGrid<Search extends GridSearch>({ validateSearch, fields, navigate, rowCount, dateOnlyFields = [] }: Options<Search>) {
+export function useServerGrid<Search extends GridSearch, Fields extends GridFields>({
+    validateSearch,
+    fields,
+    navigate,
+    rowCount,
+    dateOnlyFields = [],
+}: Options<Search, Fields>) {
     // Use the pending location while loading, otherwise the grid would show the old state until the loader is done (e.g. reset a filter value while typing)
     const search = validateSearch(useRouterState({ select: (state) => state.location.search }));
     const loading = useRouterState({ select: (state) => state.status === "pending" && state.location.href !== state.resolvedLocation?.href });
