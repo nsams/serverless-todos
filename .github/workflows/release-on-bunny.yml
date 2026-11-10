@@ -51,6 +51,9 @@ jobs:
                       echo "::error::Set the variable BUNNY_STORAGE_ZONE and the secret BUNNY_STORAGE_PASSWORD (see README)"
                       exit 1
                   fi
+                  case "$STORAGE_ZONE" in
+                      *.*) echo "::error::BUNNY_STORAGE_ZONE is the Storage Zone's name, not a hostname (got $STORAGE_ZONE)"; exit 1 ;;
+                  esac
                   cd dist/client
                   find assets server -type f | while read -r file; do
                       curl --fail --silent --show-error -X PUT "https://${STORAGE_HOST}/${STORAGE_ZONE}/${file}" \
