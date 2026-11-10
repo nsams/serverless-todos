@@ -2,6 +2,7 @@ import { getAgentByName } from "agents";
 import { Hono } from "hono";
 
 import { api } from "./api/api.server";
+import type { ApiEnv } from "./api/hono.server";
 import { getUser, type User } from "./auth.server";
 import { chatAgentPath } from "./chat/chat";
 import { handleMcpRequest, mcpPath } from "./mcp/mcp.server";
@@ -13,7 +14,8 @@ export { ChatAgent } from "./chat/agent.server";
 // - the REST API of the app at /api (src/api/api.server.ts), used by the app with the typed client (src/api/client.ts)
 // - the chat (WebSocket and HTTP requests from useAgentChat), routed to the user's chat agent
 // - the MCP server for external AI clients (src/mcp/mcp.server.ts)
-const app = new Hono<{ Bindings: Env; Variables: { user: User } }>();
+// The context is the API's (ApiEnv): the user set by the middleware below
+const app = new Hono<ApiEnv>();
 
 // Every request must have been authenticated by Cloudflare Access; the user is passed on as context variable
 app.use(async (c, next) => {
