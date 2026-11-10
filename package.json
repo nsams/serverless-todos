@@ -4,7 +4,7 @@
     "type": "module",
     "scripts": {
         "build": "vite build",
-        "build:bunny": "PLATFORM=bunny vite build",
+        "build:bunny": "PLATFORM=bunny vite build && node scripts/bunnyBuild.ts",
         "db:generate": "drizzle-kit generate",
         "db:migrate": "wrangler d1 migrations apply DB --local",
         "db:migrate:bunny": "dotenv -e .env.local -e .env -- node scripts/migrate.ts",
