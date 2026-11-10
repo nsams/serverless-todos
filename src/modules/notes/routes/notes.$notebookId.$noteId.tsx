@@ -5,9 +5,11 @@ import { useServerFn } from "@tanstack/react-start";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { appName } from "~/app";
+import { useChatPage } from "~/chat/useChatPage";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { useShowError } from "~/components/ErrorSnackbar";
 
+import { notesChatPage } from "../chatPage";
 import { MarkdownPreview } from "../components/MarkdownPreview";
 import { maxNoteBodyLength, maxNoteTitleLength } from "../limits";
 import { useNotebooks } from "../navigation";
@@ -42,6 +44,8 @@ const IconButtonLink = createLink(IconButton);
 
 function NotePage() {
     const note = Route.useLoaderData();
+    // what the assistant gets to know about the page
+    useChatPage(notesChatPage, { notebookId: note.notebookId, noteId: note.id });
     return (
         <NotePageLayout>
             {/* a fresh editor (draft, save state) per note */}

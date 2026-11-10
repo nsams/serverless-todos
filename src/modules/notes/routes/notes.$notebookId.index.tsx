@@ -6,6 +6,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 
 import { appName } from "~/app";
+import { useChatPage } from "~/chat/useChatPage";
 import { CollectionHeader } from "~/components/CollectionHeader";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { NameDialog } from "~/components/NameDialog";
@@ -13,6 +14,7 @@ import { useMutate } from "~/components/useMutate";
 import { useServerGrid } from "~/components/useServerGrid";
 import { type GridColumns, lastPageWithRows, supportedOperators } from "~/gridSearch";
 
+import { notesChatPage } from "../chatPage";
 import type { NoteSummary } from "../db/notes.server";
 import { plainExcerpt } from "../excerpt";
 import { maxNotebookNameLength, maxNoteTitleLength } from "../limits";
@@ -58,6 +60,9 @@ function NotebookPage() {
         navigate: (newSearch, { replace }) => void navigate({ search: newSearch, replace, resetScroll: false }),
         rowCount: totalCount,
     });
+
+    // what the assistant gets to know about the page
+    useChatPage(notesChatPage, { notebookId: notebook.id });
 
     const openNote = (noteId: string) => void navigate({ to: "/notes/$notebookId/$noteId", params: { notebookId: notebook.id, noteId }, search });
 

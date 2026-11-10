@@ -5,6 +5,7 @@ import { createRootRoute, type ErrorComponentProps, HeadContent, Scripts } from 
 import type { ReactNode } from "react";
 
 import { appName } from "~/app";
+import { ChatPageProvider } from "~/chat/useChatPage";
 import { ErrorSnackbarProvider } from "~/components/ErrorSnackbar";
 import { theme } from "~/theme";
 
@@ -27,7 +28,10 @@ function RootDocument({ children }: { children: ReactNode }) {
             <body>
                 <ThemeProvider theme={theme}>
                     <CssBaseline />
-                    <ErrorSnackbarProvider>{children}</ErrorSnackbarProvider>
+                    <ErrorSnackbarProvider>
+                        {/* the pages report what they show to the chat panel (useChatPage) */}
+                        <ChatPageProvider>{children}</ChatPageProvider>
+                    </ErrorSnackbarProvider>
                 </ThemeProvider>
                 <Scripts />
             </body>

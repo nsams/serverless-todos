@@ -1,7 +1,7 @@
 import type { ComponentType } from "react";
 import type { z } from "zod";
 
-import type { ChatPage } from "~/chat/chat";
+import type { ChatContext } from "~/chat/chatPage";
 import type { OperationEffect, Operations } from "~/operations";
 
 // The app consists of a core (app shell, authentication, chat assistant, MCP server, database connection) and feature modules.
@@ -36,8 +36,9 @@ export type ServerModule = {
     operations: Operations;
     // guidance for the model: what the tools manage and how to use them (system prompt of the chat assistant, instructions of the MCP server)
     instructions: string[];
-    // what the user is looking at in the app (e.g. the current list), for the system prompt of the chat assistant
-    chatContext?(userId: string, page: ChatPage | undefined): Promise<string[]>;
+    // what the user is looking at in the app (e.g. the current list), for the system prompt of the chat assistant; created with
+    // defineChatContext from the module's page schema (src/chat/chatPage.ts)
+    chatContext?: ChatContext;
 };
 
 // A tool for the AI assistants, independent of the AI framework: used by the chat assistant (src/chat/tools.server.ts, AI SDK)

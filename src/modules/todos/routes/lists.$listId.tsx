@@ -7,6 +7,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { type FormEvent, useState } from "react";
 
 import { appName } from "~/app";
+import { useChatPage } from "~/chat/useChatPage";
 import { CollectionHeader } from "~/components/CollectionHeader";
 import { useShowError } from "~/components/ErrorSnackbar";
 import { useMutate } from "~/components/useMutate";
@@ -15,6 +16,7 @@ import { fromDateString, toDateString, useToday } from "~/dates";
 import { errorMessage } from "~/errors";
 import { type GridColumns, lastPageWithRows, supportedOperators, validateGridSearch } from "~/gridSearch";
 
+import { todosChatPage } from "../chatPage";
 import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "../limits";
 import { deleteList, renameList } from "../lists.functions";
 import { useLists } from "../navigation";
@@ -58,6 +60,9 @@ function Todos() {
         rowCount: totalCount,
         dateOnlyFields: ["dueDate"],
     });
+
+    // what the assistant gets to know about the page
+    useChatPage(todosChatPage, { listId: list.id });
 
     const columns: GridColumns<TodoView, typeof todoFields> = [
         {

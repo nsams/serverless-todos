@@ -1,4 +1,4 @@
-import type { ChatPage } from "~/chat/chat";
+import type { ChatPage } from "~/chat/chatPage";
 import { toolsFromOperations } from "~/operations";
 
 import { notesServerModule } from "./notes/module.server";

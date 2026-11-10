@@ -10,6 +10,7 @@ import { useMemo } from "react";
 
 import { chatAgentPath, type ChatMessage, type ChatRequestBody } from "~/chat/chat";
 import { useChatChanges } from "~/chat/useChatChanges";
+import { useChatPageGetter } from "~/chat/useChatPage";
 import { toDateString } from "~/dates";
 import { appModules } from "~/modules/registry";
 
@@ -22,13 +23,15 @@ const suggestions = appModules.flatMap((module) => module.chat?.suggestions ?? [
 // forwards sending, stopping and approvals to useAgentChat.
 export default function ChatPanel({ onClose }: { onClose: () => void }) {
     const router = useRouter();
+    // what the user is looking at (reported by the page with useChatPage)
+    const getChatPage = useChatPageGetter();
 
     // the server picks the agent instance of the authenticated user (src/server.ts)
     const agent = useAgent({ agent: "ChatAgent", basePath: chatAgentPath });
     const { messages, sendMessage, stop, addToolApprovalResponse, clearHistory, error } = useAgentChat<unknown, ChatMessage>({
         agent,
         // read on every request
-        body: (): ChatRequestBody => ({ today: toDateString(new Date()), page: currentPage(router) }),
+        body: (): ChatRequestBody => ({ today: toDateString(new Date()), page: getChatPage() }),
     });
 
     // A tool changed the data of modules (reported by the agent, src/chat/agent.server.ts): reload the page data. The router's loaders
@@ -94,12 +97,6 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
             />
         </Box>
     );
-}
-
-// The page shown in the app (the deepest route match)
-function currentPage(router: ReturnType<typeof useRouter>): ChatRequestBody["page"] {
-    const match = router.state.matches.at(-1);
-    return match ? { routeId: match.routeId, params: match.params as Record<string, string> } : undefined;
 }
 
 // AI SDK UI message → MUI X Chat message (the part types mostly match, tool parts are nested differently)
