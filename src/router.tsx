@@ -1,5 +1,5 @@
-import { QueryClient } from "@tanstack/react-query";
-import { createRouter } from "@tanstack/react-router";
+import { isServer, QueryClient } from "@tanstack/react-query";
+import { createRouter, isNotFound } from "@tanstack/react-router";
 import { setupRouterSsrQueryIntegration } from "@tanstack/react-router-ssr-query";
 
 import { routeTree } from "./routeTree.gen";
@@ -14,6 +14,9 @@ export function getRouter() {
                 // changes made in the app (UI, assistant) reload their module's data right away; this is for changes made elsewhere
                 // (another tab, an MCP client): reloaded when a page using the data is opened or the window is focused again
                 staleTime: 30_000,
+                // Like the default (3 retries in the browser, none on the server), but a page whose data doesn't exist (anymore) shows
+                // its not found page right away, not after the retries: e.g. a note deleted by the assistant while open (usePageQuery)
+                retry: (failureCount, error) => !isServer && !isNotFound(error) && failureCount < 3,
             },
         },
     });
