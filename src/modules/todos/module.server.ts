@@ -7,7 +7,7 @@ import { todosModuleId } from "./moduleId";
 import { todoInstructions, todoOperations } from "./operations.server";
 
 // The todos module (todo lists and todos), server part. App shell part: module.ts.
-export const todosServerModule: ServerModule = {
+export const serverModule: ServerModule = {
     id: todosModuleId,
     operations: todoOperations,
     instructions: todoInstructions,

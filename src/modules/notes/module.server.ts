@@ -8,7 +8,7 @@ import { notesModuleId } from "./moduleId";
 import { noteInstructions, noteOperations } from "./operations.server";
 
 // The notes module (notebooks and Markdown notes), server part. App shell part: module.ts.
-export const notesServerModule: ServerModule = {
+export const serverModule: ServerModule = {
     id: notesModuleId,
     operations: noteOperations,
     instructions: noteInstructions,
