@@ -14,7 +14,5 @@ export const todosModule: AppModule = {
     },
     chat: {
         suggestions: ["Add a todo “Buy milk”", "What is due this week?", "Which lists do I have?"],
-        // the operations with effect "write" or "delete" in operations.server.ts
-        mutatingToolNames: ["createList", "renameList", "deleteList", "createTodo", "updateTodo", "deleteTodo"],
     },
 };

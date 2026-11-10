@@ -25,8 +25,6 @@ export type AppModule = {
     chat?: {
         // example prompts shown in an empty chat
         suggestions?: string[];
-        // tools that change data: the chat reloads the page data after they ran
-        mutatingToolNames?: string[];
     };
 };
 

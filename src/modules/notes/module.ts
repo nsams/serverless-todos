@@ -15,7 +15,5 @@ export const notesModule: AppModule = {
     },
     chat: {
         suggestions: ["Summarize my latest note", "Turn this note into todos"],
-        // the operations with effect "write" or "delete" in operations.server.ts
-        mutatingToolNames: ["createNotebook", "renameNotebook", "deleteNotebook", "createNote", "updateNote", "appendToNote", "deleteNote"],
     },
 };
