@@ -7,8 +7,8 @@ import { getNoteRepository } from "./db/notes.server";
 import { notesModuleId } from "./moduleId";
 import { noteInstructions, noteOperations } from "./operations.server";
 
-// The notes module (notebooks and Markdown notes), server part. App shell part: module.ts.
-export const notesServerModule = defineServerModule({
+// The notes module (notebooks and Markdown notes), server part (picked up by src/modules/registry.server.ts). App shell part: module.ts.
+export default defineServerModule({
     id: notesModuleId,
     operations: noteOperations,
     // the user's notebooks with their number of notes (sidebar), see client.ts

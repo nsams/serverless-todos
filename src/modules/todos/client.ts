@@ -1,6 +1,6 @@
 import { useNavigationData, useOperations } from "~/modules/client";
 
-import type { todosServerModule } from "./module.server";
+import type todosServerModule from "./module.server";
 import { todosModuleId } from "./moduleId";
 
 // The module's server data on the client (src/modules/client.ts)

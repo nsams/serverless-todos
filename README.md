@@ -46,13 +46,13 @@ Core:
 
 - `src/server.ts`: worker entry, passes `ctx.access` (Cloudflare Access) to the app as request context (`src/context.ts`), routes chat requests to the user's chat agent and MCP requests to the MCP server, everything else to React Router (`react-router.config.ts`, app directory `src/`)
 - `src/root.tsx`: root route: HTML document, theme, error boundary (also 404), and the middleware that rejects every request not authenticated by Cloudflare Access (`src/auth.server.ts`) and passes the user (identified by email) to the loaders and actions as context (`userContext`)
-- `src/routes.ts`: the [route config](https://reactrouter.com/start/framework/routing): the core routes in `src/routes/`, the routes of each module from its folder (`src/modules/<module>/routes.ts`, route modules in `routes/`). The route modules' types (`import type { Route } from "./+types/<file>"`, `href()`) are generated into `.react-router/types/` by `react-router typegen` (`npm run typegen`, part of `lint:tsc`, also on `dev`/`build`; not committed)
+- `src/routes.ts`: the [route config](https://reactrouter.com/start/framework/routing) (runs in Node, `tsconfig.node.json`): the core routes in `src/routes/`, the routes of each module from its folder (`src/modules/<module>/routes.ts` with paths relative to the module (`relative()`), route modules in `routes/`). The route modules' types (`import type { Route } from "./+types/<file>"`, `href()`) are generated into `.react-router/types/` by `react-router typegen` (`npm run typegen`, part of `lint:tsc`, also on `dev`/`build`; not committed)
 - `src/routes/index.tsx`: start page, redirects to `startPath` (`src/modules/registry.ts`)
 - `src/routes/_app.tsx`: layout (app bar, the navigation of the modules in a sidebar, the chat panel); its loader loads the navigation data of the modules (`ServerModule.navigation`), reloaded after changes, not on navigations
 - `src/routes/api.ts`, `src/routeOperations.server.ts`, `src/modules/client.ts`: the API layer over the operations (see [Data loading and changes](#data-loading-and-changes))
 - `src/modules/types.ts`: the interfaces of a module: `AppModule` (app shell: navigation with its heading in the sidebar, chat suggestions), `ServerModule` (the module's operations, its navigation data, instructions for the AI assistants, chat context), `AppTool`
 - `src/operations.ts`: the operation layer (see [Operations](#operations-one-definition-for-ui-chat-and-mcp)): `defineOperation`, `runOperation`, `toolsFromOperations`; `src/errors.ts`: `NotFoundError`, `ValidationError`, `errorMessage` (independent of the stack, shared by server and client)
-- `src/modules/registry.ts`, `src/modules/registry.server.ts`: the modules of the app
+- `src/modules/registry.ts`, `src/modules/registry.server.ts`: the modules of the app (the app shell parts listed in the sidebar's order, the server parts picked up from the module folders)
 - `src/chat/`: chat assistant (see [Chat assistant](#chat-assistant)): the agent, its tools, the page context (`chatPage.ts`, `useChatPage.tsx`) and the reload after changes (`useChatChanges.ts`); `src/components/ChatPanel.tsx`: its UI
 - `src/mcp/`: MCP server (see [MCP server](#mcp-server-external-ai-clients))
 - `src/db/db.server.ts`: database connection; `src/dates.ts`: calendar dates (`YYYY-MM-DD`) without time zone, the user's local date; `src/searchParams.ts`: search params serialization; `src/gridSearch.ts`, `src/db/filters.server.ts`, `src/components/useServerGrid.ts`: DataGrids with server-side pagination, sorting and filtering, their state in the URL (one zod schema per grid for the search params and the operation's input, sorting and filters typed by the grid's fields, typed columns, the grid's props, the SQL for sorting and filtering); `src/components/`: shared components and hooks used by the modules (e.g. `NavigationList` for the sidebar, `CollectionHeader` (heading with rename and delete), `ConfirmDeleteDialog`, `NameDialog`, `useMutate`)
@@ -60,7 +60,7 @@ Core:
 
 Todos module (`src/modules/todos/`):
 
-- `module.ts`, `module.server.ts`: the module's definition (`AppModule`, `ServerModule` with `defineServerModule`); `moduleId.ts`: its id
+- `module.ts`, `module.server.ts`: the module's definition (`AppModule`, `ServerModule` with `defineServerModule` as default export); `moduleId.ts`: its id (the folder's name)
 - `operations.server.ts`: the module's operations (list, create, rename, delete lists; find, create, update, delete todos; a list's page of todos for the grid): one definition each for the UI and the AI assistants (the ones with AI metadata are the tools of the chat assistant and the MCP server; length limits in `limits.ts`)
 - `routes.ts` (route config), `routes/`: `/lists` (redirects to the user's first list, creates a list "Todos" if the user has none), `/lists/:listId` (todos of a list; grid state (pagination, sorting, filtering) lives in the URL, `todoSearch.ts` with `src/gridSearch.ts`). The loaders run the module's operations.
 - `client.ts`: the module's server data on the client, typed by the server module: `useTodoOperations()` (changes), `useLists()` (the sidebar's data)
@@ -76,7 +76,7 @@ Notes module (`src/modules/notes/`), same structure:
 - `operations.server.ts`, `routes.ts`, `client.ts`, `db/`, `chatPage.ts`, `limits.ts`: like in the todos module. The operations with AI metadata are the tools that manage notebooks and notes (find, read, create, update, append to, move, delete). Together with the todo tools the assistant can e.g. turn a note into todos, without the modules knowing each other.
 - The editor takes over changes made elsewhere (e.g. by the assistant) when the page data is reloaded, unless it has unsaved changes; it tells them from its own saves by `updatedAt`.
 
-A new module gets its own folder with the same structure and is added to `src/modules/registry.ts`, `src/modules/registry.server.ts` and `src/routes.ts`. Its tables are picked up by `drizzle.config.ts` (`src/modules/*/db/schema.ts`). In short:
+A new module gets its own folder with the same structure and is added to `src/modules/registry.ts` (the order of the sidebar), the only central edit: its server part (the default export of `module.server.ts`, its id must be the folder name) is picked up by `src/modules/registry.server.ts`, its routes (the default export of `routes.ts`) by `src/routes.ts`, its tables by `drizzle.config.ts` (`src/modules/*/db/schema.ts`). In short:
 
 1. `moduleId.ts`, `db/schema.ts` (then `npm run db:generate`) and the repositories in `db/`.
 2. `operations.server.ts`: the module's operations (see below) and the instructions for the model.

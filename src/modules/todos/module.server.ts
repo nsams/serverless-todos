@@ -6,8 +6,8 @@ import { getListRepository } from "./db/lists.server";
 import { todosModuleId } from "./moduleId";
 import { todoInstructions, todoOperations } from "./operations.server";
 
-// The todos module (todo lists and todos), server part. App shell part: module.ts.
-export const todosServerModule = defineServerModule({
+// The todos module (todo lists and todos), server part (picked up by src/modules/registry.server.ts). App shell part: module.ts.
+export default defineServerModule({
     id: todosModuleId,
     operations: todoOperations,
     // the user's lists with their number of open todos (sidebar), see client.ts

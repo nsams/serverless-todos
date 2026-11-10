@@ -6,9 +6,9 @@
         "module": "ESNext",
         "moduleResolution": "bundler",
         "target": "ES2024",
-        "types": ["node"]
+        "types": ["node", "vite/client"]
     },
     "exclude": ["worker-configuration.d.ts"],
     "extends": "./tsconfig.json",
-    "include": ["*.ts", "*.mts", "scripts/**/*.ts", "src/modules/*/db/schema.ts"]
+    "include": ["*.ts", "*.mts", "scripts/**/*.ts", "src/modules/*/db/schema.ts", "src/routes.ts", "src/modules/*/routes.ts"]
 }

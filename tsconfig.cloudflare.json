@@ -13,6 +13,7 @@
         "target": "ES2024",
         "types": ["vite/client"]
     },
+    "exclude": ["src/routes.ts", "src/modules/*/routes.ts"],
     "extends": "./tsconfig.json",
     "include": ["src/**/*", "worker-configuration.d.ts", ".react-router/types/**/*"]
 }
