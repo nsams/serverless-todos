@@ -199,9 +199,8 @@ function NoteEditor({ note }: { note: Note }) {
             deleting.current = false;
             throw error;
         }
-        await navigate({ to: "/notes/$notebookId", params: { notebookId: note.notebookId }, search, replace: true });
-        // e.g. the sidebar's note counts; after leaving the page, so the deleted note isn't reloaded
-        void invalidate();
+        // e.g. the sidebar's note counts; the deleted note isn't reloaded
+        await invalidate(() => navigate({ to: "/notes/$notebookId", params: { notebookId: note.notebookId }, search, replace: true }));
     };
 
     const handleMove = async (notebookId: string) => {

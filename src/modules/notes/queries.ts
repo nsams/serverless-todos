@@ -1,5 +1,5 @@
 import { queryOptions, useQuery } from "@tanstack/react-query";
-import { parseResponse } from "hono/client";
+import { type InferResponseType, parseResponse } from "hono/client";
 
 import type { OperationInput } from "~/operations";
 
@@ -38,7 +38,7 @@ export function noteQuery(id: string) {
 }
 
 // A note of a notebook's grid as the API returns it (JSON: the dates are ISO strings)
-export type NoteSummary = Awaited<ReturnType<NonNullable<ReturnType<typeof notesQuery>["queryFn"]>>>["notes"][number];
+export type NoteSummary = InferResponseType<(typeof notesClient.notebooks)[":notebookId"]["notes"]["$get"]>["notes"][number];
 
 // A note as the API returns it (JSON: the dates are ISO strings)
-export type Note = Awaited<ReturnType<NonNullable<ReturnType<typeof noteQuery>["queryFn"]>>>;
+export type Note = InferResponseType<(typeof notesClient.notes)[":id"]["$get"]>;

@@ -35,7 +35,7 @@ export const Route = createFileRoute("/_app")({
         await queryClient.ensureQueryData(userQuery);
     },
     component: AppLayout,
-    // until the user is loaded when the app is opened
+    // while the first page is loading (later navigations keep showing the current page until the next one is loaded)
     pendingComponent: () => <LinearProgress />,
 });
 

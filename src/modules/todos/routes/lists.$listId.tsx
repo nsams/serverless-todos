@@ -15,7 +15,7 @@ import { useMutate } from "~/components/useMutate";
 import { useServerGrid } from "~/components/useServerGrid";
 import { fromDateString, toDateString, useToday } from "~/dates";
 import { errorMessage } from "~/errors";
-import { type GridColumns, supportedOperators, validateGridSearch } from "~/gridSearch";
+import { filterParam, type GridColumns, supportedOperators, validateGridSearch } from "~/gridSearch";
 import { loadPageQuery, useInvalidateModule, usePageQuery } from "~/moduleQueries";
 
 import { todosClient } from "../api";
@@ -159,7 +159,12 @@ function Todos() {
                     <Button
                         startIcon={<Warning />}
                         color="error"
-                        onClick={() => updateSearch({ filter: [`dueDate:before:${today}`, "done:is:false"], filterLogic: undefined })}
+                        onClick={() =>
+                            updateSearch({
+                                filter: [filterParam(todoFields, "dueDate", "before", today), filterParam(todoFields, "done", "is", "false")],
+                                filterLogic: undefined,
+                            })
+                        }
                     >
                         Show overdue
                     </Button>

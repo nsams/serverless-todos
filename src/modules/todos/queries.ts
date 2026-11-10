@@ -1,5 +1,5 @@
 import { queryOptions, useQuery } from "@tanstack/react-query";
-import { parseResponse } from "hono/client";
+import { type InferResponseType, parseResponse } from "hono/client";
 
 import type { OperationInput } from "~/operations";
 
@@ -27,4 +27,4 @@ export function todosQuery({ listId, ...query }: OperationInput<typeof todoOpera
 }
 
 // A todo as the API returns it (JSON: createdAt is an ISO string)
-export type Todo = Awaited<ReturnType<NonNullable<ReturnType<typeof todosQuery>["queryFn"]>>>["todos"][number];
+export type Todo = InferResponseType<(typeof todosClient.lists)[":listId"]["todos"]["$get"]>["todos"][number];
