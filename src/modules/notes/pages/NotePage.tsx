@@ -120,7 +120,10 @@ function NoteEditor({ note }: { note: Note }) {
         saveQueue.current = saveQueue.current.then(async () => {
             setStatus("saving");
             try {
-                const { updated } = await parseResponse(notesClient.notes[":id"].$patch({ param: { id: note.id }, json: values }));
+                // the fields named (not spread), so a renamed input field breaks the build instead of being dropped by the schema
+                const { updated } = await parseResponse(
+                    notesClient.notes[":id"].$patch({ param: { id: note.id }, json: { title: values.title, body: values.body } }),
+                );
                 setSaved({ ...values, updatedAt: Date.parse(updated.updatedAt) });
                 // nothing to reload: the notes list (title, excerpt) is loaded when the notebook is opened again
                 setStatus("saved");
