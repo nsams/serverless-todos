@@ -9,3 +9,6 @@ node_modules
 # Cloudflare
 .wrangler
 worker-configuration.d.ts
+
+# Node platform: local libSQL database (scripts/libsql.ts)
+/.data/

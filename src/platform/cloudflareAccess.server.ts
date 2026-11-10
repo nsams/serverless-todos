@@ -1,7 +1,9 @@
 import { env } from "cloudflare:workers";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
-// Authentication is done by Cloudflare Access in front of the worker. Requests that bypassed Access (or matched another Access application) are rejected.
+import { type User, userFromEmail } from "~/user";
+
+// Cloudflare platform (src/server.cloudflare.ts): authentication is done by Cloudflare Access in front of the worker. Requests that bypassed Access (or matched another Access application) are rejected.
 //
 // - `ctx.access` (set by the runtime) is used when available: locally (simulated via `access.dev`, see vite.config.ts).
 // - In production it is NOT available: workers with static assets (added by the Cloudflare Vite plugin) run behind an internal router worker
@@ -9,15 +11,12 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 //   Instead the Access JWT in the `Cf-Access-Jwt-Assertion` header is verified
 //   (https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/).
 
-export type User = { id: string; email: string };
-
-export async function getUser(request: Request, access: CloudflareAccessContext | undefined): Promise<User | undefined> {
+export async function getAccessUser(request: Request, access: CloudflareAccessContext | undefined): Promise<User | undefined> {
     const email = access ? await getEmailFromAccessContext(access) : await getEmailFromAccessJwt(request);
     if (!email) {
         return undefined;
     }
-    const normalizedEmail = email.toLowerCase();
-    return { id: normalizedEmail, email: normalizedEmail };
+    return userFromEmail(email);
 }
 
 async function getEmailFromAccessContext(access: CloudflareAccessContext) {

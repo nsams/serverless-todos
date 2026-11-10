@@ -1,8 +1,18 @@
 # serverless-todos
 
-Minimal todo app (multiple lists, todos with description and due date, overdue todos are highlighted, notebooks with Markdown notes, AI chat assistant that manages the todos and notes, MCP server for external AI clients like Claude Desktop): TanStack Start on Cloudflare Workers, MUI + DataGrid, Drizzle, login via Cloudflare Access (Entra ID), Cloudflare Agents SDK + AI Gateway + MUI X Chat, MCP TypeScript SDK.
+Minimal todo app (multiple lists, todos with description and due date, overdue todos are highlighted, notebooks with Markdown notes, AI chat assistant that manages the todos and notes, MCP server for external AI clients like Claude Desktop): TanStack Start, MUI + DataGrid, Drizzle, login via Entra ID, AI SDK + MUI X Chat with a model of any OpenAI-compatible API, MCP TypeScript SDK.
 
-The app runs only on Cloudflare (Workers + D1). Locally it runs in the real Workers runtime (workerd) via `@cloudflare/vite-plugin`, D1 is emulated by Miniflare as a local SQLite database in `.wrangler/state/` (no Docker or external database needed).
+The app runs on two platforms with the same code, only the server entry differs (`src/platform/platform.server.ts`):
+
+|                   | Cloudflare (default)                                                                                                   | Node, e.g. on [bunny.net](https://bunny.net)                                                                            |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Runtime           | Cloudflare Workers (`src/server.cloudflare.ts`)                                                                        | Node in a container on [Magic Containers](https://docs.bunny.net/magic-containers) (`src/server.node.ts`, `Dockerfile`) |
+| Database          | D1                                                                                                                     | libSQL: [Bunny Database](https://docs.bunny.net/database)                                                               |
+| Login             | Cloudflare Access (Entra ID)                                                                                           | OpenID Connect in the app (Entra ID), `src/platform/oidc.server.ts`                                                     |
+| Deployment        | `npm run deploy`, Workers Builds, Worker Previews                                                                      | GitHub Actions (`.github/workflows/bunny.yml`)                                                                          |
+| Local development | `npm run dev`: Workers runtime (workerd) via `@cloudflare/vite-plugin`, D1 emulated by Miniflare in `.wrangler/state/` | `npm run dev:node`: Node, SQLite file `.data/app.db`                                                                    |
+
+The Node platform uses no Cloudflare service; neither does the chat assistant on either platform: its model is called with an API key (`AI_API_KEY`), without one there is no chat assistant (see [Chat assistant](#chat-assistant)). No Docker or external database is needed for development.
 
 ## Setup
 
@@ -13,22 +23,23 @@ The app runs only on Cloudflare (Workers + D1). Locally it runs in the real Work
 ## Development
 
 ```bash
-npm run dev  # applies pending migrations to the local D1, starts the app (http://localhost:5180)
+npm run dev       # Cloudflare platform: applies pending migrations to the local D1, starts the app (http://localhost:5180)
+npm run dev:node  # Node platform: applies pending migrations to the local SQLite file .data/app.db, starts the app (http://localhost:5180)
 ```
 
 Processes are managed by [dev-process-manager](https://www.npmjs.com/package/dev-process-manager) (`npx dev-pm status`, `npx dev-pm logs`, `npx dev-pm stop`).
 
-Cloudflare Access is simulated locally by the Workers runtime (`access.dev`, configured in `vite.config.ts`): every request is authenticated as `DEV_USER_EMAIL` (`.env`). To work as another user, set `DEV_USER_EMAIL` in `.env.local` and restart `npm run dev`. There is no login/logout locally (the logout button leads to a 404).
+Every request is authenticated as `DEV_USER_EMAIL` (`.env`): on the Cloudflare platform Cloudflare Access is simulated by the Workers runtime (`access.dev`, configured in `vite.config.ts`), on the Node platform the server entry uses it as long as `OIDC_ISSUER` isn't set (only in development). To work as another user, set `DEV_USER_EMAIL` in `.env.local` and restart. There is no login/logout locally (the logout button leads to a 404). To try the login of the Node platform locally, set the `OIDC_*` variables in `.env.local` (see [Deployment (bunny.net)](#deployment-bunnynet), redirect URI `http://localhost:5180/auth/callback`).
 
-The chat assistant calls a real model also in development, through the AI Gateway REST API of the account in `CLOUDFLARE_AI_ACCOUNT_ID` (`.env`), with costs. It needs a Cloudflare API token with the permission _Account > Workers AI > Read_ in `.env.local`:
+The chat assistant calls a real model also in development, with costs. It needs an API key in `.env.local` (without one there is no chat button), optionally another API or model:
 
 ```bash
-CLOUDFLARE_AI_API_TOKEN=...
+AI_API_KEY=...
+# AI_BASE_URL=https://<resource>.openai.azure.com/openai/v1  # default https://api.openai.com/v1
+# AI_MODEL=gpt-5-mini                                         # Azure: the deployment name
 ```
 
-No `wrangler login` needed: the AI binding (remote-only) isn't used in development. The worker sends the model requests to the dev server (`/__cloudflare-ai/...`), which forwards them from Node with the token (`cloudflareAiDevProxy.ts`). Not named `CLOUDFLARE_API_TOKEN`, as wrangler would use that one for deploying too.
-
-In a sandbox whose egress proxy injects credentials (e.g. [Claude Code on the web](https://code.claude.com/docs/en/claude-code-on-the-web)), allow `api.cloudflare.com` in the environment's network settings and add the API token as network secret (credential injection) for that host; `CLOUDFLARE_AI_API_TOKEN` can then stay unset (a placeholder is sent and replaced by the proxy). This works because the dev server sends the requests from Node, which uses `HTTPS_PROXY`; the Workers runtime itself ignores it.
+On the Cloudflare platform the worker sends the model requests to the dev server (`/__ai/...`), which forwards them from Node with the API key (`aiDevProxy.ts`). In a sandbox whose egress proxy injects credentials (e.g. [Claude Code on the web](https://code.claude.com/docs/en/claude-code-on-the-web)), allow the API's host in the environment's network settings and add the API key as network secret (credential injection) for that host; `AI_API_KEY` can then be any value (it is replaced by the proxy). This works because the requests are sent from Node, which uses `HTTPS_PROXY`; the Workers runtime itself ignores it. On the Node platform the server sends them itself.
 
 The local D1 database can be browsed and queried in the Cloudflare Local Explorer at http://localhost:5180/cdn-cgi/explorer (while `npm run dev` is running), or from the command line:
 
@@ -38,13 +49,15 @@ npm run db:reset  # delete the local database and re-apply all migrations
 npm run db:seed   # insert test data (scripts/fixtures.ts) for DEV_USER_EMAIL
 ```
 
+On the Node platform: `npm run db:reset:node`, `npm run db:seed:node` (the database is the file `.data/app.db`, e.g. `sqlite3 .data/app.db`).
+
 ## Structure
 
-The app consists of a core (app shell, authentication, chat assistant, MCP server, database connection) and feature modules. The todos and the notes are modules. Everything that belongs to a module lives in its folder `src/modules/<module>/`, the core only knows the modules through the registries and the interfaces in `src/modules/types.ts`.
+The app consists of a core (app shell, platforms with authentication and database connection, chat assistant, MCP server) and feature modules. The todos and the notes are modules. Everything that belongs to a module lives in its folder `src/modules/<module>/`, the core only knows the modules through the registries and the interfaces in `src/modules/types.ts`.
 
 Core:
 
-- `src/server.ts`: worker entry, authenticates every request (Cloudflare Access, `src/auth.server.ts`, the user is identified by email) before routing it: the app gets the user as request context, chat requests go to the user's chat agent, MCP requests to the MCP server (both also reject foreign origins). So an endpoint added later is authenticated too.
+- `src/server.cloudflare.ts`, `src/server.node.ts`: the server entries of the platforms (selected by `PLATFORM` in `vite.config.ts`): register the platform (`src/platform/platform.server.ts`: database, environment variables, logout) and authenticate every request (`src/platform/cloudflareAccess.server.ts`, `src/platform/oidc.server.ts`; the user is identified by email, `src/user.ts`) before `src/server.ts` routes it: the app gets the user as request context, chat requests go to the chat assistant, MCP requests to the MCP server (both also reject foreign origins). So an endpoint added later is authenticated too.
 - `src/start.ts`: the TanStack Start instance: CSRF check of the server functions, passes the user on to the server functions (`context.user`), maps the errors of the operations once for all server functions (`NotFoundError` → the router's not found, `ValidationError` → reaches the client as `ValidationError`, the form shows its message)
 - `src/router.tsx`: the router with TanStack Query (see [Data loading](#data-loading)); `src/routes.ts`: the route tree ([virtual file routes](https://tanstack.com/router/latest/docs/framework/react/routing/virtual-file-routes), configured in `tsr.config.json`): the core routes in `src/routes/`, the routes of each module mounted from its folder `src/modules/<module>/routes/` (file-based routing within the folder; the module folders with a `routes/` folder are found automatically). `src/routeTree.gen.ts` is generated by the TanStack Start Vite plugin on `dev`/`build` and by `npm run routegen` (`scripts/routeTree.ts`), which `npm run lint:tsc` runs first, so `tsc` never checks a stale route tree (committed)
 - `src/routes/index.tsx`: start page, redirects to `startPath` (`src/modules/registry.ts`)
@@ -53,10 +66,10 @@ Core:
 - `src/operations.ts`: the operation layer (see [Operations](#operations-one-definition-for-ui-chat-and-mcp)): `defineOperation`, `runOperation`, `operationInput`, `toolsFromOperations`; `src/operationHandler.ts`: the handler of a server function that wraps an operation; `src/errors.ts`: `NotFoundError`, `ValidationError`, `errorMessage` (independent of the stack, shared by server and client)
 - `src/modules/registry.ts`: the modules of the app (app shell part, in the order of the sidebar), the only list of modules; `src/modules/registry.server.ts`: their server parts (the `serverModule` export of every `src/modules/<module>/module.server.ts`, found with `import.meta.glob`)
 - `src/moduleQueries.ts`: reloading a module's data (`invalidateModules`, `useInvalidateModule`), a page's main query (`usePageQuery`); `src/collections.ts`: the default collection of a module's index page (`defaultCollectionId`)
-- `src/chat/`: chat assistant (see [Chat assistant](#chat-assistant)): the agent, its tools, the page context (`chatPage.ts`, `useChatPage.tsx`) and the reload after changes (`useChatChanges.ts`); `src/components/ChatPanel.tsx`: its UI
+- `src/chat/`: chat assistant (see [Chat assistant](#chat-assistant)): the endpoint, the model, its tools, the history (`db/`), the page context (`chatPage.ts`, `useChatPage.tsx`) and the reload after changes (`useChatChanges.ts`); `src/components/ChatPanel.tsx`: its UI
 - `src/mcp/`: MCP server (see [MCP server](#mcp-server-external-ai-clients))
-- `src/db/db.server.ts`: database connection; `src/dates.ts`: calendar dates (`YYYY-MM-DD`) without time zone, the user's local date; `src/searchParams.ts`: search params serialization; `src/gridSearch.ts`, `src/db/filters.server.ts`, `src/components/useServerGrid.ts`: DataGrids with server-side pagination, sorting and filtering, their state in the URL (one zod schema per grid for the search params and the operation's input, sorting and filters typed by the grid's fields, typed columns, the grid's props, the SQL for sorting and filtering); `src/components/`: shared components and hooks used by the modules (e.g. `NavigationList` for the sidebar, `CollectionHeader` (heading with rename and delete), `ConfirmDeleteDialog`, `NameDialog`, `useMutate` (a change without a form, then reloads the module's data))
-- `scripts/`: Node scripts (run with Node's TypeScript support, no build step): test data (`fixtures.ts`, `seed.ts`) and Preview deployments (`preview.ts`)
+- `src/db/db.server.ts`: database connection (D1 or libSQL, from the platform); `src/dates.ts`: calendar dates (`YYYY-MM-DD`) without time zone, the user's local date; `src/searchParams.ts`: search params serialization; `src/gridSearch.ts`, `src/db/filters.server.ts`, `src/components/useServerGrid.ts`: DataGrids with server-side pagination, sorting and filtering, their state in the URL (one zod schema per grid for the search params and the operation's input, sorting and filters typed by the grid's fields, typed columns, the grid's props, the SQL for sorting and filtering); `src/components/`: shared components and hooks used by the modules (e.g. `NavigationList` for the sidebar, `CollectionHeader` (heading with rename and delete), `ConfirmDeleteDialog`, `NameDialog`, `useMutate` (a change without a form, then reloads the module's data))
+- `scripts/`: Node scripts (run with Node's TypeScript support, no build step): test data (`fixtures.ts`, `seed.ts`), Preview deployments (`preview.ts`), migrations of the libSQL database (`migrate.ts`)
 
 Todos module (`src/modules/todos/`):
 
@@ -126,41 +139,48 @@ That's all: the chat assistant and the MCP server offer the tool `completeList` 
 
 The pages' data lives in [TanStack Query](https://tanstack.com/query)'s cache, with the router's official integration (`@tanstack/react-router-ssr-query`, `src/router.tsx`):
 
-- **Queries** (`src/modules/<module>/queries.ts`): typed `queryOptions` over the server functions. Every key starts with the module's id (e.g. `["todos", "lists"]`), so a change reloads exactly its module's data (`invalidateModules`, `src/moduleQueries.ts`): after a change in the UI (`useInvalidateModule`, `useMutate`) and after the assistant changed it (the chat panel reloads the modules the agent reports).
+- **Queries** (`src/modules/<module>/queries.ts`): typed `queryOptions` over the server functions. Every key starts with the module's id (e.g. `["todos", "lists"]`), so a change reloads exactly its module's data (`invalidateModules`, `src/moduleQueries.ts`): after a change in the UI (`useInvalidateModule`, `useMutate`) and after the assistant changed it (the chat panel reloads the modules the assistant reports).
 - **Loaders** get the page's data with `queryClient.fetchQuery` (from the cache while it is fresh, `staleTime` 30 seconds: changes made in the app reload right away, the staleness is for changes made elsewhere, e.g. by an MCP client), the components read it with the same query (`usePageQuery`: if a reload doesn't find the page's entity anymore, the route's not found page is shown right away: a not found error isn't retried). Links preload the page's data on hover. Loaders don't change data: the index pages (`/lists`, `/notes`) create the default collection only when they are opened, not when preloaded (`defaultCollectionId`).
 - **Sidebar**: when the app is opened, the layout starts loading every module's navigation data without waiting for it; each module's navigation reads its query (shown when loaded, `Suspense`), which keeps itself up to date (reloaded with its module's data).
-- **Rendering**: the app's pages (`src/routes/_app.tsx`) are rendered in the browser only (`ssr: "data-only"`, [selective SSR](https://tanstack.com/start/latest/docs/framework/react/guide/selective-ssr)); their loaders still run on the server in the same request, and the queries they loaded reach the browser with the page (no request on the first load). An app behind Cloudflare Access gains nothing from server-rendered pages, and the components needn't be hydration-safe (e.g. dates in the user's time zone).
+- **Rendering**: the app's pages (`src/routes/_app.tsx`) are rendered in the browser only (`ssr: "data-only"`, [selective SSR](https://tanstack.com/start/latest/docs/framework/react/guide/selective-ssr)); their loaders still run on the server in the same request, and the queries they loaded reach the browser with the page (no request on the first load). An app behind a login gains nothing from server-rendered pages, and the components needn't be hydration-safe (e.g. dates in the user's time zone).
 
 ## Authentication
 
-There is no login logic in the app: Cloudflare Access sits in front of the worker like an authenticating reverse proxy, lets users sign in with Entra ID and only forwards authenticated requests. The app rejects requests not authenticated by Access (`src/auth.server.ts`) and uses the user's email as user id:
+The user is identified by their email, used as user id for all data (`src/user.ts`). Every request is authenticated by the server entry of the platform before it is routed (`src/server.ts`).
+
+**Cloudflare**: there is no login logic in the app: Cloudflare Access sits in front of the worker like an authenticating reverse proxy, lets users sign in with Entra ID and only forwards authenticated requests. The app rejects requests not authenticated by Access (`src/platform/cloudflareAccess.server.ts`):
 
 - In production it verifies the Access JWT in the `Cf-Access-Jwt-Assertion` header (signature against `${ACCESS_TEAM_DOMAIN}/cdn-cgi/access/certs`, issuer and audience `ACCESS_AUD`). [`ctx.access`](https://developers.cloudflare.com/workers/configuration/cloudflare-access/) is not available there: workers with static assets run behind an internal router worker that doesn't pass it on.
 - Locally it uses `ctx.access`, simulated by the Workers runtime (`access.dev`).
 
-Denied requests are logged with the reason (Workers Logs).
+**Node** (`src/platform/oidc.server.ts`): the app signs users in itself with OpenID Connect (authorization code flow with PKCE, e.g. Entra ID): `/auth/login` redirects to the identity provider, `/auth/callback` verifies the ID token and sets a session cookie (a JWT signed with `SESSION_SECRET`, 24 hours, `HttpOnly`, `SameSite=Lax`), `/auth/logout` deletes it and signs out at the identity provider. Pages without a session redirect to the login, other requests (server functions, chat) get `401`. Who may sign in is decided by the identity provider (Entra ID: the app registration's users, "Assignment required"). The static assets (`dist/client`, the app's JavaScript) are served without login.
+
+Denied requests are logged with the reason (Workers Logs, the container's logs).
 
 ## Chat assistant
 
 The assistant (chat panel, robot button in the app bar) works with the tools of all modules, e.g. manages the user's lists and todos in natural language, e.g. "Lege ein Todo mit dem Titel „Milch holen“ an", or summarizes a note and turns it into todos.
 
-- **Agent** (`src/chat/agent.server.ts`): an `AIChatAgent` ([Cloudflare Agents SDK](https://developers.cloudflare.com/agents/)), a Durable Object per user (instance name = user id). It keeps the chat history in its SQLite storage, streams the answers over a WebSocket (resumed after reconnects, in sync across tabs) and calls the model with the [AI SDK](https://ai-sdk.dev) (`streamText`).
-- **Tools** (the operations with AI metadata of the modules, e.g. `src/modules/todos/operations.server.ts`, as `AppTool`s (`toolsFromOperations`) and as AI SDK tools in `src/chat/tools.server.ts`): e.g. list/create/rename/delete lists, find/create/update/delete todos, find/read/create/update notes, the same operations the UI uses (the agent runs in the same worker, it doesn't go through the MCP server). The user id comes from the authentication, never from the model. Deleting needs the user's confirmation in the chat (`needsApproval`).
+- **Endpoint** (`src/chat/chat.server.ts`, `POST /api/chat`): calls the model with the [AI SDK](https://ai-sdk.dev) (`streamText`) and streams the answer (UI message stream). The chat history is kept in the database per user (`src/chat/db/`, the last 200 messages): the client sends only the new message (the user's message, or the assistant's last message with the user's tool approvals), the server adds it to the history and saves the answer when it is finished. Stopping the answer (or closing the page) aborts the model request.
+- **Tools** (the operations with AI metadata of the modules, e.g. `src/modules/todos/operations.server.ts`, as `AppTool`s (`toolsFromOperations`) and as AI SDK tools in `src/chat/tools.server.ts`): e.g. list/create/rename/delete lists, find/create/update/delete todos, find/read/create/update notes, the same operations the UI uses (the assistant runs in the same server, it doesn't go through the MCP server). The user id comes from the authentication, never from the model. Deleting needs the user's confirmation in the chat (`needsApproval`).
 - **Page context**: the client sends its local date (for relative due dates) and the page shown with every message (`src/chat/chat.ts`). Each module describes what its pages show with a zod schema (`src/modules/<module>/chatPage.ts`, `defineChatPage`), a page reports it with `useChatPage(todosChatPage, { listId })` (`src/chat/useChatPage.tsx`, typed by the schema), and the server module turns it into context for the system prompt (`ServerModule.chatContext`, `defineChatContext` validates it with the schema), e.g. the current list as default list for new todos, or the open note. The server doesn't depend on routes.
-- **Routing/auth** (`src/server.ts`): the client connects to `/chat-agent`; the worker authenticates the request like any other (Cloudflare Access), rejects foreign origins (WebSockets aren't protected by CORS) and forwards it to the agent of the authenticated user. The Agents SDK's default routes (`/agents/...`) are not exposed.
-- **Model** (`src/chat/model.server.ts`, `AI_MODEL` in `wrangler.jsonc`, default `@cf/zai-org/glm-4.7-flash`): a [Workers AI](https://developers.cloudflare.com/workers-ai/) model with function calling ([catalog](https://developers.cloudflare.com/ai/models/), e.g. also `@cf/moonshotai/kimi-k2.6`): run by Cloudflare, billed through the Cloudflare account (Workers AI pricing), no provider API key. Via the AI binding (`createAI` from `agents/models/ai-sdk`); in development via the AI Gateway REST API (see [Development](#development)). Requests go through the AI Gateway `AI_GATEWAY_ID` (default `default`, created on first use): logs, spend limits, rate limits.
-- **UI** (`src/components/ChatPanel.tsx`): [MUI X Chat](https://mui.com/x/react-chat/) (`ChatBox`, alpha) renders the conversation of `useAgentChat`: its messages are controlled by `useAgentChat`, its adapter forwards sending, stopping and tool approvals. After a tool whose operation writes or deletes, the agent adds a `changes` data part with the module's id to its answer (`src/chat/agent.server.ts`); `useChatChanges` reports it once and the data of exactly these modules is reloaded (`invalidateModules`, see [Data loading](#data-loading)).
+- **Routing/auth** (`src/server.ts`): the server entry authenticates the request like any other and rejects foreign origins; the user id comes from the authentication, never from the client.
+- **Model** (`src/chat/model.server.ts`): a model with function calling of any provider with an OpenAI-compatible Chat Completions API (OpenAI, Azure OpenAI, Mistral, OpenRouter, ...), with an API key, on both platforms (no Cloudflare service):
+    - `AI_API_KEY` (secret): **without it there is no chat assistant**: the app shell hides the chat button (`getAppSession`, `src/user.functions.ts`), the endpoint answers `503`.
+    - `AI_BASE_URL`: default `https://api.openai.com/v1`; Azure OpenAI: `https://<resource>.openai.azure.com/openai/v1`.
+    - `AI_MODEL`: default `gpt-5-mini` (Azure: the deployment name).
+- **UI** (`src/components/ChatPanel.tsx`): [MUI X Chat](https://mui.com/x/react-chat/) (`ChatBox`, alpha) renders the conversation of the AI SDK's `useChat` (history loaded when the panel is opened): its messages are controlled by `useChat`, its adapter forwards sending, stopping and tool approvals (after an approval the assistant continues automatically). After a tool whose operation writes or deletes, the assistant adds a `changes` data part with the module's id to its answer (`src/chat/chat.server.ts`); `useChatChanges` reports it once and the data of exactly these modules is reloaded (`invalidateModules`, see [Data loading](#data-loading)).
 
-Setup (once per Cloudflare account): set a spend limit on the AI Gateway (dashboard → AI → AI Gateway). Some Workers AI models need the Workers Paid plan.
+Setup: set the API key as secret (Cloudflare: `npx wrangler secret put AI_API_KEY`, for Previews in the dashboard; Node/bunny.net: an environment variable of the container), `AI_BASE_URL` and `AI_MODEL` as variables (Cloudflare: `wrangler.jsonc`, also in `previews.vars`). Set a spend limit at the provider.
 
 ## MCP server (external AI clients)
 
-The same tools as the chat assistant are available to external AI clients (Claude Desktop, claude.ai, Claude Code, ...) as [MCP](https://modelcontextprotocol.io) server at `https://<worker>.workers.dev/mcp`. The AI client brings its own model: no Workers AI costs.
+The same tools as the chat assistant are available to external AI clients (Claude Desktop, claude.ai, Claude Code, ...) as [MCP](https://modelcontextprotocol.io) server at `https://<app>/mcp`. The AI client brings its own model: no model costs for the app.
 
-- **Server** (`src/mcp/mcp.server.ts`): an `McpServer` of the [MCP TypeScript SDK](https://ts.sdk.modelcontextprotocol.io/v2/) (v2) with the tools of the modules, served stateless over Streamable HTTP with `createMcpHandler` of the Agents SDK (no Durable Object, no MCP session; current and 2025 protocol versions). Read-only tools are annotated as such, deleting tools as destructive: MCP clients ask the user for confirmation depending on their settings.
-- **Login**: with Cloudflare Access [managed OAuth](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/), Access is the OAuth authorization server for MCP clients (discovery, dynamic client registration, tokens): the client opens the browser, the user signs in with Entra ID like in the app (same Access policies), the client gets an OAuth token. Access verifies the token on every request and forwards it with the Access JWT of the user, like a browser session. So the app has no OAuth code of its own: `src/server.ts` authenticates `/mcp` requests like all others (`src/auth.server.ts`), rejects foreign origins and passes the user to the MCP server; every tool is scoped to that user.
+- **Server** (`src/mcp/mcp.server.ts`): an `McpServer` of the [MCP TypeScript SDK](https://ts.sdk.modelcontextprotocol.io/v2/) (v2) with the tools of the modules, served stateless over Streamable HTTP with the SDK's `createMcpHandler` (no MCP session; current and 2025 protocol versions). Read-only tools are annotated as such, deleting tools as destructive: MCP clients ask the user for confirmation depending on their settings.
+- **Login on Cloudflare**: with Cloudflare Access [managed OAuth](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/), Access is the OAuth authorization server for MCP clients (discovery, dynamic client registration, tokens): the client opens the browser, the user signs in with Entra ID like in the app (same Access policies), the client gets an OAuth token. Access verifies the token on every request and forwards it with the Access JWT of the user, like a browser session. So the app has no OAuth code of its own: `src/server.ts` authenticates `/mcp` requests like all others (`src/auth.server.ts`), rejects foreign origins and passes the user to the MCP server; every tool is scoped to that user.
 
-Setup (once, Zero Trust dashboard → Access controls → Applications → the application of the worker → Edit → Advanced settings):
+Setup on Cloudflare (once, Zero Trust dashboard → Access controls → Applications → the application of the worker → Edit → Advanced settings):
 
 1. Turn on **Managed OAuth**.
 2. **Allowed redirect URIs**: `https://claude.ai/api/mcp/auth_callback` and `https://claude.com/api/mcp/auth_callback` (Claude Desktop and claude.ai connect through Anthropic's servers), plus the redirect URIs of other web-based MCP clients.
@@ -178,22 +198,31 @@ Connect:
 claude mcp add --transport http todos https://<worker>.workers.dev/mcp
 ```
 
+**Login on Node** (bunny.net): the app is an OAuth resource server of the identity provider (`src/platform/oidc.server.ts`, only when `MCP_OAUTH_AUDIENCE` is set, otherwise `/mcp` answers `404`): MCP clients send an access token of the identity provider as Bearer token, the app verifies it (signature, issuer `OIDC_ISSUER`, audience `MCP_OAUTH_AUDIENCE`) and takes the user's email from it (`email`, `preferred_username` or `upn`). Without a token it answers `401` with a link to its [Protected Resource Metadata](https://datatracker.ietf.org/doc/html/rfc9728) (`/.well-known/oauth-protected-resource/mcp`), which names the identity provider as authorization server, so the client signs the user in there. Entra ID has no dynamic client registration: the MCP client needs a client id of an app registration (e.g. claude.ai: Add custom connector → Advanced settings → OAuth Client ID/Secret). Setup in Entra ID:
+
+1. In the app's registration (or a separate one for the API): Expose an API → Application ID URI (e.g. `api://<client-id>`, = `MCP_OAUTH_AUDIENCE`; with access token version 2 (Manifest: `requestedAccessTokenVersion: 2`) the audience is the client id) and a scope (e.g. `mcp`, `MCP_OAUTH_SCOPE=api://<client-id>/mcp`).
+2. An app registration for the MCP client with the redirect URIs of the client (e.g. `https://claude.ai/api/mcp/auth_callback`, `https://claude.com/api/mcp/auth_callback`; for local clients `http://localhost`) and the permission for that scope.
+
+This setup is not tested with every MCP client yet.
+
 Locally the MCP server is at http://localhost:5180/mcp, without login (authenticated as `DEV_USER_EMAIL` by the simulated Access), e.g. `claude mcp add --transport http todos-dev http://localhost:5180/mcp`. MCP clients that run in a browser page of another origin are rejected (foreign origin).
 
 ## Database
 
-Cloudflare D1 (SQLite) with Drizzle: schema and repositories in the modules (`src/modules/<module>/db/`), migrations in `drizzle/` (one migration history for the database, generated from the schemas of all modules).
+SQLite with Drizzle: Cloudflare D1 or libSQL (Bunny Database) on Node. Schema and repositories in the modules (`src/modules/<module>/db/`, the chat history in `src/chat/db/`), migrations in `drizzle/` (one migration history for the database, generated from the schemas of all modules; applied with wrangler on D1, with `scripts/migrate.ts` (Drizzle's migrator) on libSQL).
 
 After changing the schema:
 
 ```bash
 npm run db:generate  # generates a migration into drizzle/
-npm run db:migrate   # applies it to the local D1 (also done on `npm run dev`)
+npm run db:migrate   # applies it to the local D1 (also done on `npm run dev`; Node platform: `npm run db:migrate:node`)
 ```
 
-Migrations are applied before the new code is deployed (`npm run deploy`), so the currently running code must keep working with the new schema: e.g. add a column (with a default) in one deployment, remove one only after the code no longer uses it.
+Migrations are applied before the new code is deployed (`npm run deploy`; on bunny.net when the new container starts, while the old one still serves requests), so the currently running code must keep working with the new schema: e.g. add a column (with a default) in one deployment, remove one only after the code no longer uses it.
 
 ## Deployment (Cloudflare)
+
+The production deployment on Cloudflare (Workers + D1 + Access). The chat assistant needs the secret `AI_API_KEY` (`npx wrangler secret put AI_API_KEY`), see [Chat assistant](#chat-assistant).
 
 Deploy with `npm run deploy` (build, apply pending D1 migrations, deploy, [delete databases of deleted Previews](#preview-deployments)), either locally or with [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/) (Git integration): leave the build command empty and set the deploy command to `npm run deploy`.
 
@@ -217,7 +246,7 @@ How it works (`scripts/preview.ts`):
     2. Applies the pending migrations, like `npm run deploy` does in production. The database is kept between pushes, so testers' data survives a push and the migrations are tested on existing data.
     3. Inserts the test data (`scripts/fixtures.ts`) for every email in the build variable `PREVIEW_FIXTURE_USERS`, once per database. Data belongs to the Access user's email, so these are the emails of the people testing Previews.
     4. Builds with the database in the `previews` config (`vite.config.ts`) and deploys the Preview with `wrangler preview --name <branch>`. Previews use the `previews` block of `wrangler.jsonc`, not the production settings: new bindings and vars have to be added there too.
-- The chat assistant works in Previews too (same model and AI Gateway as production, costs go to the same account). Every Preview gets its own Durable Object namespace from Cloudflare, so chat histories are separate per Preview and deleted with it.
+- The chat assistant works in Previews if they have the secret `AI_API_KEY` (Previews don't inherit the production secrets); the chat histories are in the Preview's database.
 - When the branch is deleted (GitHub deletes it after merging the pull request, see setup), Workers Builds deletes its Preview. Cloudflare doesn't delete the D1 database with it, so `npm run preview:cleanup` deletes the databases whose Preview no longer exists. As a safety net for branches that are never deleted, it also deletes Previews not deployed for 30 days (build variable `PREVIEW_TTL_DAYS`) together with their database; a later push to the branch creates them again, with fresh test data.
 - Cleanup runs after every production deploy (= after every merge) and every Preview deploy, so nothing is cleaned up while there are no builds. It never fails the deployment, keeps a database whenever it can't tell whether its Preview exists, and skips databases created less than an hour ago (their Preview may not exist yet). It checks Previews with the Cloudflare API if `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are set, otherwise with `wrangler preview secret list` (fails with "was not found" for a deleted Preview); the log says which one is used.
 
@@ -234,3 +263,27 @@ A pull request closed without merging keeps its Preview and database until its b
     3. Variables and secrets: add `PREVIEW_FIXTURE_USERS` with the testers' emails (comma separated). Optionally `PREVIEW_TTL_DAYS` (default 30).
     4. The build token needs permission to edit D1 (it already applies the production migrations in `npm run deploy`).
 3. GitHub (repository settings → General → Pull Requests): enable "Automatically delete head branches", so merging a pull request deletes its branch and with it the Preview.
+
+## Deployment (bunny.net)
+
+The app runs as a Node server in a container on [bunny.net Magic Containers](https://docs.bunny.net/magic-containers) with a [Bunny Database](https://docs.bunny.net/database) (libSQL), without any Cloudflare service. Every push to `main` builds the image (`Dockerfile`), pushes it to the GitHub Container Registry (`ghcr.io/<owner>/<repo>:<commit>`) and updates the container (`.github/workflows/bunny.yml`, with bunny.net's [GitHub Action](https://docs.bunny.net/magic-containers/deploy-with-github-actions)). The container applies the pending migrations when it starts (`scripts/migrate.ts`) and serves the app on port 3000 (`srvx`, `dist/server/server.node.js` plus the static files `dist/client`).
+
+```bash
+npm run build:node  # PLATFORM=node vite build: dist/server/server.node.js (all dependencies bundled except @libsql/client), dist/client
+npm run start:node  # applies the migrations, starts the server (http://localhost:3000), with the environment below
+docker build -t serverless-todos .
+```
+
+Setup (once):
+
+1. Bunny Database: create a database (dashboard → Database), generate tokens (Access → Generate Tokens) and add them to the Magic Containers app ("Add Secrets to Magic Container App"): this sets `BUNNY_DATABASE_URL` and `BUNNY_DATABASE_AUTH_TOKEN`. Without them the container uses a SQLite file inside the container, which is lost on every deployment.
+2. Entra ID (or another OpenID Connect provider): an app registration (single tenant) with the redirect URI `https://<app>/auth/callback` (platform "Web") and a client secret; optional claim `email` for the ID token. To allow only some users of the tenant: Enterprise applications → the app → Properties → Assignment required, then assign users or groups.
+3. Magic Containers: create an app with a container from the image `ghcr.io/<owner>/<repo>` (the first image is pushed by the first run of the workflow, or push one manually; for a private package add the registry with a GitHub token with `read:packages` under Image Registries, or make the package public), endpoint (CDN) to port 3000, single region (one database primary). Environment variables:
+    - `APP_URL`: the app's public URL, e.g. `https://todos.example.com` (the container gets the requests from bunny.net's edge over http; used for the login's redirect URI, the origin checks and secure cookies)
+    - `OIDC_ISSUER` (Entra ID: `https://login.microsoftonline.com/<tenant-id>/v2.0`), `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`
+    - `SESSION_SECRET`: at least 32 random characters (e.g. `openssl rand -base64 32`), signs the session cookies; changing it signs everybody out
+    - Chat assistant (optional, without `AI_API_KEY` there is none): `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`, see [Chat assistant](#chat-assistant)
+    - MCP server (optional): `MCP_OAUTH_AUDIENCE`, `MCP_OAUTH_SCOPE`, see [MCP server](#mcp-server-external-ai-clients)
+4. GitHub (repository settings → Secrets and variables → Actions): secret `BUNNY_API_KEY` (account API key, bunny.net doesn't support sub-users for it), variables `BUNNY_APP_ID` (the Magic Containers app) and `BUNNY_CONTAINER_NAME` (the container's name in the app, default `app`). The workflow only runs when `BUNNY_APP_ID` is set.
+
+There are no Preview deployments per branch on bunny.net.

@@ -5,14 +5,17 @@ import { dateStringSchema } from "~/dates";
 
 import { chatPageSchema } from "./chatPage";
 
-// Shared by the chat agent (server) and the chat panel (client)
+// Shared by the chat endpoint (server) and the chat panel (client)
 
-// Path the client connects to (WebSocket and HTTP); the server picks the agent instance of the authenticated user (src/server.ts)
-export const chatAgentPath = "chat-agent";
+// The endpoint the chat panel sends its messages to (src/chat/chat.server.ts), the answer is streamed back (AI SDK UI message stream)
+export const chatPath = "/api/chat";
 
-// Sent by the client with every chat message: the server doesn't know the user's local date or what they are looking at
+// Sent by the client with every chat message. The history is kept by the server (src/chat/db/), so the client sends only the new
+// message: the user's message, or the assistant's last message with the user's tool approvals.
 export const chatRequestBodySchema = z.object({
-    // the user's local date (YYYY-MM-DD), for relative dates like "tomorrow"
+    // validated with the AI SDK's validateUIMessages
+    message: z.unknown(),
+    // the user's local date (YYYY-MM-DD), for relative dates like "tomorrow": the server doesn't know the user's time zone
     today: dateStringSchema.optional(),
     // the page shown, reported by the page with useChatPage (src/chat/chatPage.ts)
     page: chatPageSchema.optional(),
@@ -20,12 +23,15 @@ export const chatRequestBodySchema = z.object({
 
 export type ChatRequestBody = z.infer<typeof chatRequestBodySchema>;
 
-// Data parts the agent adds to its answers
+// Data parts the assistant adds to its answers
 export type ChatDataParts = {
     // after a tool changed data (an operation with effect write or delete): the ids of the modules whose data changed, so the client
-    // reloads exactly their data (useChatChanges). Part of the persisted message (not transient): a client that is reconnecting
-    // while a tool runs (e.g. right after approving a deletion) gets it with the message instead of the stream.
+    // reloads exactly their data (useChatChanges). Part of the persisted message (not transient).
     changes: { modules: string[] };
+};
+
+export const chatDataPartSchemas = {
+    changes: z.object({ modules: z.array(z.string()) }),
 };
 
 export type ChatMessage = UIMessage<unknown, ChatDataParts>;

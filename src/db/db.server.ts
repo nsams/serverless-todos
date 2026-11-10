@@ -1,7 +1,6 @@
-import { env } from "cloudflare:workers";
-import { drizzle } from "drizzle-orm/d1";
+import { getPlatform } from "~/platform/platform.server";
 
-// Cheap to create: the D1 binding is just a handle, no connection pool to manage
+// D1 on Cloudflare, libSQL (Bunny Database) on Node (src/platform/platform.server.ts)
 export function getDb() {
-    return drizzle(env.DB, { casing: "snake_case" });
+    return getPlatform().getDb();
 }

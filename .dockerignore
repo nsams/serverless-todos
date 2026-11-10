@@ -1,0 +1,10 @@
+node_modules
+dist
+.data
+.wrangler
+.tanstack
+.git
+.env
+.env.local
+*.tsbuildinfo
+worker-configuration.d.ts

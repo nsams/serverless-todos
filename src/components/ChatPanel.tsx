@@ -1,51 +1,80 @@
-import { useAgentChat } from "@cloudflare/ai-chat/react";
+import { useChat } from "@ai-sdk/react";
 import { Close, Delete } from "@dextinity/admin-icons";
 import { Alert, Box, IconButton, Toolbar, Tooltip, Typography } from "@mui/material";
 import { ChatBox } from "@mui/x-chat";
 import type { ChatAdapter, ChatMessage as MuiChatMessage, ChatMessagePart } from "@mui/x-chat/headless";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
-import { useAgent } from "agents/react";
-import { getToolName, isToolUIPart } from "ai";
-import { useMemo } from "react";
+import { DefaultChatTransport, getToolName, isToolUIPart, lastAssistantMessageIsCompleteWithApprovalResponses } from "ai";
+import { useMemo, useState } from "react";
 
-import { chatAgentPath, type ChatMessage, type ChatRequestBody } from "~/chat/chat";
+import { type ChatMessage, chatPath, type ChatRequestBody } from "~/chat/chat";
+import { clearChatMessages, getChatMessages } from "~/chat/chat.functions";
 import { useChatChanges } from "~/chat/useChatChanges";
 import { useChatPageGetter } from "~/chat/useChatPage";
+import { useShowError } from "~/components/ErrorSnackbar";
 import { toDateString } from "~/dates";
 import { invalidateModules } from "~/moduleQueries";
 import { appModules } from "~/modules/registry";
 
 const suggestions = appModules.flatMap((module) => module.chat?.suggestions ?? []);
 
-// The chat with the assistant (src/chat/agent.server.ts).
+// The chat with the assistant (src/chat/chat.server.ts).
 //
-// useAgentChat (WebSocket to the user's ChatAgent) owns the conversation: history (persisted by the agent), streaming, resuming
-// after reconnects, tool approvals. MUI X Chat only renders it: its messages are controlled by useAgentChat's messages and its adapter
-// forwards sending, stopping and approvals to useAgentChat.
+// The AI SDK's useChat owns the conversation: streaming, tool approvals. The history is kept by the server (loaded when the panel is
+// opened, the client sends only the new message). MUI X Chat only renders it: its messages are controlled by useChat's messages and its
+// adapter forwards sending, stopping and approvals to useChat.
 export default function ChatPanel({ onClose }: { onClose: () => void }) {
     const queryClient = useQueryClient();
     const router = useRouter();
     // what the user is looking at (reported by the page with useChatPage)
     const getChatPage = useChatPageGetter();
 
-    // the server picks the agent instance of the authenticated user (src/server.ts)
-    const agent = useAgent({ agent: "ChatAgent", basePath: chatAgentPath });
-    const { messages, sendMessage, stop, addToolApprovalResponse, clearHistory, error } = useAgentChat<unknown, ChatMessage>({
-        agent,
-        // read on every request
-        body: (): ChatRequestBody => ({ today: toDateString(new Date()), page: getChatPage() }),
+    // the history, once when the panel is opened (the panel stays mounted, useChat keeps the conversation from then on)
+    const { data: initialMessages } = useSuspenseQuery({
+        queryKey: ["chat", "messages"],
+        queryFn: async () => JSON.parse(await getChatMessages()) as ChatMessage[],
+        staleTime: Infinity,
     });
+    const [transport] = useState(
+        () =>
+            new DefaultChatTransport<ChatMessage>({
+                api: chatPath,
+                // the new message only (the server keeps the history); read on every request
+                prepareSendMessagesRequest: ({ messages }) => {
+                    const body: ChatRequestBody = { message: messages.at(-1), today: toDateString(new Date()), page: getChatPage() };
+                    return { body };
+                },
+            }),
+    );
+    const { messages, sendMessage, stop, addToolApprovalResponse, setMessages, error } = useChat<ChatMessage>({
+        messages: initialMessages,
+        transport,
+        // after the user approved or denied a tool call (e.g. a deletion), the assistant continues
+        sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
+    });
+    const showError = useShowError();
 
-    // A tool changed the data of modules (reported by the agent, src/chat/agent.server.ts): reload exactly their data (the keys of a
+    const clearHistory = () => {
+        clearChatMessages().then(
+            () => setMessages([]),
+            () => showError("Clearing the chat failed, please try again."),
+        );
+    };
+
+    // A tool changed the data of modules (reported by the assistant, src/chat/chat.server.ts): reload exactly their data (the keys of a
     // module's queries start with its id, src/moduleQueries.ts)
     useChatChanges(messages, (modules) => void invalidateModules(queryClient, router, modules));
 
     const adapter = useMemo(
         (): ChatAdapter => ({
             sendMessage: async ({ message, signal }) => {
-                // the reply is rendered from useAgentChat's messages, the stream only tells MUI X Chat when the turn is over
-                const done = sendMessage({ id: message.id, role: "user", parts: message.parts.filter((part) => part.type === "text") });
+                // the reply is rendered from useChat's messages, the stream only tells MUI X Chat when the turn is over
+                const done = sendMessage({
+                    id: message.id,
+                    role: "user",
+                    parts: message.parts.flatMap((part) => (part.type === "text" ? [{ type: "text", text: part.text }] : [])),
+                });
                 signal.addEventListener("abort", () => stop(), { once: true });
                 return new ReadableStream({
                     start: (controller) => {

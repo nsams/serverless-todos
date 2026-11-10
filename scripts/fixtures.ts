@@ -181,7 +181,7 @@ function toPlainSql(query: { sql: string; params: unknown[] }) {
     return `${query.sql.replace(/\?/g, () => sqlLiteral(query.params[index++]))};`;
 }
 
-// SQL inserting the fixtures for the given users (normalized like the user id in src/auth.server.ts)
+// SQL inserting the fixtures for the given users (normalized like the user id in src/user.ts)
 export function createFixturesSql(emails: string[]) {
     const statements: string[] = [];
     for (const email of emails) {

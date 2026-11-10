@@ -1,14 +1,19 @@
 import { cloudflare } from "@cloudflare/vite-plugin";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type PluginOption } from "vite";
 
-import { cloudflareAiDevProxy } from "./cloudflareAiDevProxy";
+import { aiDevProxy } from "./aiDevProxy";
 
-export default defineConfig({
-    plugins: [
+// The platform the app is built for (see src/platform/platform.server.ts):
+// - cloudflare (default): Cloudflare Workers, runs in the Workers runtime (workerd) also in development
+// - node (PLATFORM=node): a Node server, e.g. in a container on bunny.net Magic Containers (Dockerfile)
+const platform = process.env.PLATFORM === "node" ? "node" : "cloudflare";
+
+function cloudflarePlugins(): PluginOption[] {
+    return [
         // before the Cloudflare plugin, which handles all other requests
-        cloudflareAiDevProxy(),
+        aiDevProxy(),
         cloudflare({
             viteEnvironment: { name: "ssr" },
             config: () => ({
@@ -31,14 +36,27 @@ export default defineConfig({
                       }
                     : {}),
             }),
-            // No remote bindings (they'd need `wrangler login`): the AI binding (remote-only) isn't used in development, the chat assistant
-            // calls the model through cloudflareAiDevProxy instead (see src/chat/model.server.ts)
+            // No remote bindings (they'd need `wrangler login`): the app only uses D1, emulated locally
             remoteBindings: false,
         }),
+    ];
+}
+
+export default defineConfig(({ command }) => ({
+    plugins: [
+        ...(platform === "cloudflare" ? cloudflarePlugins() : []),
         // the routes of the modules live in their module folders: tsr.config.json, src/routes.ts
-        tanstackStart(),
+        tanstackStart({
+            // the server entry of the platform (relative to src/); on Cloudflare also `main` in wrangler.jsonc
+            server: { entry: platform === "node" ? "server.node.ts" : "server.cloudflare.ts" },
+        }),
         viteReact(),
     ],
+    // Node platform: the build bundles the dependencies like for Cloudflare, except libSQL with its native bindings (the only dependency
+    // the container installs, see Dockerfile). In development only the packages Node's ESM loader can't load (extensionless imports).
+    ...(platform === "node" && {
+        ssr: command === "build" ? { noExternal: true, external: ["@libsql/client"] } : { noExternal: [/^@dextinity\//] },
+    }),
     server: {
         port: Number(process.env.APP_PORT ?? 5173),
         strictPort: true,
@@ -46,4 +64,4 @@ export default defineConfig({
     resolve: {
         tsconfigPaths: true,
     },
-});
+}));

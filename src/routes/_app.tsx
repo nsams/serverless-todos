@@ -18,12 +18,12 @@ import { Fragment, lazy, Suspense, useState } from "react";
 
 import { appName } from "~/app";
 import { appModules } from "~/modules/registry";
-import { getCurrentUser } from "~/user.functions";
+import { getAppSession } from "~/user.functions";
 
 // Layout of the app pages: app bar and the navigation of the modules in a sidebar
 export const Route = createFileRoute("/_app")({
     // The app's pages are rendered in the browser only, their data is still loaded on the server (in the same request, sent with the
-    // page). An app behind Cloudflare Access gains nothing from rendering them on the server (no search engines, the user waits for the
+    // page). An app behind a login gains nothing from rendering them on the server (no search engines, the user waits for the
     // scripts anyway), it would only cost CPU time per page view and need hydration-safe components: e.g. dates formatted in the
     // user's time zone (the grids' date columns, useToday) would differ between the server and the browser.
     ssr: "data-only",
@@ -36,24 +36,26 @@ export const Route = createFileRoute("/_app")({
                 void navigation?.prefetch(queryClient);
             }
         }
-        await queryClient.ensureQueryData(userQuery);
+        await queryClient.ensureQueryData(sessionQuery);
     },
     component: AppLayout,
     // the server's response, until the page is rendered in the browser
     pendingComponent: () => <LinearProgress />,
 });
 
-// The authenticated user (doesn't change while the app is open)
-const userQuery = queryOptions({ queryKey: ["user"], queryFn: () => getCurrentUser(), staleTime: Infinity });
+// The authenticated user, the logout and whether the chat assistant is available (don't change while the app is open)
+const sessionQuery = queryOptions({ queryKey: ["session"], queryFn: () => getAppSession(), staleTime: Infinity });
 
 const drawerWidth = 260;
 const chatWidth = 420;
 
-// loaded on first open: the chat (MUI X Chat, Agents SDK client) is only needed in the browser
+// loaded on first open: the chat (MUI X Chat, AI SDK client) is only needed in the browser
 const ChatPanel = lazy(() => import("~/components/ChatPanel"));
 
 function AppLayout() {
-    const { data: user } = useSuspenseQuery(userQuery);
+    const {
+        data: { user, logoutPath, chatEnabled },
+    } = useSuspenseQuery(sessionQuery);
     const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
     const [chatOpen, setChatOpen] = useState(false);
     // stays mounted once opened, so the conversation (and a running answer) survives closing the panel
@@ -102,11 +104,14 @@ function AppLayout() {
                         {appName}
                     </Typography>
                     <Typography sx={{ mr: 1, display: { xs: "none", sm: "block" } }}>{user.email}</Typography>
-                    <IconButton color="inherit" aria-label="Assistant" aria-pressed={chatOpen} onClick={toggleChat}>
-                        <Chatbot />
-                    </IconButton>
-                    {/* handled by Cloudflare Access, so a full page load */}
-                    <IconButton href="/cdn-cgi/access/logout" color="inherit" aria-label="Logout">
+                    {/* only with an API key for the model (src/chat/model.server.ts) */}
+                    {chatEnabled && (
+                        <IconButton color="inherit" aria-label="Assistant" aria-pressed={chatOpen} onClick={toggleChat}>
+                            <Chatbot />
+                        </IconButton>
+                    )}
+                    {/* handled by Cloudflare Access or the app's own login (src/platform/), so a full page load */}
+                    <IconButton href={logoutPath} color="inherit" aria-label="Logout">
                         <Logout />
                     </IconButton>
                 </Toolbar>

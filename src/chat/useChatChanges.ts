@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 
 import type { ChatMessage } from "./chat";
 
-// Calls onChange with the modules whose data the assistant's tools changed (the agent's "changes" data parts, src/chat/chat.ts),
+// Calls onChange with the modules whose data the assistant's tools changed (the assistant's "changes" data parts, src/chat/chat.ts),
 // once per change, so the client reloads their data. Independent of the data loading: the caller invalidates (e.g. the router's
 // loaders, or the modules' queries). Changes in the history that is there when the chat opens are not reported (the page data
 // was loaded after them).
