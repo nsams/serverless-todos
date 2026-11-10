@@ -21,8 +21,8 @@ type OperationOutcome = { result: unknown } | { error: OperationError } | { redi
 const outcomes = new Map<string, OperationOutcome>();
 let lastCall = 0;
 
-export function storeOperationOutcome(call: string, outcome: unknown) {
-    outcomes.set(call, outcome as OperationOutcome);
+export function storeOperationOutcome(call: string, outcome: OperationOutcome) {
+    outcomes.set(call, outcome);
 }
 
 type Name<Module extends ServerModule> = keyof ModuleOperations<Module> & string;
