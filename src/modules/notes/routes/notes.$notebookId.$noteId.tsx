@@ -1,7 +1,7 @@
 import { ArrowLeft, Delete, Move } from "@dextinity/admin-icons";
 import { Box, Container, IconButton, Menu, MenuItem, Paper, Stack, Tab, Tabs, TextField, Tooltip, Typography } from "@mui/material";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { href, isRouteErrorResponse, Link, replace, useLocation, useParams } from "react-router";
+import { href, isRouteErrorResponse, Link, replace, useLocation, useRevalidator } from "react-router";
 
 import { appName } from "~/app";
 import { useChatPage } from "~/chat/useChatPage";
@@ -40,7 +40,7 @@ export default function NotePage({ loaderData: note }: Route.ComponentProps) {
     useChatPage(notesChatPage, { notebookId: note.notebookId, noteId: note.id });
 
     return (
-        <NotePageLayout>
+        <NotePageLayout notebookId={note.notebookId}>
             {/* a fresh editor (draft, save state) per note */}
             <NoteEditor key={note.id} note={note} />
         </NotePageLayout>
@@ -48,12 +48,12 @@ export default function NotePage({ loaderData: note }: Route.ComponentProps) {
 }
 
 // e.g. deleted by the assistant while open
-export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+export function ErrorBoundary({ error, params }: Route.ErrorBoundaryProps) {
     if (!isRouteErrorResponse(error) || error.status !== 404) {
         throw error;
     }
     return (
-        <NotePageLayout>
+        <NotePageLayout notebookId={params.notebookId}>
             <Paper sx={{ p: 4, textAlign: "center" }}>
                 <Typography color="text.secondary">This note doesn't exist (anymore).</Typography>
             </Paper>
@@ -62,15 +62,14 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
 }
 
 // The notebook's grid in the state it was left (the note's search params)
-function useNotebookUrl() {
-    const { notebookId = "" } = useParams();
+function useNotebookUrl(notebookId: string) {
     const search = validateNoteSearch(parseSearch(useLocation().search));
-    return { notebookId, notebookUrl: href("/notes/:notebookId", { notebookId }) + stringifySearch(search) };
+    return href("/notes/:notebookId", { notebookId }) + stringifySearch(search);
 }
 
 // The back link to the notebook's grid above the editor
-function NotePageLayout({ children }: { children: ReactNode }) {
-    const { notebookId, notebookUrl } = useNotebookUrl();
+function NotePageLayout({ notebookId, children }: { notebookId: string; children: ReactNode }) {
+    const notebookUrl = useNotebookUrl(notebookId);
     const notebook = useNotebooks().find((item) => item.id === notebookId);
     return (
         <Container sx={{ py: 4 }}>
@@ -98,8 +97,9 @@ type Values = { title: string; body: string };
 
 function NoteEditor({ note }: { note: NoteView }) {
     const { run, runAndNavigate } = useNoteOperations();
-    const { notebookUrl } = useNotebookUrl();
+    const notebookUrl = useNotebookUrl(note.notebookId);
     const { search } = useLocation();
+    const { revalidate } = useRevalidator();
     const showError = useShowError();
 
     const [draft, setDraft] = useState<Values>({ title: note.title, body: note.body });
@@ -131,10 +131,15 @@ function NoteEditor({ note }: { note: NoteView }) {
         saveQueue.current = saveQueue.current.then(async () => {
             setStatus("saving");
             try {
-                // nothing else on the page changes: no reload of the page's data (on every autosave)
+                // no reload of the page's data on every autosave: only the title is shown elsewhere (the page title, below)
                 const { updated } = await run("updateNote", { id: note.id, ...values }, { revalidate: false });
                 setSaved({ ...values, updatedAt: updated.updatedAt.getTime() });
                 setStatus("saved");
+                // reloaded after the saved state is set, so the reloaded note isn't taken for a change made elsewhere (which would
+                // replace the draft, e.g. drop a trailing space typed meanwhile)
+                if (values.title !== note.title) {
+                    void revalidate();
+                }
             } catch (error) {
                 setStatus("error");
                 showError(errorMessage(error, "Saving the note failed, please try again."));
