@@ -1,35 +1,34 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { linkOptions, useNavigate } from "@tanstack/react-router";
+import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router";
 
 import { NavigationList } from "~/components/NavigationList";
-import { useInvalidateModule } from "~/moduleQueries";
 
+import { notesApi } from "../api";
 import { maxNotebookNameLength } from "../limits";
-import { notesModuleId } from "../moduleId";
-import { createNotebook } from "../notebooks.functions";
-import { notebooksQuery } from "../queries";
+import { notebookRoute } from "../routes";
 
 // The user's notebooks in the app's sidebar
 export function NotebooksNavigation({ onNavigate }: { onNavigate: () => void }) {
-    const { data: notebooks } = useSuspenseQuery(notebooksQuery);
+    const { data: notebooks } = useSuspenseQuery(notesApi.listNotebooks.queryOptions({}));
     const navigate = useNavigate();
-    const invalidate = useInvalidateModule(notesModuleId);
+    // opens the new notebook (the notebooks are reloaded afterwards)
+    const createNotebook = useMutation(
+        notesApi.createNotebook.mutationOptions({ onSuccess: ({ id }) => navigate(notebookRoute.href({ notebookId: id })) }),
+    );
 
     return (
         <NavigationList
             items={notebooks.map((notebook) => ({
                 id: notebook.id,
                 name: notebook.name,
-                link: linkOptions({ to: "/notes/$notebookId", params: { notebookId: notebook.id } }),
+                link: notebookRoute.link({ notebookId: notebook.id }),
                 count: notebook.noteCount,
                 countLabel: `${notebook.noteCount} notes`,
             }))}
             createLabel="New notebook"
             maxNameLength={maxNotebookNameLength}
             onCreate={async (name) => {
-                const notebook = await createNotebook({ data: { name } });
-                await navigate({ to: "/notes/$notebookId", params: { notebookId: notebook.id } });
-                void invalidate();
+                await createNotebook.mutateAsync({ name });
             }}
             onNavigate={onNavigate}
         />

@@ -8,6 +8,12 @@
         "enabled": true,
     },
     "main": "src/server.ts",
+    // The app is a single-page app (index.html, built by Vite) served as static assets: unknown paths get index.html (client-side routing).
+    // Only the worker's endpoints run the worker (API, chat, MCP, see src/server.ts); the rest is served without it, protected by Cloudflare Access.
+    "assets": {
+        "not_found_handling": "single-page-application",
+        "run_worker_first": ["/api/*", "/chat-agent", "/chat-agent/*", "/mcp"],
+    },
     // served on workers.dev, protected by Cloudflare Access (see README)
     "workers_dev": true,
     // Worker Previews (one per git branch, see README "Preview deployments"), protected by their own Access application

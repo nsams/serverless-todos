@@ -1,27 +1,29 @@
-import type { QueryClient } from "@tanstack/react-query";
+import type { AnyRouter } from "@trpc/server";
 import type { ComponentType } from "react";
 import type { z } from "zod";
 
 import type { ChatContext } from "~/chat/chatPage";
 import type { OperationEffect, Operations } from "~/operations";
+import type { AppRoute } from "~/routing";
 
-// The app consists of a core (app shell, authentication, chat assistant, MCP server, database connection) and feature modules.
+// The app consists of a core (app shell, authentication, API, chat assistant, MCP server, database connection) and feature modules.
 // Everything that belongs to a module lives in its folder src/modules/<module>/: database schema, repositories, operations (used by
-// the UI and as AI tools), server functions, routes, components. The core only knows the modules through the registries
-// (src/modules/registry.ts, registry.server.ts) and the interfaces below.
+// the UI through the module's API and as AI tools), API router and client, routes, pages, components. The core only knows the modules
+// through the registries (src/modules/registry.ts, registry.server.ts) and the interfaces below.
 
-// The part of a module the app shell uses (browser and server rendering)
+// The part of a module the app shell uses (browser)
 export type AppModule = {
-    // unique; the first part of the keys of the module's queries (src/moduleQueries.ts)
+    // unique; the path of the module's API router (src/api/router.server.ts), the prefix of its query keys (src/api/client.ts), the
+    // module of its chat pages and AI tools
     id: string;
+    // the module's pages (created with defineRoute, src/routing.tsx), mounted into the app layout (src/router.tsx)
+    routes: AppRoute[];
     // shown in the app's sidebar
     navigation?: {
         // heading of the module's section in the sidebar
         title: string;
-        // starts loading the module's navigation data (e.g. its lists) when the app is opened (src/routes/_app.tsx); the page doesn't
-        // wait for it
-        prefetch: (queryClient: QueryClient) => Promise<void>;
-        // reads the navigation data with its query (shown when it is loaded); onNavigate: closes the sidebar on small screens
+        // reads its data with a suspending query (e.g. the user's lists; a skeleton is shown until it is loaded); onNavigate: closes the
+        // sidebar on small screens
         Component: ComponentType<{ onNavigate: () => void }>;
     };
     chat?: {
@@ -30,12 +32,14 @@ export type AppModule = {
     };
 };
 
-// The part of a module the server uses (chat assistant, MCP server)
+// The part of a module the server uses (API, chat assistant, MCP server)
 export type ServerModule = {
     // the AppModule's id
     id: string;
     // the module's operations (src/operations.ts): the ones with AI metadata are the tools of the AI assistants
     operations: Operations;
+    // the module's API for its pages: a tRPC router over the operations the UI uses, mounted under the module's id (src/api/router.server.ts)
+    api?: AnyRouter;
     // guidance for the model: what the tools manage and how to use them (system prompt of the chat assistant, instructions of the MCP server)
     instructions: string[];
     // what the user is looking at in the app (e.g. the current list), for the system prompt of the chat assistant; created with

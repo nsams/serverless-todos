@@ -1,35 +1,32 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
-import { linkOptions, useNavigate } from "@tanstack/react-router";
+import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router";
 
 import { NavigationList } from "~/components/NavigationList";
-import { useInvalidateModule } from "~/moduleQueries";
 
+import { todosApi } from "../api";
 import { maxListNameLength } from "../limits";
-import { createList } from "../lists.functions";
-import { todosModuleId } from "../moduleId";
-import { listsQuery } from "../queries";
+import { listRoute } from "../routes";
 
 // The user's lists in the app's sidebar
 export function ListsNavigation({ onNavigate }: { onNavigate: () => void }) {
-    const { data: lists } = useSuspenseQuery(listsQuery);
+    const { data: lists } = useSuspenseQuery(todosApi.listLists.queryOptions({}));
     const navigate = useNavigate();
-    const invalidate = useInvalidateModule(todosModuleId);
+    // opens the new list (the lists are reloaded afterwards)
+    const createList = useMutation(todosApi.createList.mutationOptions({ onSuccess: ({ id }) => navigate(listRoute.href({ listId: id })) }));
 
     return (
         <NavigationList
             items={lists.map((list) => ({
                 id: list.id,
                 name: list.name,
-                link: linkOptions({ to: "/lists/$listId", params: { listId: list.id } }),
+                link: listRoute.link({ listId: list.id }),
                 count: list.openCount,
                 countLabel: `${list.openCount} open`,
             }))}
             createLabel="New list"
             maxNameLength={maxListNameLength}
             onCreate={async (name) => {
-                const list = await createList({ data: { name } });
-                await navigate({ to: "/lists/$listId", params: { listId: list.id } });
-                void invalidate();
+                await createList.mutateAsync({ name });
             }}
             onNavigate={onNavigate}
         />

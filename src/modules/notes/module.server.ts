@@ -1,6 +1,7 @@
 import { defineChatContext } from "~/chat/chatPage";
 import type { ServerModule } from "~/modules/types";
 
+import { notesRouter } from "./api.server";
 import { notesChatPage } from "./chatPage";
 import { getNotebookRepository } from "./db/notebooks.server";
 import { getNoteRepository } from "./db/notes.server";
@@ -11,6 +12,7 @@ import { noteInstructions, noteOperations } from "./operations.server";
 export const serverModule: ServerModule = {
     id: notesModuleId,
     operations: noteOperations,
+    api: notesRouter,
     instructions: noteInstructions,
     chatContext: defineChatContext(notesChatPage, async (userId, page) => {
         if (page?.noteId) {

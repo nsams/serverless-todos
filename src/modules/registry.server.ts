@@ -14,6 +14,16 @@ const serverModules = Object.entries(import.meta.glob<ServerModule | undefined>(
     },
 );
 
+// The API routers of the modules by module id: mounted under the module's id (src/api/router.server.ts), so each module's client
+// (e.g. src/modules/todos/api.ts) is typed by its own router only
+export const moduleRouters = Object.fromEntries(serverModules.flatMap((module) => (module.api ? [[module.id, module.api]] : [])));
+
+for (const [index, module] of serverModules.entries()) {
+    if (serverModules.findIndex((other) => other.id === module.id) !== index) {
+        throw new Error(`Module id ${module.id} is used by more than one module`);
+    }
+}
+
 // The tools of all modules for the AI assistants (the operations with AI metadata), scoped to the user
 export function createTools(userId: string): Record<string, AppTool> {
     const tools: Record<string, AppTool> = {};
