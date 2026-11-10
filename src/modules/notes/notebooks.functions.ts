@@ -1,28 +1,27 @@
 import { createServerFn } from "@tanstack/react-start";
 
-import { operationInput, runOperation } from "~/operations";
+import { operationHandler } from "~/operationHandler";
+import { operationInput } from "~/operations";
 
 import { noteOperations } from "./operations.server";
 
 // Server functions of the notebooks: thin adapters over the module's operations (operations.server.ts), which validate the input
 // and do the checks. Errors are mapped in src/start.ts (NotFoundError → not found, ValidationError → shown in the form).
 
-// The user's notebooks with their number of notes: the module's navigation data (sidebar), see navigation.ts
-export const listNotebooks = createServerFn().handler(({ context }) => runOperation(noteOperations.listNotebooks, { userId: context.user.id }, {}));
+// The user's notebooks with their number of notes: the module's navigation data (sidebar), see queries.ts
+export const listNotebooks = createServerFn().handler(operationHandler(noteOperations.listNotebooks));
 
 // The notebook shown on /notes, created if the user has none yet (POST: it may create a notebook)
-export const getDefaultNotebook = createServerFn({ method: "POST" }).handler(({ context }) =>
-    runOperation(noteOperations.getDefaultNotebook, { userId: context.user.id }, {}),
-);
+export const getDefaultNotebook = createServerFn({ method: "POST" }).handler(operationHandler(noteOperations.getDefaultNotebook));
 
 export const createNotebook = createServerFn({ method: "POST" })
     .validator(operationInput<typeof noteOperations.createNotebook>)
-    .handler(({ data, context }) => runOperation(noteOperations.createNotebook, { userId: context.user.id }, data));
+    .handler(operationHandler(noteOperations.createNotebook));
 
 export const renameNotebook = createServerFn({ method: "POST" })
     .validator(operationInput<typeof noteOperations.renameNotebook>)
-    .handler(({ data, context }) => runOperation(noteOperations.renameNotebook, { userId: context.user.id }, data));
+    .handler(operationHandler(noteOperations.renameNotebook));
 
 export const deleteNotebook = createServerFn({ method: "POST" })
     .validator(operationInput<typeof noteOperations.deleteNotebook>)
-    .handler(({ data, context }) => runOperation(noteOperations.deleteNotebook, { userId: context.user.id }, data));
+    .handler(operationHandler(noteOperations.deleteNotebook));

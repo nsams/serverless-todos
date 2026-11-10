@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
-import { operationInput, runOperation } from "~/operations";
+import { operationHandler } from "~/operationHandler";
+import { operationInput } from "~/operations";
 
 import { todoOperations } from "./operations.server";
 
@@ -9,16 +10,16 @@ import { todoOperations } from "./operations.server";
 // The todos of a list for its grid (one page, sorted and filtered as in the URL)
 export const listTodos = createServerFn()
     .validator(operationInput<typeof todoOperations.listTodos>)
-    .handler(({ data, context }) => runOperation(todoOperations.listTodos, { userId: context.user.id }, data));
+    .handler(operationHandler(todoOperations.listTodos));
 
 export const createTodo = createServerFn({ method: "POST" })
     .validator(operationInput<typeof todoOperations.createTodo>)
-    .handler(({ data, context }) => runOperation(todoOperations.createTodo, { userId: context.user.id }, data));
+    .handler(operationHandler(todoOperations.createTodo));
 
 export const updateTodo = createServerFn({ method: "POST" })
     .validator(operationInput<typeof todoOperations.updateTodo>)
-    .handler(({ data, context }) => runOperation(todoOperations.updateTodo, { userId: context.user.id }, data));
+    .handler(operationHandler(todoOperations.updateTodo));
 
 export const deleteTodo = createServerFn({ method: "POST" })
     .validator(operationInput<typeof todoOperations.deleteTodo>)
-    .handler(({ data, context }) => runOperation(todoOperations.deleteTodo, { userId: context.user.id }, data));
+    .handler(operationHandler(todoOperations.deleteTodo));

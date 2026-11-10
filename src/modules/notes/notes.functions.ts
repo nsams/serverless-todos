@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
-import { operationInput, runOperation } from "~/operations";
+import { operationHandler } from "~/operationHandler";
+import { operationInput } from "~/operations";
 
 import { noteOperations } from "./operations.server";
 
@@ -9,20 +10,20 @@ import { noteOperations } from "./operations.server";
 // The notes of a notebook for its grid (one page, sorted and filtered as in the URL)
 export const listNotes = createServerFn()
     .validator(operationInput<typeof noteOperations.listNotes>)
-    .handler(({ data, context }) => runOperation(noteOperations.listNotes, { userId: context.user.id }, data));
+    .handler(operationHandler(noteOperations.listNotes));
 
 export const getNote = createServerFn()
     .validator(operationInput<typeof noteOperations.getNote>)
-    .handler(({ data, context }) => runOperation(noteOperations.getNote, { userId: context.user.id }, data));
+    .handler(operationHandler(noteOperations.getNote));
 
 export const createNote = createServerFn({ method: "POST" })
     .validator(operationInput<typeof noteOperations.createNote>)
-    .handler(({ data, context }) => runOperation(noteOperations.createNote, { userId: context.user.id }, data));
+    .handler(operationHandler(noteOperations.createNote));
 
 export const updateNote = createServerFn({ method: "POST" })
     .validator(operationInput<typeof noteOperations.updateNote>)
-    .handler(({ data, context }) => runOperation(noteOperations.updateNote, { userId: context.user.id }, data));
+    .handler(operationHandler(noteOperations.updateNote));
 
 export const deleteNote = createServerFn({ method: "POST" })
     .validator(operationInput<typeof noteOperations.deleteNote>)
-    .handler(({ data, context }) => runOperation(noteOperations.deleteNote, { userId: context.user.id }, data));
+    .handler(operationHandler(noteOperations.deleteNote));
