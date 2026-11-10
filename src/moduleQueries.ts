@@ -38,7 +38,8 @@ export function useInvalidateModule(moduleId: string) {
             const filter = moduleQueryFilter(moduleId);
             await queryClient.invalidateQueries({ ...filter, refetchType: "none" });
             await navigate();
-            await queryClient.refetchQueries({ ...filter, type: "active", stale: true });
+            // not again what the next page is loading already (its loader, its queries mounting with outdated data)
+            await queryClient.refetchQueries({ ...filter, type: "active", stale: true }, { cancelRefetch: false });
         },
         [queryClient, router, moduleId],
     );
