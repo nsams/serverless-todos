@@ -1,6 +1,6 @@
-import { createBrowserRouter, replace, type RouteObject } from "react-router";
+import { createBrowserRouter, type RouteObject } from "react-router";
 
-import { appModules, startPath } from "~/modules/registry";
+import { appModules, startRoute } from "~/modules/registry";
 import type { AppModule } from "~/modules/types";
 
 import { AppLayout, appLoader, PageErrorBoundary } from "./AppLayout";
@@ -15,8 +15,8 @@ export const router = createBrowserRouter([
         ErrorBoundary: RootErrorBoundary,
         HydrateFallback,
         children: [
-            // start page: redirects to the start page of a module
-            { index: true, loader: () => replace(startPath) },
+            // start page: redirects to a module's page
+            { index: true, loader: startRoute.route.loader },
             {
                 Component: AppLayout,
                 loader: appLoader,
