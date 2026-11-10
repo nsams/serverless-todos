@@ -1,36 +1,48 @@
 import { useCallback } from "react";
-import { type RouteObject, type ShouldRevalidateFunction, useRevalidator } from "react-router";
+import { type NavigateOptions, type RouteObject, type ShouldRevalidateFunction, useNavigate, useRevalidator } from "react-router";
 
 // Reloading the modules' data after a change: the route loaders of the changed modules run again, the others keep their data (e.g. a change
 // of a todo doesn't reload the notebooks in the sidebar). Every route of a module (its pages and its navigation, src/router.tsx) gets
-// moduleShouldRevalidate; a change (in the UI: useRevalidateModule, useMutate; by the assistant: src/components/ChatPanel.tsx) marks
-// its module while the loaders run again.
+// moduleShouldRevalidate; a change (in the UI: useRevalidateModule, useMutate, useNavigateAfterChange; by the assistant:
+// src/components/ChatPanel.tsx) marks its module while the loaders run again.
 
 const changedModules = new Set<string>();
+
+async function whileChanged(moduleIds: string[], load: () => Promise<void>) {
+    for (const moduleId of moduleIds) {
+        changedModules.add(moduleId);
+    }
+    try {
+        await load();
+    } finally {
+        for (const moduleId of moduleIds) {
+            changedModules.delete(moduleId);
+        }
+    }
+}
 
 // Runs the loaders of the modules' routes again (the routes shown)
 export function useRevalidateModules() {
     const { revalidate } = useRevalidator();
-    return useCallback(
-        async (moduleIds: string[]) => {
-            for (const moduleId of moduleIds) {
-                changedModules.add(moduleId);
-            }
-            try {
-                await revalidate();
-            } finally {
-                for (const moduleId of moduleIds) {
-                    changedModules.delete(moduleId);
-                }
-            }
-        },
-        [revalidate],
-    );
+    return useCallback((moduleIds: string[]) => whileChanged(moduleIds, revalidate), [revalidate]);
 }
 
 export function useRevalidateModule(moduleId: string) {
     const revalidateModules = useRevalidateModules();
     return useCallback(() => revalidateModules([moduleId]), [revalidateModules, moduleId]);
+}
+
+// Navigates after a change of the module (e.g. to the list just created, or away from the one just deleted): the navigation also reloads
+// the module's data that stays on screen (e.g. the sidebar), with the new page's data in one request
+export function useNavigateAfterChange(moduleId: string) {
+    const navigate = useNavigate();
+    return useCallback(
+        (to: string, options?: NavigateOptions) =>
+            whileChanged([moduleId], async () => {
+                await navigate(to, options);
+            }),
+        [navigate, moduleId],
+    );
 }
 
 // reloadOnNavigation: whether the route's loader also runs again when the URL changes (as React Router decides, e.g. other search params

@@ -1,12 +1,12 @@
 import { ArrowLeft, Delete, Move } from "@dextinity/admin-icons";
 import { Box, Container, IconButton, Menu, MenuItem, Paper, Stack, Tab, Tabs, TextField, Tooltip, Typography } from "@mui/material";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { isRouteErrorResponse, Link, useNavigate, useRouteError } from "react-router";
+import { isRouteErrorResponse, Link, useRouteError } from "react-router";
 
 import { useChatPage } from "~/chat/useChatPage";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { useShowError } from "~/components/ErrorSnackbar";
-import { useRevalidateModule } from "~/moduleData";
+import { useNavigateAfterChange, useRevalidateModule } from "~/moduleData";
 import { RouteError } from "~/routes/root";
 import { usePageTitle } from "~/routing";
 
@@ -78,7 +78,7 @@ const autosaveDelay = 1000;
 type Values = { title: string; body: string };
 
 function NoteEditor({ note }: { note: NoteView }) {
-    const navigate = useNavigate();
+    const navigate = useNavigateAfterChange(notesModuleId);
     const revalidate = useRevalidateModule(notesModuleId);
     const showError = useShowError();
     const search = noteRoute.useSearch();
@@ -173,9 +173,8 @@ function NoteEditor({ note }: { note: NoteView }) {
             deleting.current = false;
             throw error;
         }
+        // also reloads e.g. the sidebar's note counts; leaves the page, so the deleted note isn't loaded again
         await navigate(notebookRoute.href({ notebookId: note.notebookId }, search), { replace: true });
-        // e.g. the sidebar's note counts; after leaving the page, so the deleted note isn't reloaded
-        void revalidate();
     };
 
     const handleMove = async (notebookId: string) => {

@@ -1,7 +1,5 @@
-import { useNavigate } from "react-router";
-
+import { useCreateCollection } from "~/collections";
 import { NavigationList } from "~/components/NavigationList";
-import { useRevalidateModule } from "~/moduleData";
 
 import { todosApi, type TodosApiOutputs } from "../api";
 import { maxListNameLength } from "../limits";
@@ -10,8 +8,11 @@ import { listRoute } from "../routes";
 
 // The user's lists in the app's sidebar (navigation.ts)
 export function ListsNavigation({ data: lists, onNavigate }: { data: TodosApiOutputs["listLists"]; onNavigate: () => void }) {
-    const navigate = useNavigate();
-    const revalidate = useRevalidateModule(todosModuleId);
+    const createList = useCreateCollection(
+        todosModuleId,
+        (name) => todosApi.createList.mutate({ name }),
+        (listId) => listRoute.href({ listId }),
+    );
 
     return (
         <NavigationList
@@ -24,11 +25,7 @@ export function ListsNavigation({ data: lists, onNavigate }: { data: TodosApiOut
             }))}
             createLabel="New list"
             maxNameLength={maxListNameLength}
-            onCreate={async (name) => {
-                const list = await todosApi.createList.mutate({ name });
-                await navigate(listRoute.href({ listId: list.id }));
-                void revalidate();
-            }}
+            onCreate={createList}
             onNavigate={onNavigate}
         />
     );

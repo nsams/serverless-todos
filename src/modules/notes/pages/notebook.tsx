@@ -12,7 +12,7 @@ import { NameDialog } from "~/components/NameDialog";
 import { useMutate } from "~/components/useMutate";
 import { useServerGrid } from "~/components/useServerGrid";
 import { type GridColumns, supportedOperators } from "~/gridSearch";
-import { useRevalidateModule } from "~/moduleData";
+import { useNavigateAfterChange, useRevalidateModule } from "~/moduleData";
 import { usePageTitle } from "~/routing";
 
 import { notesApi } from "../api";
@@ -179,16 +179,14 @@ export function Component() {
 }
 
 function NewNoteButton({ notebookId }: { notebookId: string }) {
-    const navigate = useNavigate();
-    const revalidate = useRevalidateModule(notesModuleId);
+    const navigate = useNavigateAfterChange(notesModuleId);
     const [dialogOpen, setDialogOpen] = useState(false);
 
     const handleCreate = async (title: string) => {
         const { created } = await notesApi.createNote.mutate({ notebookId, title });
         setDialogOpen(false);
+        // also reloads e.g. the sidebar's note counts
         await navigate(noteRoute.href({ notebookId, noteId: created.id }));
-        // e.g. the sidebar's note counts
-        void revalidate();
     };
 
     return (
