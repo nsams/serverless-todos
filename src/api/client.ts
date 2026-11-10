@@ -73,7 +73,8 @@ const callMethods = new Set(["query", "mutate"]);
 function combine(calls: ProxyNode, options: ProxyNode): ProxyNode {
     return new Proxy(options, {
         get: (_target, segment) => {
-            if (typeof segment !== "string") {
+            // not a thenable (like tRPC's own proxies): e.g. returning a client from an async function must not await it
+            if (typeof segment !== "string" || segment === "then") {
                 return undefined;
             }
             return callMethods.has(segment) ? calls[segment] : combine(calls[segment], options[segment]);
