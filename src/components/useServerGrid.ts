@@ -1,5 +1,6 @@
 import { type DataGridProProps, type GridFilterModel, GridLogicOperator, type GridSortModel } from "@mui/x-data-grid-pro";
 import { useRouterState } from "@tanstack/react-router";
+import { useState } from "react";
 
 import { type GridFieldConfig, type GridSearch, pageSizeOptions, parseGridSearch, serializeFilterValue } from "~/gridSearch";
 
@@ -24,11 +25,14 @@ export function useServerGrid<Search extends GridSearch>({ validateSearch, field
     const loading = useRouterState({ select: (state) => state.status === "pending" && state.location.href !== state.resolvedLocation?.href });
     const { page, pageSize, sort, filter, filterItems } = parseGridSearch(search, fields);
 
-    const sortModel: GridSortModel = sort.map(({ field, direction }) => ({ field, sort: direction }));
-    const filterModel: GridFilterModel = {
+    // Stable references: the grid treats a new sort model object as a changed sort and goes back to the first page
+    // (e.g. a grid opened on ?page=1 ended up on the first page)
+    const sortModel: GridSortModel = useStableValue(sort.map(({ field, direction }) => ({ field, sort: direction })));
+    const filterModel: GridFilterModel = useStableValue({
         items: filterItems.map((item, index) => ({ id: index, ...item })),
         logicOperator: filter.logicOperator === "or" ? GridLogicOperator.Or : GridLogicOperator.And,
-    };
+    });
+    const paginationModel = useStableValue({ page, pageSize });
 
     // Changes search params, e.g. a search field next to the grid (also goes back to the first page)
     const updateSearch = (values: Partial<Search>, { replace = false } = {}) => navigate({ ...search, page: undefined, ...values }, { replace });
@@ -41,7 +45,7 @@ export function useServerGrid<Search extends GridSearch>({ validateSearch, field
         rowCount,
         loading,
         pageSizeOptions,
-        paginationModel: { page, pageSize },
+        paginationModel,
         onPaginationModelChange: (model) => navigate({ ...search, page: model.page, pageSize: model.pageSize }, { replace: false }),
         sortModel,
         onSortModelChange: (model) =>
@@ -65,4 +69,14 @@ export function useServerGrid<Search extends GridSearch>({ validateSearch, field
 
     // search: the current search params; hasFilter: whether the filters filter (e.g. for the text of an empty grid)
     return { search, hasFilter: filter.items.length > 0, updateSearch, gridProps };
+}
+
+// The previous value as long as it is equal (as JSON) to the new one
+function useStableValue<T>(value: T): T {
+    const [stable, setStable] = useState(value);
+    if (JSON.stringify(value) === JSON.stringify(stable)) {
+        return stable;
+    }
+    setStable(value);
+    return value;
 }
