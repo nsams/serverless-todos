@@ -1,6 +1,6 @@
 # serverless-todos
 
-Minimal todo app (multiple lists, todos with description and due date, overdue todos are highlighted, notebooks with Markdown notes, AI chat assistant that manages the todos and notes, MCP server for external AI clients like Claude Desktop): React single-page application (React Router, MUI + DataGrid) with a REST API (Hono, typed client `hc`) on Cloudflare Workers, Drizzle, login via Cloudflare Access (Entra ID), Cloudflare Agents SDK + AI Gateway + MUI X Chat, MCP TypeScript SDK.
+Minimal todo app (multiple lists, todos with description and due date, overdue todos are highlighted, notebooks with Markdown notes, AI chat assistant that manages the todos and notes, MCP server for external AI clients like Claude Desktop): React single-page application (React Router data mode, MUI + DataGrid) with a REST API (Hono, typed clients `hc`) on Cloudflare Workers, Drizzle, login via Cloudflare Access (Entra ID), Cloudflare Agents SDK + AI Gateway + MUI X Chat, MCP TypeScript SDK.
 
 The app runs only on Cloudflare (Workers + D1). Locally it runs in the real Workers runtime (workerd) via `@cloudflare/vite-plugin`, D1 is emulated by Miniflare as a local SQLite database in `.wrangler/state/` (no Docker or external database needed).
 
@@ -44,40 +44,94 @@ The app consists of a core (app shell, authentication, chat assistant, MCP serve
 
 Core:
 
-The app is a single-page application: `index.html` and the JS/CSS built by Vite are served as static assets (`not_found_handling: "single-page-application"` in `wrangler.jsonc`: unknown paths get `index.html`, the client-side router shows the page). The worker only handles the REST API (`/api/*`), the chat (`/chat-agent`) and the MCP server (`/mcp`) (`run_worker_first`). The page data comes from the REST API, loaded by the routes' loaders with the typed client.
+The app is a single-page application: `index.html` and the JS/CSS built by Vite are served as static assets (`not_found_handling: "single-page-application"` in `wrangler.jsonc`: unknown paths get `index.html`, the client-side router shows the page). The worker only handles the REST API (`/api/*`), the chat (`/chat-agent`) and the MCP server (`/mcp`) (`run_worker_first`), so page loads don't invoke it. The page data comes from the REST API, loaded by the routes' loaders with the modules' typed clients (see [Data loading](#data-loading)).
 
 - `src/server.ts`: worker entry ([Hono](https://hono.dev)): a middleware rejects foreign origins and every request not authenticated by Cloudflare Access (`src/auth.server.ts`, `ctx.access`) and sets the user (identified by email) as context variable; mounts the REST API at `/api`, routes chat requests to the user's chat agent and MCP requests to the MCP server
-- `src/api/api.server.ts`: the REST API (Hono): `GET /api/user` and the APIs of the modules (`src/modules/registry.server.ts`). Its type (`Api`) is the contract with the app. Conventions: JSON in and out, input validated with zod (`@hono/zod-validator`, invalid input: `400`), errors a form shows at its field (e.g. an empty name): `422` with `{ error }`, not found (or belonging to another user): `404`, changes without a result: `204`. `src/api/hono.server.ts`: `createApi()` for the APIs of the modules (context: the user), the validator of a grid's query
-- `src/api/client.ts`: the typed API client of the app ([`hc`](https://hono.dev/docs/guides/rpc), type-only import of `Api`): paths, params, query, JSON bodies and responses are checked by TypeScript; `parseResponse` returns the body of a successful response and throws for error responses, `loadResponse` turns a `404` into the route's "not found". Dates are ISO strings in the JSON (e.g. `createdAt`), also in the types.
+- `src/api/api.server.ts`: the REST API: the core's routes (`src/api/user.server.ts`: `GET /api/user`) and every module's API at `/api/<module id>`; maps the operations' errors once (`NotFoundError` → `404`, `ValidationError` → `422` with `{ error }`, anything else → `500`). `src/api/hono.server.ts`: `createApi()` (context: the user) and `operationRoute`, which turns an operation into a typed route (see [Operations](#operations-one-definition-for-ui-chat-and-mcp))
+- `src/api/client.ts`: `createClient<typeof todosApi>(moduleId)`, the typed client of a module's API ([`hc`](https://hono.dev/docs/guides/rpc), type-only import of the module's API): paths, params, query, JSON bodies and responses are checked by TypeScript, `parseResponse` returns the body. Error responses throw the operations' errors (`404` → `NotFoundError`, `422` → `ValidationError`), so the forms show the message and the pages show "not found". Dates are ISO strings in the JSON (e.g. `createdAt`), also in the types.
 - `src/client/main.tsx`: entry of the app in the browser (theme, error snackbar, router); `index.html`
-- `src/client/router.tsx`: the routes ([React Router](https://reactrouter.com), data mode: `createBrowserRouter` with loaders): the start page (redirects to `startPath`, `src/modules/registry.ts`) and the pages of the modules (`AppModule.routes`) in the app layout; `src/client/root.tsx`: root route (scroll restoration, error and 404 pages)
-- `src/client/AppLayout.tsx`: layout (app bar, the navigation of the modules in a sidebar); its loader loads the user and the navigation data of the modules, which aren't reloaded by navigations, only by an explicit revalidation (`useRevalidator`, e.g. after creating a list)
-- `src/modules/types.ts`: the interfaces of a module: `AppModule` (app shell: pages (routes), navigation with its heading in the sidebar, chat suggestions), `ServerModule` (tools for the AI assistants, their instructions, chat context), `AppTool`
-- `src/modules/registry.ts`, `src/modules/registry.server.ts`: the modules of the app (the latter also mounts the REST APIs of the modules)
-- `src/chat/`: chat assistant (see [Chat assistant](#chat-assistant)), `src/components/ChatPanel.tsx`: its UI
+- `src/client/router.tsx`: the routes ([React Router](https://reactrouter.com), data mode: `createBrowserRouter` with loaders): the start page (runs `startRoute`'s loader, `src/modules/registry.ts`), the app layout with every module's navigation data and the pages of the modules (`AppModule.routes`); `src/client/root.tsx`: root route (scroll restoration, chat page context, error and 404 pages)
+- `src/client/routing.ts`: typed routes and module-scoped reloading (see [Data loading](#data-loading)): `defineRoute`, `defineNavigationData`, `reloadModules` / `useModuleRevalidator`, `redirectToLastPageWithRows`
+- `src/client/AppLayout.tsx`: layout (app bar, the navigation of the modules in a sidebar, the chat panel, loaded on first open); its loader loads the user once
+- `src/modules/types.ts`: the interfaces of a module: `AppModule` (app shell: pages (routes), navigation data and component with its heading in the sidebar, chat suggestions), `ServerModule` (the module's operations, its REST API, instructions for the AI assistants, chat context), `AppTool`
+- `src/operations.ts`: the operation layer (see [Operations](#operations-one-definition-for-ui-chat-and-mcp)): `defineOperation`, `runOperation`, `toolsFromOperations`; `src/errors.ts`: `NotFoundError`, `ValidationError`, `errorMessage` (independent of the stack, shared by server and client)
+- `src/modules/registry.ts`: the modules of the app (app shell part, in the order of the sidebar), the only list of modules; `src/modules/registry.server.ts`: their server parts (the `serverModule` export of every `src/modules/<module>/module.server.ts`, found with `import.meta.glob`): tools, instructions, chat context, REST APIs
+- `src/chat/`: chat assistant (see [Chat assistant](#chat-assistant)): the agent, its tools, the page context (`chatPage.ts`, `useChatPage.tsx`) and the reload after changes (`useChatChanges.ts`); `src/components/ChatPanel.tsx`: its UI
 - `src/mcp/`: MCP server (see [MCP server](#mcp-server-external-ai-clients))
-- `src/db/db.server.ts`: database connection; `src/dates.ts`: calendar dates (`YYYY-MM-DD`) without time zone, the user's local date; `src/searchParams.ts`: search params serialization (also as query of the API client); `src/gridSearch.ts`, `src/db/filters.server.ts`, `src/components/useServerGrid.ts`: DataGrids with server-side pagination, sorting and filtering, their state in the URL (search params parsing, the API's query, the grid's props, the SQL for sorting and filtering); `src/components/`: shared components and hooks used by the modules (e.g. `NavigationList` for the sidebar, `CollectionHeader` (heading with rename and delete), `ConfirmDeleteDialog`, `NameDialog`, `useMutate` (runs a change, shows its error, reloads the page data), `useDocumentTitle`)
+- `src/db/db.server.ts`: database connection; `src/dates.ts`: calendar dates (`YYYY-MM-DD`) without time zone, the user's local date; `src/searchParams.ts`: search params serialization (repeated keys for arrays, also the API's query); `src/gridSearch.ts`, `src/db/filters.server.ts`, `src/components/useServerGrid.ts`: DataGrids with server-side pagination, sorting and filtering, their state in the URL (one zod schema per grid for the search params and the operation's input, sorting and filters typed by the grid's fields, typed columns, the grid's props, the SQL for sorting and filtering); `src/components/`: shared components and hooks used by the modules (e.g. `NavigationList` for the sidebar and `CollectionHeader` (heading with rename and delete), which reload their module's data after a change, `ConfirmDeleteDialog`, `NameDialog`, `useMutate` (a change without a form, then reloads the module's data), `useDocumentTitle`)
 - `scripts/`: Node scripts (run with Node's TypeScript support, no build step): test data (`fixtures.ts`, `seed.ts`) and Preview deployments (`preview.ts`)
 
 Todos module (`src/modules/todos/`):
 
-- `module.ts`, `module.server.ts`: the module's definition (`AppModule`, `ServerModule`)
-- `routes.ts`, `routes/`, `paths.ts`: the pages: `/lists` (redirects to the user's first list, creates a list "Todos" if the user has none), `/lists/:listId` (`routes/ListPage.tsx`: todos of a list; grid state (pagination, sorting, filtering) lives in the URL, `todoSearch.ts` with `src/gridSearch.ts`). The route ids are the paths (`paths.ts`), the chat assistant gets the id of the page shown.
-- `components/ListsNavigation.tsx`: the user's lists in the sidebar (navigation data loaded by the app layout, `navigation.ts`)
-- `api.server.ts`: the module's REST API (`/api/lists`, `/api/lists/:listId`, `/api/lists/:listId/todos`, `/api/todos/:todoId`; input validated with zod, length limits in `limits.ts`)
-- `db/`: database schema and repositories
-- `tools.server.ts`: the tools that manage lists and todos, for the chat assistant and the MCP server
+- `module.ts`, `module.server.ts`: the module's definition (`AppModule` with its route objects, `ServerModule` exported as `serverModule`); `moduleId.ts`: its id (also the path of its API, `/api/todos`)
+- `operations.server.ts`: the module's operations (list, create, rename, delete lists; find, create, update, delete todos; a list's page of todos for the grid): one definition each for the REST API and the AI assistants (the ones with AI metadata are the tools of the chat assistant and the MCP server)
+- `api.server.ts`: the module's REST API, a route per operation the app uses (`/api/todos/lists`, `/api/todos/lists/:listId`, `/api/todos/lists/:listId/todos`, `/api/todos/todos/:id`); `api.ts`: its typed client (`todosClient`)
+- `routes.ts`: the pages (`defineRoute`): `/lists` (redirects to the user's first list, creates a list "Todos" if the user has none), `/lists/:listId` (todos of a list; grid state (pagination, sorting, filtering) lives in the URL, `todoSearch.ts` with `src/gridSearch.ts`); `pages/ListPage.tsx`: its component (loaded when the page is opened)
+- `navigation.ts`: the module's navigation data (the lists, `defineNavigationData`); `components/ListsNavigation.tsx`: the lists in the sidebar
+- `db/`: database schema and repositories (`update`, `rename`, `delete` return the affected row, `undefined` if no row of the user matched); length limits in `limits.ts`
+- `chatPage.ts`: what the module's pages tell the chat assistant (schema), see [Chat assistant](#chat-assistant)
 - `overdue.ts`: whether a todo is overdue is decided in the browser with the user's local date
 
 Notes module (`src/modules/notes/`), same structure:
 
-- `routes.ts`, `routes/`, `paths.ts`: `/notes` (redirects to the user's first notebook, creates a notebook "Notes" if the user has none), `/notes/:notebookId` (`routes/NotebookPage.tsx`: the notebook's notes in a grid like the todos (`noteSearch.ts`), plus a search in title and body (`?q=`); a click on a row opens the note), `/notes/:notebookId/:noteId` (`routes/NotePage.tsx`: editor, keeps the grid state for its back link: title, body in Markdown with preview (`components/MarkdownPreview.tsx`, `markdown-to-jsx`, raw HTML isn't rendered), saved automatically shortly after typing stops and when leaving the note, move to another notebook, delete)
-- `components/NotebooksNavigation.tsx`: the user's notebooks in the sidebar (`navigation.ts`)
-- `api.server.ts` (`/api/notebooks`, `/api/notebooks/:notebookId`, `/api/notebooks/:notebookId/notes`, `/api/notes/:noteId`), `db/`, `limits.ts`: like in the todos module
-- `tools.server.ts`: the tools that manage notebooks and notes (find, read, create, update, append to, move, delete). Together with the todo tools the assistant can e.g. turn a note into todos, without the modules knowing each other.
-- The editor takes over changes made elsewhere (e.g. by the assistant) when the page data is reloaded, unless it has unsaved changes; it tells them from its own saves by `updatedAt`.
+- `routes.ts`, `pages/`: `/notes` (redirects to the user's first notebook, creates a notebook "Notes" if the user has none), `/notes/:notebookId` (`pages/NotebookPage.tsx`: the notebook's notes in a grid like the todos (`noteSearch.ts`), plus a search in title and body (`?q=`); a click on a row opens the note), `/notes/:notebookId/:noteId` (`pages/NotePage.tsx`: editor, keeps the grid state for its back link: title, body in Markdown with preview (`components/MarkdownPreview.tsx`, `markdown-to-jsx`, raw HTML isn't rendered), saved automatically shortly after typing stops and when leaving the note, move to another notebook, delete)
+- `navigation.ts`, `components/NotebooksNavigation.tsx`: the user's notebooks in the sidebar
+- `operations.server.ts`, `api.server.ts` (`/api/notes/notebooks`, `/api/notes/notebooks/:notebookId`, `/api/notes/notebooks/:notebookId/notes`, `/api/notes/notes/:id`), `api.ts`, `db/`, `chatPage.ts`, `limits.ts`: like in the todos module. The operations with AI metadata are the tools that manage notebooks and notes (find, read, create, update, append to, move, delete). Together with the todo tools the assistant can e.g. turn a note into todos, without the modules knowing each other.
+- The editor takes over changes made elsewhere (e.g. by the assistant) when the note is reloaded, unless it has unsaved changes; it tells them from its own saves by `updatedAt`. Its autosave reloads nothing (the notes grid loads fresh data when the notebook is opened again). If the note is moved (in the editor or by the assistant) the URL follows it, if it is deleted while open the page says so.
 
-A new module gets its own folder with the same structure and is added to `src/modules/registry.ts` (app shell part with its pages) and `src/modules/registry.server.ts` (server part, REST API). Its tables are picked up by `drizzle.config.ts` (`src/modules/*/db/schema.ts`).
+A new module gets its own folder with the same structure and one entry in `src/modules/registry.ts` (its `AppModule`, the position in the sidebar). Its server part (`module.server.ts`, with its REST API) and its tables (`db/schema.ts`, `drizzle.config.ts`) are found by the folder structure. In short:
+
+1. `moduleId.ts`, `db/schema.ts` (then `npm run db:generate`) and the repositories in `db/`.
+2. `operations.server.ts`: the module's operations (see below) and the instructions for the model.
+3. `api.server.ts`: a route per operation the app uses (`operationRoute`); `api.ts`: `createClient<typeof myApi>(myModuleId)`.
+4. `routes.ts`: the pages (`defineRoute`: path, search params, loader with the client), `pages/`: their components; `navigation.ts`: the sidebar's data (`defineNavigationData`); `chatPage.ts`: the schema of what the pages tell the assistant, reported with `useChatPage`.
+5. `module.ts` (`AppModule`: route objects, navigation, chat suggestions) and `module.server.ts` (`export const serverModule: ServerModule`: `id`, `operations`, `api`, `instructions`, `chatContext` with `defineChatContext`).
+
+### Operations: one definition for UI, chat and MCP
+
+Every domain operation is defined once in the module's `operations.server.ts` (`src/operations.ts`): its input schema (zod, `.describe()` texts are shown to the model), its effect (`read`, `write`, `delete`), optionally AI metadata (title and description) and the handler with the whole business logic, incl. existence and ownership checks. Handlers throw `NotFoundError` or `ValidationError` (`src/errors.ts`), whose messages reach the user (form) and the model (tool error).
+
+- **UI**: a route of the module's REST API runs the operation (`operationRoute(method, path, operation)` in `src/api/hono.server.ts`): its input is the path params plus the query (`GET`) or the JSON body, validated by the operation's schema; the response is the operation's result. The route's type (and so the typed client) is derived from the path and the operation: no second schema, no hand-written status handling.
+- **Chat assistant and MCP server**: the operations with AI metadata are their tools, named like the operation's key (`toolsFromOperations`). An operation without AI metadata is only used by the UI (e.g. a grid's page of rows), one without a route only by the AI assistants (e.g. `findTodos`, `appendToNote`).
+- **Reload after a tool changed data**: derived from the operation's module and effect (see [Chat assistant](#chat-assistant)).
+
+Adding an operation, e.g. to mark all todos of a list as done:
+
+```ts
+// src/modules/todos/operations.server.ts, in todoOperations
+completeList: defineOperation({
+    input: z.object({ listId: z.string() }),
+    effect: "write",
+    // remove `ai` for an operation only the UI uses
+    ai: { title: "Complete todo list", description: "Marks all todos of a list as done." },
+    handler: async ({ userId }, { listId }) => {
+        await getList(userId, listId); // NotFoundError → 404 in the UI, error message for the model
+        // completeAll: a new repository method
+        return { completed: await getTodoRepository().completeAll(userId, listId) };
+    },
+}),
+```
+
+```ts
+// src/modules/todos/api.server.ts, in the chain of todosApi: only if the UI uses it
+.on(...operationRoute("POST", "/lists/:listId/complete", todoOperations.completeList))
+
+// in a component: run it and reload the module's data (useMutate shows an error in the snackbar)
+const mutate = useMutate(todosModuleId);
+void mutate(parseResponse(todosClient.lists[":listId"].complete.$post({ param: { listId } })));
+```
+
+That's all: the chat assistant and the MCP server offer the tool `completeList` (deleting operations need the user's confirmation), and after the assistant ran it the chat panel reloads the todos module's data.
+
+### Data loading
+
+The pages' data is loaded by React Router's loaders from the REST API (no client-side cache):
+
+- **Typed routes** (`defineRoute`, `src/client/routing.ts`): a page's path, search params (`validateSearch`, e.g. the grid's schema) and loader are defined once in the module's `routes.ts`. The loader gets typed params and search params, `listRoute.href({ listId }, search)` builds typed links, and the page reads `listRoute.useLoaderData()`, `useParams()`, `useSearch()`, typed by the definition (the route's id is its path, so the data is the route's own). Renaming a path param or changing what a loader returns breaks the build. The route objects (`module.ts`) load the page components lazily, in parallel with the loader.
+- **Reloading per module**: every route of a module is reloaded with its module's data only (`reloadModules`, `moduleShouldRevalidate`): after a change in the UI (`useMutate`, `useModuleRevalidator`, the shared collection components) and after the assistant changed it (the chat panel reloads the modules the agent reports). A new todo reloads the list page and the lists in the sidebar, not the notebooks. A navigation to a page loads its data fresh (e.g. the notes grid after editing a note).
+- **Sidebar**: each module's navigation data (`defineNavigationData`) is loaded by a pathless route of its own around the pages, so the module's sidebar and pages read it typed (`useData`) and navigations between pages don't reload it.
+- **Start**: the start page runs the start route's loader outside the app layout (React Router runs all loaders again after a redirect on the initial load), so the user and the navigation data are loaded once.
+- **Errors**: a `404` of the API in a loader (e.g. a deleted list) shows the route's "not found" page; a `422` reaches the form as `ValidationError` (`errorMessage` shows its message).
 
 ## Authentication
 
@@ -93,10 +147,11 @@ Denied requests are logged with the reason (Workers Logs).
 The assistant (chat panel, robot button in the app bar) works with the tools of all modules, e.g. manages the user's lists and todos in natural language, e.g. "Lege ein Todo mit dem Titel „Milch holen“ an", or summarizes a note and turns it into todos.
 
 - **Agent** (`src/chat/agent.server.ts`): an `AIChatAgent` ([Cloudflare Agents SDK](https://developers.cloudflare.com/agents/)), a Durable Object per user (instance name = user id). It keeps the chat history in its SQLite storage, streams the answers over a WebSocket (resumed after reconnects, in sync across tabs) and calls the model with the [AI SDK](https://ai-sdk.dev) (`streamText`).
-- **Tools** (`AppTool` of the modules, e.g. `src/modules/todos/tools.server.ts`, as AI SDK tools in `src/chat/tools.server.ts`): e.g. list/create/rename/delete lists, find/create/update/delete todos, find/read/create/update notes, directly on the repositories (the agent runs in the same worker, it doesn't go through the MCP server). The user id comes from the authentication, never from the model. Deleting needs the user's confirmation in the chat (`needsApproval`). The client sends its local date and the current page (route id, i.e. the page's path pattern like `/lists/:listId`, and params) with every message (`src/chat/chat.ts`), for relative due dates; the modules turn the page into context for the system prompt (`ServerModule.chatContext`), e.g. the current list as default list for new todos, or the open note.
+- **Tools** (`src/chat/tools.server.ts`): the operations with AI metadata of all modules (`AppTool`, see [Operations](#operations-one-definition-for-ui-chat-and-mcp)) as AI SDK tools, e.g. list/create/rename/delete lists, find/create/update/delete todos, find/read/create/update notes, run directly (the agent runs in the same worker, it doesn't go through the REST API or the MCP server). The user id comes from the authentication, never from the model. Deleting needs the user's confirmation in the chat (`needsApproval`). After a tool that changes data (effect `write` or `delete`) the agent adds a `data-changes` part with the tool's module to its answer (`src/chat/chat.ts`), part of the persisted message, so a client reconnecting after a tool approval gets it too.
+- **Page context** (`src/chat/chatPage.ts`): each module declares what its pages tell the assistant with a schema (`chatPage.ts`, e.g. `{ listId }`); a page reports what it shows with `useChatPage(todosChatPage, { listId })` (typed by the schema), the chat panel sends it with the user's local date (for relative due dates) with every message. The server validates it with the module's schema and the module turns it into context for the system prompt (`ServerModule.chatContext`, `defineChatContext`), e.g. the current list as default list for new todos, or the open note. No route ids: renaming a route or a context field breaks the build, not the assistant.
 - **Routing/auth** (`src/server.ts`): the client connects to `/chat-agent`; the worker authenticates the request like any other (Cloudflare Access), rejects foreign origins (WebSockets aren't protected by CORS) and forwards it to the agent of the authenticated user. The Agents SDK's default routes (`/agents/...`) are not exposed.
 - **Model** (`src/chat/model.server.ts`, `AI_MODEL` in `wrangler.jsonc`, default `@cf/zai-org/glm-4.7-flash`): a [Workers AI](https://developers.cloudflare.com/workers-ai/) model with function calling ([catalog](https://developers.cloudflare.com/ai/models/), e.g. also `@cf/moonshotai/kimi-k2.6`): run by Cloudflare, billed through the Cloudflare account (Workers AI pricing), no provider API key. Via the AI binding (`createAI` from `agents/models/ai-sdk`); in development via the AI Gateway REST API (see [Development](#development)). Requests go through the AI Gateway `AI_GATEWAY_ID` (default `default`, created on first use): logs, spend limits, rate limits.
-- **UI** (`src/components/ChatPanel.tsx`): [MUI X Chat](https://mui.com/x/react-chat/) (`ChatBox`, alpha) renders the conversation of `useAgentChat`: its messages are controlled by `useAgentChat`, its adapter forwards sending, stopping and tool approvals. After a tool changed data (`AppModule.chat.mutatingToolNames`) the page data is reloaded (`revalidate()` of React Router).
+- **UI** (`src/components/ChatPanel.tsx`): [MUI X Chat](https://mui.com/x/react-chat/) (`ChatBox`, alpha) renders the conversation of `useAgentChat`: its messages are controlled by `useAgentChat`, its adapter forwards sending, stopping and tool approvals. When the agent reports changed modules (`useChatChanges`, not for the history shown when the panel opens) it reloads exactly their data (`reloadModules`, see [Data loading](#data-loading)).
 
 Setup (once per Cloudflare account): set a spend limit on the AI Gateway (dashboard → AI → AI Gateway). Some Workers AI models need the Workers Paid plan.
 
