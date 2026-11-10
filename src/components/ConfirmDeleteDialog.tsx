@@ -13,7 +13,7 @@ type Props = {
     errorMessage: string;
     onClose: () => void;
     // deletes (and e.g. leaves the page); the dialog is closed afterwards
-    onDelete: () => Promise<void>;
+    onDelete: () => Promise<unknown>;
 };
 
 // Confirmation before something is deleted

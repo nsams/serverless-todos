@@ -35,13 +35,12 @@ export const meta: Route.MetaFunction = ({ loaderData }) => [{ title: loaderData
 export default function NotebookPage({ loaderData: { notebook, notes, totalCount } }: Route.ComponentProps) {
     const notebooks = useNotebooks();
     const navigate = useNavigate();
-    const { run } = useNoteOperations();
+    const { run, runAndNavigate } = useNoteOperations();
     const mutate = useMutate();
     const [noteToDelete, setNoteToDelete] = useState<NoteSummary | null>(null);
     const { search, hasFilter, updateSearch, gridProps } = useServerGrid({
         validateSearch: validateNoteSearch,
         fields: noteFields,
-        navigate: (newSearch, { replace }) => void navigate({ search: stringifySearch(newSearch) }, { replace, preventScrollReset: true }),
         rowCount: totalCount,
     });
 
@@ -124,7 +123,15 @@ export default function NotebookPage({ loaderData: { notebook, notes, totalCount
     return (
         <Container sx={{ py: 4 }}>
             <Stack spacing={2}>
-                <NotebookHeader notebook={notebook} />
+                <CollectionHeader
+                    name={notebook.name}
+                    kind="notebook"
+                    deleteText={`“${notebook.name}” and all its notes will be deleted.`}
+                    maxNameLength={maxNotebookNameLength}
+                    onRename={(name) => run("renameNotebook", { notebookId: notebook.id, name })}
+                    // goes to the first remaining notebook (or a new one)
+                    onDelete={() => runAndNavigate("deleteNotebook", { notebookId: notebook.id }, href("/notes"))}
+                />
                 <Box sx={{ display: "flex", gap: 1, flexWrap: { xs: "wrap", sm: "nowrap" } }}>
                     <TextField
                         type="search"
@@ -210,23 +217,5 @@ function NewNoteButton({ notebookId }: { notebookId: string }) {
                 onSubmit={handleCreate}
             />
         </>
-    );
-}
-
-function NotebookHeader({ notebook }: { notebook: { id: string; name: string } }) {
-    const { run, runAndNavigate } = useNoteOperations();
-
-    return (
-        <CollectionHeader
-            name={notebook.name}
-            kind="notebook"
-            deleteText={`“${notebook.name}” and all its notes will be deleted.`}
-            maxNameLength={maxNotebookNameLength}
-            onRename={async (name) => {
-                await run("renameNotebook", { notebookId: notebook.id, name });
-            }}
-            // goes to the first remaining notebook (or a new one)
-            onDelete={() => runAndNavigate("deleteNotebook", { notebookId: notebook.id }, href("/notes"))}
-        />
     );
 }

@@ -13,9 +13,9 @@ type Props = {
     deleteText: string;
     maxNameLength: number;
     // throws a ValidationError with a message for the user, e.g. for an empty name
-    onRename: (name: string) => Promise<void>;
+    onRename: (name: string) => Promise<unknown>;
     // deletes the collection and leaves the page
-    onDelete: () => Promise<void>;
+    onDelete: () => Promise<unknown>;
 };
 
 // The heading of a page that shows a collection (e.g. a todo list, a notebook), with rename and delete buttons

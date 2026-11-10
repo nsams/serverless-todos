@@ -1,17 +1,15 @@
 import { type DataGridProProps, type GridFilterModel, GridLogicOperator, type GridSortModel } from "@mui/x-data-grid-pro";
 import { useState } from "react";
-import { useLocation, useNavigation } from "react-router";
+import { useLocation, useNavigate, useNavigation } from "react-router";
 
 import { type GridFields, type GridSearch, pageSizeOptions, parseGridSearch, serializeFilterValue } from "~/gridSearch";
-import { parseSearch } from "~/searchParams";
+import { parseSearch, stringifySearch } from "~/searchParams";
 
 type Options<Search extends GridSearch, Fields extends GridFields> = {
     // reads the search params (parsed with parseSearch), e.g. validateGridSearch
     validateSearch: (search: unknown) => Search;
     // the sortable and filterable fields
     fields: Fields;
-    // changes the page's search params (e.g. with useNavigate and stringifySearch)
-    navigate: (search: Search, options: { replace: boolean }) => void;
     // the number of rows on the server (with the filters applied)
     rowCount: number;
     // fields with calendar date filters (YYYY-MM-DD), e.g. a due date
@@ -23,7 +21,6 @@ type Options<Search extends GridSearch, Fields extends GridFields> = {
 export function useServerGrid<Search extends GridSearch, Fields extends GridFields>({
     validateSearch,
     fields,
-    navigate,
     rowCount,
     dateOnlyFields = [],
 }: Options<Search, Fields>) {
@@ -34,6 +31,15 @@ export function useServerGrid<Search extends GridSearch, Fields extends GridFiel
     const pendingLocation = navigation.state === "loading" && navigation.location.pathname === location.pathname ? navigation.location : undefined;
     const search = validateSearch(parseSearch((pendingLocation ?? location).search));
     const loading = pendingLocation !== undefined;
+    const navigateTo = useNavigate();
+    // Changes the page's search params. Only real changes: the grid also reports unchanged models (e.g. when its rows change), which would
+    // otherwise interrupt a navigation to another page
+    const navigate = (newSearch: Search, { replace }: { replace: boolean }) => {
+        const searchStr = stringifySearch(newSearch);
+        if (searchStr !== stringifySearch(search)) {
+            void navigateTo({ pathname: location.pathname, search: searchStr }, { replace, preventScrollReset: true });
+        }
+    };
     const { page, pageSize, sort, filter, filterItems } = parseGridSearch(search, fields);
 
     // Stable references: the grid treats a new sort model object as a changed sort and goes back to the first page

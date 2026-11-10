@@ -3,7 +3,7 @@ import { Box, Button, Checkbox, Container, Paper, Stack, TextField } from "@mui/
 import { alpha } from "@mui/material/styles";
 import { DataGridPro, getGridBooleanOperators, getGridDateOperators, getGridStringOperators, GridActionsCellItem } from "@mui/x-data-grid-pro";
 import { type FormEvent, useState } from "react";
-import { href, useNavigate } from "react-router";
+import { href } from "react-router";
 
 import { appName } from "~/app";
 import { useChatPage } from "~/chat/useChatPage";
@@ -16,7 +16,6 @@ import { errorMessage } from "~/errors";
 import { type GridColumns, supportedOperators, validateGridSearch } from "~/gridSearch";
 import type { OperationInput } from "~/operations";
 import { loadGridOperation } from "~/routeOperations.server";
-import { stringifySearch } from "~/searchParams";
 
 import { todosChatPage } from "../chatPage";
 import { useLists, useTodoOperations } from "../client";
@@ -35,15 +34,13 @@ export const meta: Route.MetaFunction = ({ loaderData }) => [{ title: loaderData
 
 export default function Todos({ loaderData: { list, todos, totalCount } }: Route.ComponentProps) {
     const lists = useLists();
-    const navigate = useNavigate();
-    const { run } = useTodoOperations();
+    const { run, runAndNavigate } = useTodoOperations();
     const showError = useShowError();
     const mutate = useMutate();
     const today = useToday();
     const { updateSearch, gridProps } = useServerGrid({
         validateSearch: validateGridSearch,
         fields: todoFields,
-        navigate: (search, { replace }) => void navigate({ search: stringifySearch(search) }, { replace, preventScrollReset: true }),
         rowCount: totalCount,
         dateOnlyFields: ["dueDate"],
     });
@@ -134,7 +131,15 @@ export default function Todos({ loaderData: { list, todos, totalCount } }: Route
     return (
         <Container sx={{ py: 4 }}>
             <Stack spacing={2}>
-                <ListHeader list={list} />
+                <CollectionHeader
+                    name={list.name}
+                    kind="list"
+                    deleteText={`“${list.name}” and all its todos will be deleted.`}
+                    maxNameLength={maxListNameLength}
+                    onRename={(name) => run("renameList", { listId: list.id, name })}
+                    // goes to the first remaining list (or a new one)
+                    onDelete={() => runAndNavigate("deleteList", { listId: list.id }, href("/lists"))}
+                />
                 <CreateTodoForm key={list.id} listId={list.id} />
                 <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
                     <Button
@@ -181,24 +186,6 @@ export default function Todos({ loaderData: { list, todos, totalCount } }: Route
                 </Paper>
             </Stack>
         </Container>
-    );
-}
-
-function ListHeader({ list }: { list: { id: string; name: string } }) {
-    const { run, runAndNavigate } = useTodoOperations();
-
-    return (
-        <CollectionHeader
-            name={list.name}
-            kind="list"
-            deleteText={`“${list.name}” and all its todos will be deleted.`}
-            maxNameLength={maxListNameLength}
-            onRename={async (name) => {
-                await run("renameList", { listId: list.id, name });
-            }}
-            // goes to the first remaining list (or a new one)
-            onDelete={() => runAndNavigate("deleteList", { listId: list.id }, href("/lists"))}
-        />
     );
 }
 
