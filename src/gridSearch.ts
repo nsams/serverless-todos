@@ -129,6 +129,17 @@ export function parseGridSearch<Fields extends GridFields>(search: GridSearch, f
     return { page, pageSize, sort, filter, filterItems };
 }
 
+// A filter of the URL (field:operator:value) set by the page, e.g. a preset filter button: typed by the grid's fields, so renaming
+// a field or an operator breaks the build instead of the filter
+export function filterParam<Fields extends GridFields, Field extends keyof Fields & string>(
+    _fields: Fields,
+    field: Field,
+    operator: Fields[Field]["operators"][number],
+    value: string,
+) {
+    return `${field}:${operator}:${value}`;
+}
+
 // The columns of a grid: a column shows a field of the row or a filter field of the server (e.g. a note's body, shown as excerpt),
 // so renaming a field breaks the build instead of the column
 export type GridColumns<Row extends GridValidRowModel, Fields extends GridFields = Record<never, never>> = Array<

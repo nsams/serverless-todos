@@ -1,15 +1,17 @@
 import { defineChatContext } from "~/chat/chatPage";
 import type { ServerModule } from "~/modules/types";
 
+import { todosApi } from "./api.server";
 import { todosChatPage } from "./chatPage";
 import { getListRepository } from "./db/lists.server";
 import { todosModuleId } from "./moduleId";
 import { todoInstructions, todoOperations } from "./operations.server";
 
-// The todos module (todo lists and todos), server part. App shell part: module.ts.
+// The todos module (todo lists and todos), server part (found by src/modules/registry.server.ts). App shell part: module.ts.
 export const serverModule: ServerModule = {
     id: todosModuleId,
     operations: todoOperations,
+    api: todosApi,
     instructions: todoInstructions,
     chatContext: defineChatContext(todosChatPage, async (userId, page) => {
         const currentList = page ? await getListRepository().get(userId, page.listId) : undefined;

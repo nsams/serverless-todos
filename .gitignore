@@ -2,10 +2,12 @@ node_modules
 *.tsbuildinfo
 .env.local
 
-# TanStack Start
-/.tanstack/
+# Vite build
 /dist/
 
 # Cloudflare
 .wrangler
 worker-configuration.d.ts
+
+# TanStack Router plugin (temporary files)
+/.tanstack/

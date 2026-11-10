@@ -14,19 +14,15 @@ import {
 } from "@mui/material";
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { parseResponse } from "hono/client";
 import { Fragment, lazy, Suspense, useState } from "react";
 
+import { userClient } from "~/api/client";
 import { appName } from "~/app";
 import { appModules } from "~/modules/registry";
-import { getCurrentUser } from "~/user.functions";
 
 // Layout of the app pages: app bar and the navigation of the modules in a sidebar
 export const Route = createFileRoute("/_app")({
-    // The app's pages are rendered in the browser only, their data is still loaded on the server (in the same request, sent with the
-    // page). An app behind Cloudflare Access gains nothing from rendering them on the server (no search engines, the user waits for the
-    // scripts anyway), it would only cost CPU time per page view and need hydration-safe components: e.g. dates formatted in the
-    // user's time zone (the grids' date columns, useToday) would differ between the server and the browser.
-    ssr: "data-only",
     loader: async ({ context: { queryClient }, cause }) => {
         // Not awaited: the page doesn't wait for the sidebar, each module's navigation is shown when its data is there. Only when the
         // app is opened: then the navigation queries keep themselves up to date (reloaded with their module's data, or when stale and
@@ -39,12 +35,12 @@ export const Route = createFileRoute("/_app")({
         await queryClient.ensureQueryData(userQuery);
     },
     component: AppLayout,
-    // the server's response, until the page is rendered in the browser
+    // while the first page is loading (later navigations keep showing the current page until the next one is loaded)
     pendingComponent: () => <LinearProgress />,
 });
 
 // The authenticated user (doesn't change while the app is open)
-const userQuery = queryOptions({ queryKey: ["user"], queryFn: () => getCurrentUser(), staleTime: Infinity });
+const userQuery = queryOptions({ queryKey: ["user"], queryFn: () => parseResponse(userClient.user.$get()), staleTime: Infinity });
 
 const drawerWidth = 260;
 const chatWidth = 420;

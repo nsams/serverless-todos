@@ -2,28 +2,28 @@ import { ArrowLeft, Delete, Move } from "@dextinity/admin-icons";
 import { Box, Container, IconButton, Menu, MenuItem, Paper, Stack, Tab, Tabs, TextField, Tooltip, Typography } from "@mui/material";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, createLink, Navigate, useNavigate, useRouter } from "@tanstack/react-router";
+import { type InferRequestType, parseResponse } from "hono/client";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { pageHead } from "~/app";
 import { useChatPage } from "~/chat/useChatPage";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { useShowError } from "~/components/ErrorSnackbar";
-import { useInvalidateModule, usePageQuery } from "~/moduleQueries";
+import { loadPageQuery, useInvalidateModule, usePageQuery } from "~/moduleQueries";
 
+import { notesClient } from "../api";
 import { notesChatPage } from "../chatPage";
 import { MarkdownPreview } from "../components/MarkdownPreview";
 import { maxNoteBodyLength, maxNoteTitleLength } from "../limits";
 import { notesModuleId } from "../moduleId";
-import { deleteNote, updateNote } from "../notes.functions";
 import { validateNoteSearch } from "../noteSearch";
-import type { NoteView } from "../operations.server";
-import { noteQuery, notesListsKey, useNotebooks } from "../queries";
+import { type Note, noteQuery, notesListsKey, useNotebooks } from "../queries";
 
 // A note in the editor. The search params are the state of the notebook's grid (notes.$notebookId.index.tsx), kept for the back link.
 export const Route = createFileRoute("/_app/notes/$notebookId/$noteId")({
     validateSearch: validateNoteSearch,
     loader: async ({ context: { queryClient }, params: { noteId } }) => {
-        const note = await queryClient.fetchQuery(noteQuery(noteId));
+        const note = await loadPageQuery(queryClient, noteQuery(noteId));
         return { title: note.title };
     },
     head: ({ loaderData }) => pageHead(loaderData?.title),
@@ -93,7 +93,7 @@ const autosaveDelay = 1000;
 
 type Values = { title: string; body: string };
 
-function NoteEditor({ note }: { note: NoteView }) {
+function NoteEditor({ note }: { note: Note }) {
     const router = useRouter();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
@@ -101,9 +101,13 @@ function NoteEditor({ note }: { note: NoteView }) {
     const showError = useShowError();
     const search = Route.useSearch();
 
+    // changes: the JSON body of the route, typed by the operation's input (a renamed field breaks the build)
+    const updateNote = (changes: InferRequestType<(typeof notesClient.notes)[":id"]["$patch"]>["json"]) =>
+        parseResponse(notesClient.notes[":id"].$patch({ param: { id: note.id }, json: changes }));
+
     const [draft, setDraft] = useState<Values>({ title: note.title, body: note.body });
     // the stored state the draft is based on; updatedAt tells newer changes made elsewhere from outdated or own ones
-    const [saved, setSaved] = useState<Values & { updatedAt: number }>({ title: note.title, body: note.body, updatedAt: note.updatedAt.getTime() });
+    const [saved, setSaved] = useState<Values & { updatedAt: number }>({ title: note.title, body: note.body, updatedAt: Date.parse(note.updatedAt) });
     const [status, setStatus] = useState<"saved" | "saving" | "error">("saved");
     const [mode, setMode] = useState<"write" | "preview">(note.body ? "preview" : "write");
 
@@ -116,11 +120,11 @@ function NoteEditor({ note }: { note: NoteView }) {
     const [loadedNote, setLoadedNote] = useState(note);
     if (note !== loadedNote) {
         setLoadedNote(note);
-        if (note.updatedAt.getTime() > saved.updatedAt) {
+        if (Date.parse(note.updatedAt) > saved.updatedAt) {
             if (!dirty) {
                 setDraft({ title: note.title, body: note.body });
             }
-            setSaved({ title: note.title, body: note.body, updatedAt: note.updatedAt.getTime() });
+            setSaved({ title: note.title, body: note.body, updatedAt: Date.parse(note.updatedAt) });
         }
     }
 
@@ -130,8 +134,8 @@ function NoteEditor({ note }: { note: NoteView }) {
         saveQueue.current = saveQueue.current.then(async () => {
             setStatus("saving");
             try {
-                const { updated } = await updateNote({ data: { id: note.id, title: values.title, body: values.body } });
-                setSaved({ ...values, updatedAt: updated.updatedAt.getTime() });
+                const { updated } = await updateNote({ title: values.title, body: values.body });
+                setSaved({ ...values, updatedAt: Date.parse(updated.updatedAt) });
                 setStatus("saved");
                 queryClient.setQueryData(noteQuery(note.id).queryKey, updated);
                 // the tab title: the page's loader runs again (it reads the saved note from the cache, no request)
@@ -190,14 +194,13 @@ function NoteEditor({ note }: { note: NoteView }) {
     const handleDelete = async () => {
         deleting.current = true;
         try {
-            await deleteNote({ data: { id: note.id } });
+            await parseResponse(notesClient.notes[":id"].$delete({ param: { id: note.id } }));
         } catch (error) {
             deleting.current = false;
             throw error;
         }
-        await navigate({ to: "/notes/$notebookId", params: { notebookId: note.notebookId }, search, replace: true });
-        // e.g. the sidebar's note counts; after leaving the page, so the deleted note isn't reloaded
-        void invalidate();
+        // e.g. the sidebar's note counts; the deleted note isn't reloaded
+        await invalidate(() => navigate({ to: "/notes/$notebookId", params: { notebookId: note.notebookId }, search, replace: true }));
     };
 
     const handleMove = async (notebookId: string) => {
@@ -208,7 +211,7 @@ function NoteEditor({ note }: { note: NoteView }) {
             await save(values);
         }
         try {
-            const { updated } = await updateNote({ data: { id: note.id, notebookId } });
+            const { updated } = await updateNote({ notebookId });
             // the page follows the note to its new notebook (NotePage)
             queryClient.setQueryData(noteQuery(note.id).queryKey, updated);
         } catch (error) {

@@ -9,7 +9,7 @@ import { getTodoRepository, type Todo } from "./db/todos.server";
 import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "./limits";
 import { parseTodoSearch, todoSearchSchema } from "./todoSearch";
 
-// The operations of the todos module (src/operations.ts): used by the UI (server functions in lists.functions.ts, todos.functions.ts)
+// The operations of the todos module (src/operations.ts): used by the UI (the routes of the REST API in api.server.ts)
 // and, the ones with AI metadata, as tools of the chat assistant and the MCP server. Every operation is scoped to the user (ctx.userId).
 
 const maxSearchResults = 50;
@@ -28,8 +28,6 @@ function listView({ id, name }: List) {
 function todoView({ id, listId, title, description, dueDate, done, createdAt }: Todo) {
     return { id, listId, title, description, dueDate, done, createdAt };
 }
-
-export type TodoView = ReturnType<typeof todoView>;
 
 async function getList(userId: string, listId: string) {
     const list = await getListRepository().get(userId, listId);

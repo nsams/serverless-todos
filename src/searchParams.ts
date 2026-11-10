@@ -1,5 +1,6 @@
-// Plain URLSearchParams serialization instead of TanStack Router's default JSON values:
-// arrays are repeated keys (?sort=title:asc&sort=done:desc), all values are strings and are typed by the routes' validateSearch
+// Search params as plain URLSearchParams instead of TanStack Router's default JSON values (src/router.tsx): arrays are repeated keys
+// (?sort=title:asc&sort=done:desc), all values are strings. The routes type them with their validateSearch (e.g. validateGridSearch),
+// the API (the query of a GET route, src/api/hono.server.ts) validates them with the operation's schema.
 
 export function parseSearch(searchStr: string) {
     const searchParams = new URLSearchParams(searchStr);

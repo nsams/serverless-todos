@@ -1,6 +1,15 @@
-import { type QueryClient, type QueryKey, useQueryClient, useSuspenseQuery, type UseSuspenseQueryOptions } from "@tanstack/react-query";
-import { type AnyRouter, isNotFound, useRouter } from "@tanstack/react-router";
+import {
+    type FetchQueryOptions,
+    type QueryClient,
+    type QueryKey,
+    useQueryClient,
+    useSuspenseQuery,
+    type UseSuspenseQueryOptions,
+} from "@tanstack/react-query";
+import { type AnyRouter, notFound, useRouter } from "@tanstack/react-router";
 import { useCallback, useEffect } from "react";
+
+import { NotFoundError } from "~/errors";
 
 // The modules' data in TanStack Query's cache (src/router.tsx): every query key of a module starts with the module's id
 // (e.g. [todosModuleId, "lists"], see src/modules/todos/queries.ts), so a change reloads exactly the data of its module:
@@ -13,23 +22,51 @@ export async function invalidateModules(queryClient: QueryClient, router: AnyRou
     await router.invalidate();
 }
 
+// Reloads the module's data after a change. navigate: goes to another page after the change (e.g. the created list, or away from the
+// deleted one). The module's data is marked outdated first: the next page's loader loads it fresh, the page left isn't loaded again
+// (e.g. the deleted list), and what the next page didn't load (e.g. the sidebar) is reloaded after the navigation.
 export function useInvalidateModule(moduleId: string) {
     const queryClient = useQueryClient();
     const router = useRouter();
-    return useCallback(() => invalidateModules(queryClient, router, [moduleId]), [queryClient, router, moduleId]);
+    return useCallback(
+        async (navigate?: () => Promise<void>) => {
+            if (!navigate) {
+                await invalidateModules(queryClient, router, [moduleId]);
+                return;
+            }
+            await queryClient.invalidateQueries({ queryKey: [moduleId], refetchType: "none" });
+            await navigate();
+            // not again what the next page is loading already (its loader, its queries mounting with outdated data)
+            await queryClient.refetchQueries({ queryKey: [moduleId], type: "active", stale: true }, { cancelRefetch: false });
+        },
+        [queryClient, router, moduleId],
+    );
 }
 
-// The main data of a page: loaded by the route's loader (queryClient.fetchQuery: fresh data from the cache, otherwise loaded), kept up to
-// date by the query. If a reload doesn't find it anymore (e.g. the note was deleted by the assistant while open), the loaders run again:
-// the page's loader loads it again (the query is stale) and the router shows the route's not found page.
+// Loads the main data of a page in its route's loader (fresh data from the cache, otherwise loaded). The API's 404 (a NotFoundError, see
+// src/api/client.ts; e.g. a list that doesn't exist (anymore)) becomes the route's not found page.
+export async function loadPageQuery<Data, Key extends QueryKey>(queryClient: QueryClient, options: FetchQueryOptions<Data, Error, Data, Key>) {
+    try {
+        return await queryClient.fetchQuery(options);
+    } catch (error) {
+        if (error instanceof NotFoundError) {
+            throw notFound();
+        }
+        throw error;
+    }
+}
+
+// The main data of a page, loaded by the route's loader (loadPageQuery) and kept up to date by the query. If a reload doesn't find it
+// anymore (e.g. the note was deleted by the assistant while open), the loaders run again: the page's loader loads it again (the query
+// is stale) and the router shows the route's not found page.
 export function usePageQuery<Data, Key extends QueryKey>(options: UseSuspenseQueryOptions<Data, Error, Data, Key>) {
     const router = useRouter();
     const { data, error } = useSuspenseQuery(options);
-    const notFound = isNotFound(error);
+    const isNotFound = error instanceof NotFoundError;
     useEffect(() => {
-        if (notFound) {
+        if (isNotFound) {
             void router.invalidate();
         }
-    }, [notFound, router]);
+    }, [isNotFound, router]);
     return data;
 }

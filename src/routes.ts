@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from "node:fs";
 
-import { index, layout, physical, rootRoute } from "@tanstack/virtual-file-routes";
+import { index, layout, physical, rootRoute, route } from "@tanstack/virtual-file-routes";
 
 // Route tree (TanStack Router virtual file routes, see tsr.config.json): the core routes in src/routes/, the routes of each module
 // in its own folder src/modules/<module>/routes/ (file-based routing within the folder), mounted into the app layout.
@@ -13,4 +13,11 @@ const moduleRoutes = readdirSync(modulesDirectory)
     .map((module) => physical(`../modules/${module}/routes`));
 
 // e.g. src/modules/todos/routes/: /lists, /lists/$listId; src/modules/notes/routes/: /notes, /notes/$notebookId, /notes/$notebookId/$noteId
-export const routes = rootRoute("__root.tsx", [index("index.tsx"), layout("_app.tsx", moduleRoutes)]);
+export const routes = rootRoute("__root.tsx", [
+    index("index.tsx"),
+    layout("_app.tsx", [
+        ...moduleRoutes,
+        // any other path: 404 within the app layout
+        route("$", "_app.$.tsx"),
+    ]),
+]);

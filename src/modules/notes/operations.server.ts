@@ -8,7 +8,7 @@ import { getNoteRepository, type Note } from "./db/notes.server";
 import { maxNoteBodyLength, maxNotebookNameLength, maxNoteTitleLength } from "./limits";
 import { noteSearchSchema, parseNoteSearch } from "./noteSearch";
 
-// The operations of the notes module (src/operations.ts): used by the UI (server functions in notebooks.functions.ts, notes.functions.ts)
+// The operations of the notes module (src/operations.ts): used by the UI (the routes of the REST API in api.server.ts)
 // and, the ones with AI metadata, as tools of the chat assistant and the MCP server. Every operation is scoped to the user (ctx.userId).
 
 const maxSearchResults = 50;
@@ -26,8 +26,6 @@ function notebookView({ id, name }: Notebook) {
 function noteView({ id, notebookId, title, body, createdAt, updatedAt }: Note) {
     return { id, notebookId, title, body, createdAt, updatedAt };
 }
-
-export type NoteView = ReturnType<typeof noteView>;
 
 async function getNotebook(userId: string, notebookId: string) {
     const notebook = await getNotebookRepository().get(userId, notebookId);
