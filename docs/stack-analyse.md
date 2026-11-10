@@ -1,7 +1,18 @@
-# Stack-Analyse: Basis-Stack für zukünftige Projekte
+# Stack-Analyse: Basis-Stack für zukünftige Projekte (Neubewertung)
 
-Stand: 2026-11-09. Gesetzt sind Cloudflare Workers + D1, React, MUI (inkl. MUI X DataGrid und MUI X Chat), Drizzle und TypeScript. Zu entscheiden ist eine von 8 Varianten für API-Schicht, Routing und Data-Fetching.
-Grundlage sind alle 8 Varianten-Worktrees (PRs #13–#19 plus `main`), je ein Detailbericht pro Variante und Querschnitts-Bewertungen pro Kategorie. Für die Querschnitts-Bewertungen wurden die Aussagen der Berichte im Code nachgeprüft und die Scores über alle Varianten hinweg kalibriert. Wo ein Bericht und eine Querschnitts-Bewertung voneinander abweichen, gilt die Querschnitts-Bewertung (siehe Anhang B).
+Stand: 2026-11-10. Gesetzt sind Cloudflare Workers + D1, React, MUI (inkl. MUI X DataGrid und MUI X Chat), Drizzle und TypeScript. Offen ist eine von 8 Varianten für API-Schicht, Routing und Data-Fetching.
+
+Diese Fassung ersetzt die Bewertung vom 2026-11-09. Seitdem wurde jede Variante gezielt verbessert, und alle 8 teilen jetzt einen stack-neutralen Kern (Abschnitt 2). Alle Scores wurden neu aus dem Code abgeleitet und nicht von gestern übernommen.
+
+Grundlage:
+
+- die 8 Worktrees auf ihrem aktuellen Branch-Head;
+- je ein Detailbericht pro Variante;
+- je eine Querschnitts-Bewertung pro Kategorie. Für diese wurden die Aussagen der Berichte im Code nachgeprüft, eigene Experimente in Scratch-Kopien gemacht (Rename-Tests, Paketierungstest, Skalierungstest mit 32 Modulen, Builds) und die Scores über alle Varianten kalibriert.
+
+Bei Abweichungen gilt die Querschnitts-Bewertung (Anhang B).
+
+Alle 8 Varianten bestehen `npm run lint`, `npm run build` und einen e2e-Smoke-Test mit 29 Checks (Playwright-UI + MCP). Das wurde unabhängig verifiziert.
 
 ---
 
@@ -10,749 +21,990 @@ Grundlage sind alle 8 Varianten-Worktrees (PRs #13–#19 plus `main`), je ein De
 **1. Wahl: `trpc-tsr-tq` (tRPC + TanStack Router als SPA + TanStack Query, PR #18).**
 **2. Wahl: `trpc-rr-decl-tq` (tRPC + React Router declarative + TanStack Query, PR #17).**
 
-- **API-Schicht und AI/MCP:** Die wichtigste Anforderung ist, dass AI-Chat und MCP für alle Module „eingebaut“ sein sollen. Dafür ist tRPC die beste API-Schicht. Eine Procedure ist bereits eine transportunabhängige Operation mit zod-Input, typisierbarer `.meta()` und `createCaller(ctx)`. Daraus lässt sich ein Tool für den Chat und für MCP ableiten, sodass eine Definition UI-API, Chat-Tool und MCP-Tool zugleich bedient.
-- **Routing:** TanStack Router prüft Links, Params, Search-Params, Redirects und Loader-Daten typsicher gegen einen generierten Route-Tree. Zusammen mit TanStack Query (Cache, Preload, gezielte Invalidierung) ist das die Kombination, die für viele Module, Seiten und Entitäten am besten skaliert. Variante 8 hat diese Features als einzige SPA bereits aktiviert: `autoCodeSplitting`, Preload on intent und `staleTime`.
-- **Cloudflare:** Als statische SPA mit einem reinen API/Chat/MCP-Worker (0,9 MB gz, kein React im Worker, Batched Requests) passt der Stack sehr gut zu Cloudflare. SSR bringt für eine Access-geschützte interne App nichts.
-- **Variante 7 als Alternative:** Variante 7 teilt die tRPC-Vorteile. Sie kommt ohne Codegen und File-Routing aus und lässt sich deshalb am leichtesten als Library-Pakete extrahieren. Dafür hat sie keine Loader und kein Prefetch, und ihre Route-Typisierung ist selbstgebaut statt framework-gestützt. Wenn die Library-Extraktion ganzer Module sehr früh Priorität hat, ist Variante 7 die bessere Wahl.
-- **Gemeinsame Baustellen:** Heute sind *alle* Varianten bei AI/MCP gleich gut bzw. gleich schwach. `tools.server.ts`, `mcp.server.ts` und die Repositories sind in allen 8 Worktrees byte-identisch. Jede Operation ist doppelt implementiert (UI-API und Tool). Die Entscheidung fällt deshalb über das **Potenzial**. Dort liegt tRPC klar vorn.
-- **Vor der Freigabe als Template** muss Variante 8 noch um die Ableitung der Tools aus den Procedures, um typisierten Chat-Kontext und um gezielte Invalidierung ergänzt werden (Abschnitt 8).
+- **Die Empfehlung von gestern bleibt bestehen, aber aus anderen Gründen.** Gestern war das Hauptargument für tRPC, dass sich Chat- und MCP-Tools aus Procedures ableiten lassen. Dieses Argument ist weggefallen. Operationen, Tools, MCP, Chat-Kontext und UI-Refresh-Signal sind jetzt in allen 8 Varianten derselbe stack-neutrale Code (Agent, Tools, MCP, Chat-Seitenkontext und Changes-Signal md5-identisch, die Modul-Operationen bis auf Kommentare gleich). Jede Variante integriert AI/MCP fast gleich gut (7,5–8,5); die Unterschiede kommen nur aus dem Refresh-Glue.
+- **Warum Variante 8 trotzdem führt:**
+    - tRPC hat den dünnsten typtreuen Adapter: 1 Zeile pro Operation, superjson, generierte `queryOptions`/Keys und Batching aller Loader eines Seitenaufrufs in einen Worker-Request.
+    - TanStack Router liefert als einziger Router framework-seitige Typprüfung von Links, Params, Search und Redirects, dazu Loader über einen gemeinsamen Query-Cache, Preload on intent und automatisches Code-Splitting.
+    - Variante 8 liegt deshalb bei Typsicherheit (8,5, gleichauf mit `tanstack-start`), Cloudflare (9) und Skalierung (8) vorn. Im Skalierungstest wuchsen die TS-Kosten bis 32 Module linear.
+- **Variante 7 als Alternative:** Sie teilt die tRPC-Vorteile und lässt sich deutlich besser paketieren. Module sind reine Werte ohne Codegen und typchecken standalone mit 0 Fehlern (Library 7,5 vs. 6). Dafür ist ihre Routing-Typisierung selbstgebaut: `<Link to>` ist `string`, Route-Hooks sind Casts, Layouts sind flach.
+- **Die Abstände sind klein geworden.**
+
+    | Gesamtwert | 8    | 7    | 1 `tanstack-start` |
+    | ---------- | ---- | ---- | ------------------ |
+    | aktuell    | 7,78 | 7,71 | 7,56               |
+    | Potenzial  | 8,68 | 8,48 | 8,41               |
+
+    Die Spitzengruppe ist robust: 8 gewinnt in 3 von 4 Gewichtungen. Der 2. Platz hängt dagegen von der Gewichtung ab. Gewichtet man Einfachheit und Library stärker, liegt 7 vorn. Gewichtet man Typsicherheit und Skalierung stärker, rückt `tanstack-start` auf Platz 2.
+
+- **Die wichtigere Achse ist jetzt das Routing, nicht mehr die API.** Das Operationsmodell ist stack-neutral, und ein API-Adapter ist 1–3 Zeilen pro Operation. Typsicherheit, Library-Extraktion und Skalierung werden heute vom Router entschieden.
 
 ---
 
-## 2. Überblick der 8 Varianten
+## 2. Was sich seit der ersten Bewertung geändert hat
 
-| # | Variante | PR | API-Schicht | Client-Routing | Data-Fetching / Cache | SSR/SPA |
-|---|---|---|---|---|---|---|
-| 1 | `tanstack-start` | main (Baseline) | TanStack Start `createServerFn` | TanStack Router (virtual file routes, im Framework) | isomorphe Route-Loader → Server Functions; kein Cache, `router.invalidate()` | SSR im Worker |
-| 2 | `rr-framework` | #13 | RR Loader/Actions + eigener „Intents“-Layer | RR v8 framework mode, `routes.ts` + `react-router typegen` | Loader lesen Repos direkt (Single Fetch); Revalidate-all | SSR im Worker |
-| 3 | `hono-rr-data` | #14 | Hono REST + `hc<Api>` | RR data mode (`createBrowserRouter`) | Loader + `revalidate()`; kein Cache | SPA (static assets) |
-| 4 | `hono-rr-decl-tq` | #16 | Hono REST + `hc<Api>` | RR declarative (`<Routes>`) + `PathParam`-Helper | TanStack Query (`useQuery`, handgeschriebene Keys); keine Loader | SPA |
-| 5 | `hono-tsr-tq` | #19 | Hono REST + `hc<Api>` | TanStack Router (virtual file routes) | Loader `fetchQuery` + `useSuspenseQuery` | SPA |
-| 6 | `trpc-rr-data` | #15 | tRPC v11 + superjson + `httpBatchLink` | RR data mode | Loader + `revalidate()`; kein Cache | SPA |
-| 7 | `trpc-rr-decl-tq` | #17 | tRPC + `@trpc/tanstack-react-query` | RR declarative + eigenes `defineRoute` (~48 LOC) | TanStack Query über Options-Proxy; keine Loader | SPA |
-| 8 | `trpc-tsr-tq` | #18 | tRPC + `@trpc/tanstack-react-query` | TanStack Router (virtual file routes, `autoCodeSplitting`) | Loader `fetchQuery` + `useSuspenseQuery`, Preload on intent | SPA |
+### 2.1 Gemeinsamer, stack-neutraler Kern (aus `main` in alle 8 gemergt)
 
-In allen Varianten gemeinsam und identisch:
-- Cloudflare Access Auth.
-- AIChatAgent als Durable Object pro User.
-- Stateless MCP über `createMcpHandler`.
-- `AppTool`-Abstraktion mit Adaptern für AI SDK (13 LOC) und MCP (47 LOC).
-- Modulstruktur `src/modules/<m>/` mit `registry.ts` und `registry.server.ts`.
-- `@cloudflare/vite-plugin` mit workerd im Dev-Betrieb.
-- Größe von `src`: 3,8–4,1k LOC (ohne generierte Dateien).
+| Baustein                       | Datei(en)                                                                                                                                                           | Was er ersetzt / bewirkt                                                                                                                                                                                                            |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Operation-Layer                | `src/operations.ts` (`defineOperation`, `runOperation`, `toolsFromOperations`, `OperationInput/Output`)                                                             | Eine Operation = zod-Input + `effect` (`read`/`write`/`delete`) + optional `ai: {title, description}` + Handler. Schema, Existenzprüfung und Fehler-Semantik existieren genau einmal.                                               |
+| Domänen-Operationen pro Modul  | `src/modules/<m>/operations.server.ts`                                                                                                                              | Ersetzen die handgeschriebenen `tools.server.ts` (161/173 LOC) und die doppelten Schemas in den UI-APIs. Die Abweichungen von gestern sind beseitigt (leerer Titel, Existenzprüfung nur im Tool, `appendToNote` nur als Tool).      |
+| Abgeleitete Tools              | `toolsFromOperations` → `registry.server.ts createTools` → `chat/tools.server.ts` (`needsApproval` bei `delete`) und `mcp/mcp.server.ts` (Annotations aus `effect`) | Jede Operation mit `ai` ist automatisch Chat- und MCP-Tool. Doppelte Tool-Namen werfen beim Start.                                                                                                                                  |
+| Fehlerklassen                  | `src/errors.ts` (`NotFoundError`, `ValidationError`)                                                                                                                | Ersetzen ad-hoc-`{error}`-Unions und 422-Zweige. Jede API-Schicht mappt sie einmal hin und zurück.                                                                                                                                  |
+| Typisierter Chat-Seitenkontext | `src/chat/chatPage.ts` (`defineChatPage`, `defineChatContext`), `src/chat/useChatPage.tsx`                                                                          | Ersetzt `{routeId, params: Record<string,string>}`. Die Seite meldet `useChatPage(todosChatPage, { listId })`, der Server validiert mit demselben zod-Schema. Renames brechen den Build auf beiden Seiten (in allen 8 verifiziert). |
+| Data-Changes-Signal            | `chat/agent.server.ts:36-38`, `chat/useChatChanges.ts`                                                                                                              | Nach jedem Tool mit `effect !== "read"` schreibt der Agent einen Part `data-changes {modules}`. Der Client lädt gezielt diese Module neu. `mutatingToolNames: string[]` entfällt.                                                   |
+| Typisierte Grid-Suche          | `src/gridSearch.ts`                                                                                                                                                 | Typisierte Felder, Operatoren und `GridColumns<Row, Fields>`. `z.looseObject`/`z.record`-Grid-Inputs entfallen. `filterParam` (typisierter Preset-Filter) gibt es nur in 5 und 8.                                                   |
+| Repository-Korrekturen         | z. B. `todos/db/todos.server.ts:91,106,113`                                                                                                                         | `update`/`rename`/`delete` liefern die Zeile per `.returning()`. Bei 0 Zeilen wirft die Operation `NotFoundError`. Der stille No-op-Bug von gestern ist behoben.                                                                    |
 
----
+Belegt per md5-Vergleich: `agent.server.ts`, `tools.server.ts`, `mcp.server.ts`, `useChatChanges.ts`, `chatPage.ts` und `errors.ts` sind in allen 8 Worktrees byte-identisch. `operations.ts` unterscheidet sich nur in Kommentaren und im zusätzlichen `operationInput`-Helper von Variante 1.
 
-## 3. Haupt-Bewertungstabelle
+### 2.2 Stack-spezifische Verbesserungen
 
-Skala 0–10. Jede Zelle hat das Format **aktuell / Potenzial**. „Potenzial“ meint, was innerhalb desselben Stacks mit realistischen Verbesserungen erreichbar ist (Helper, Operation-Layer, besseres Typing, Konfiguration).
+| #   | Variante          | HEAD      | Wesentliche Verbesserungen                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --- | ----------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `tanstack-start`  | `d45be65` | `createServerFn` als 3-Zeiler über `operationHandler` (`a57a148`). TanStack Query mit modul-präfixierten Keys und gezielter Invalidierung (`97093e2`). `ssr: "data-only"` (`5e923bd`). Auth einmal im Worker-Entry (`2513b48`). Module per Ordner gefunden (`a85bd12`). Route-Tree in `lint:tsc` regeneriert (`97991b9`). Sidebar-Prefetch nur beim Betreten der App (`a8e39c2`).                                                                                |
+| 2   | `rr-framework`    | `07f6f1f` | Intents-Layer entfernt. Eine generische Resource-Route `/api/:module/:operation` plus `useOperations<typeof serverModule>` (im Merge `7e0cf2b`; typisiertes Outcome in `dcda664`). Loader rufen Operationen in-process auf (`loadOperation`/`loadGridOperation`). Modul-Ordner-Discovery (`9da5f71`). `revalidateOnChangesOf(moduleId)` (`bef538b`). CSRF-Check auch für Resource-Routes (`21dc5f9`). Drei Revalidation-Fixes (`c60f9ef`, `13d74e1`, `07f6f1f`). |
+| 3   | `hono-rr-data`    | `4341f1a` | `operationRoute` (1 Zeile pro Route, Typen aus der Operation). Modul-lokale `hc`-Clients, API-Mount per Schleife. Eigenes `defineRoute` mit typisierten Params/Search/Loader/`href` (`ceec5f4`). Modulweise Revalidierung und Navigation-Routes pro Modul. Lazy Pages (`8656f37`).                                                                                                                                                                               |
+| 4   | `hono-rr-decl-tq` | `9f85a33` | Server-Schicht wie 3 (identisch). 47-Zeilen-`defineRoute`. Modul-präfixierte Query-Keys. Lazy Pages + lazy ChatPanel. Hover-Prefetch der Seitendaten (`98509bb`). Typisierte PATCH-Literale statt Spread-Conditional.                                                                                                                                                                                                                                            |
+| 5   | `hono-tsr-tq`     | `0fda83e` | Server-Schicht wie 3/4. `autoCodeSplitting`, Preload on intent, `staleTime` 30 s. Typisierter Overdue-Filter (`filterParam`) und `InferResponseType`-Row-Typen (`b96ef33`). Gezielte Modul-Invalidierung.                                                                                                                                                                                                                                                        |
+| 6   | `trpc-rr-data`    | `5e5494a` | `query(op)`/`mutation(op)` (1 Zeile pro Operation). Modul-lokale Clients. `defineRoute`. Modulweise Revalidierung mit gezählter Map (`5e5494a`). Navigation-Routes pro Modul. Lazy Pages.                                                                                                                                                                                                                                                                        |
+| 7   | `trpc-rr-decl-tq` | `30dc958` | Server-Schicht wie 6/8. `createModuleApi` über `createTRPCOptionsProxy` mit `keyPrefix` (ohne Casts). Automatische Invalidierung pro Modul in `MutationCache.onSettled`. `defineRoute({ query, page })` lädt Code und Daten parallel, inklusive Hover-Preload und Transitions mit Progress-Bar (`9ef2f88`). Branded `Href`.                                                                                                                                      |
+| 8   | `trpc-tsr-tq`     | `ac62e6c` | Server-Schicht wie 6/7. Modul-lokale Clients über einen kombinierten Call-/Options-Proxy. Gezielte Invalidierung statt `useRefresh` mit „stale before navigate“ (`1d20da6`). Collection-Helper (`a159d7e`). Typisierter Overdue-Filter (`8f6225c`). Route-Tree in `lint:tsc` regeneriert.                                                                                                                                                                        |
 
-**Gewichtung**
+Die Server-Schicht ist innerhalb der Gruppen identisch:
 
-| Kategorie | Gewicht |
-|---|---|
-| Typsicherheit | 20 % |
-| Einfachheit | 15 % |
-| Unabhängige Module | 15 % |
-| Wenig Duplikation | 10 % |
-| AI/MCP-Integration | 15 % |
-| Library-Extraktion | 10 % |
-| Cloudflare & Reife | 7,5 % |
-| Skalierbarkeit große Apps | 7,5 % |
+- Hono 3/4/5: `hono.server.ts` und `api.server.ts` byte-identisch, `client.ts` unterscheidet sich nur in einem Kommentar.
+- tRPC 6/7/8: `trpc.server.ts`, `router.server.ts` und die Modul-`api.server.ts` identisch. Nur `api/client.ts` unterscheidet sich.
 
-| Variante | Typsicherheit | Einfachheit | Unabh. Module | Wenig Duplikation | AI/MCP | Library-Extraktion | Cloudflare & Reife | Skalierung | **Gesamt aktuell** | **Gesamt Potenzial** |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 1 tanstack-start | 8 / 9 | 6,5 / 7,5 | 5,5 / 7 | 5,5 / 7 | 6,5 / 8 | 4 / 6 | 7 / 8 | 6 / 7,5 | 6,30 | 7,64 |
-| 2 rr-framework | 6,5 / 8 | 6 / 7 | 5 / 6,5 | 5 / 6,5 | 6 / 7,5 | 4 / 6 | 7,5 / 8 | 5,5 / 7 | 5,72 | 7,12 |
-| 3 hono-rr-data | 5,5 / 7 | 7,5 / 8 | 7 / 8,5 | 4,5 / 7 | 6 / 7 | 6 / 8 | 8 / 9 | 4,5 / 6,5 | 6,16 | 7,59 |
-| 4 hono-rr-decl-tq | 6,5 / 7,5 | 6 / 7 | 7,5 / 9 | 4,5 / 6,5 | 6 / 7,5 | 7 / 8,5 | 8,5 / 9 | 6 / 7,5 | 6,46 | 7,76 |
-| 5 hono-tsr-tq | 8,5 / 9 | 5,5 / 6,5 | 6 / 7,5 | 4 / 6,5 | 6,5 / 7,5 | 5 / 7 | 8,5 / 9 | 6,5 / 8 | 6,42 | 7,65 |
-| 6 trpc-rr-data | 5 / 6,5 | 8 / 8 | 7 / 8,5 | 5,5 / 7,5 | 6 / 8 | 6 / 8 | 8 / 9 | 5 / 6,5 | 6,28 | 7,69 |
-| 7 trpc-rr-decl-tq | 7 / 8 | 6,5 / 7 | 7,5 / 9 | 5 / 8 | 6 / 8,5 | 7 / 8,5 | 8,5 / 9 | 6,5 / 7,5 | 6,72 | **8,16** |
-| **8 trpc-tsr-tq** | 8,5 / 9,5 | 6,5 / 7,5 | 6 / 7,5 | 5,5 / 8,5 | 6,5 / 9 | 5 / 7 | 8,5 / 9 | 7,5 / 8,5 | **6,80** | **8,36** |
+In allen 8 Varianten muss ein neues Modul nur noch in **einer** zentralen Datei eingetragen werden (`src/modules/registry.ts`, Reihenfolge der Sidebar). Gestern waren es 2–3 Dateien.
 
-**Rangfolge nach Potenzial (aktuell):**
+### 2.3 Konsequenz: welche Unterschiede verschwunden sind und welche bleiben
 
-| Rang | Variante | Potenzial | aktuell |
-|---|---|---|---|
-| 1 | `trpc-tsr-tq` | 8,36 | 6,80 |
-| 2 | `trpc-rr-decl-tq` | 8,16 | 6,72 |
-| 3 | `hono-rr-decl-tq` | 7,76 | 6,46 |
-| 4 | `trpc-rr-data` | 7,69 | 6,28 |
-| 5 | `hono-tsr-tq` | 7,65 | 6,42 |
-| 6 | `tanstack-start` | 7,64 | 6,30 |
-| 7 | `hono-rr-data` | 7,59 | 6,16 |
-| 8 | `rr-framework` | 7,12 | 5,72 |
+**Verschwunden:**
 
-**Herkunft der Scores:**
-- Für Typsicherheit, Einfachheit, Module, Duplikation, AI/MCP, Cloudflare und Skalierung wurden die kalibrierten Scores der Querschnitts-Bewertungen übernommen.
-- Für Library-Extraktion gab es keine eigene Querschnitts-Bewertung. Diese Spalte ist aus den Berichten abgeleitet und nach der Achsen-Bewertung der Querschnitts-Bewertung Module/Library kalibriert. Dabei gilt: declarative ≥ data mode > TanStack Router (file routes) > Frameworks. Außerdem sind Varianten 4 und 7 strukturell gleich und bekommen deshalb den gleichen Score.
+- **Der AI/MCP-Vorsprung von tRPC.** Tools kommen in allen Varianten aus den Operationen, und der Chat-Kontext hängt nicht mehr an Routen. Die Tools laufen im ChatAgent-DO und rufen die Operationen direkt auf, an jeder API-Schicht vorbei. Damit sind auch die gestrigen Potenzial-Argumente hinfällig: `createCaller` als Tool-Quelle und typisierte Route-IDs für den Chat-Kontext.
+- **Doppelte Operationen und Schemas.** Die Duplikations-Spanne schrumpfte von 4–5,5 auf 6,5–8.
+- **Typisierte Fehler-Unions als Hono-Vorteil.** Alle Varianten mappen jetzt auf `NotFoundError`/`ValidationError`. Fehler-Bodies sind auch bei Hono nicht mehr Teil der `hc`-Typen.
+- **Unterschiede bei der Modul-Registrierung.** Überall 1 zentrale Datei. In allen 8 verifiziert: Ordner löschen plus 1 Zeile → `tsc` (App-tsconfig) und Build grün. Nur `lint:tsc` bricht an `scripts/fixtures.ts` (Abschnitt 6).
+- **Fehlendes Code-Splitting** (gestern in 3–7). Alle 8 splitten jetzt pro Route und laden das ChatPanel lazy.
 
-**Sensitivität:** Die Platzierung von 8 und 7 auf den ersten beiden Plätzen hängt nicht an der Gewichtung. Geprüft wurden drei alternative Gewichtungen:
+**Geblieben (und jetzt entscheidend):**
 
-| Gewichtung | Ergebnis (Potenzial) |
-|---|---|
-| alle Kategorien gleich | 8: 8,31 · 7: 8,19 · 4: 7,81 |
-| Einfachheit und Library je 15–20 % | 8: 8,18 · 7: 8,12 · aktuell liegt 7 knapp vorn (6,67 vs. 6,55) |
-| Typsicherheit 25 % und Skalierung 15 % | 8: 8,60 · 7: 8,12 · 5: 7,88 |
-
-Auf den Plätzen 3–7 liegen die Varianten innerhalb von ±0,2. Diese Reihenfolge ist deshalb nicht belastbar.
-
-**Lesehilfe:** Die aktuellen Werte liegen eng beieinander (5,7–6,8). Ein großer Teil des Codes ist in allen Varianten identisch: Tools, MCP, Repositories, Grid-Helper und ~80 % des Seiten-Codes. Unterschiede entstehen vor allem in der API-Schicht, im Routing und beim Data-Fetching. Diese Teile bestimmen, wie gut sich die gemeinsamen Schwächen beheben lassen.
+1. **Router-Typisierung:** TanStack Router (1, 5, 8) prüft beliebige Links, Params und Search. Alle React-Router-Varianten akzeptieren `<Link to="/irgendwas">`.
+2. **Client-Cache:** TanStack Query (1, 4, 5, 7, 8) vs. reine Loader ohne Cache (2, 3, 6).
+3. **Request-Effizienz:** tRPC-Batching und RR Single Fetch stehen unbatched REST bzw. Server Functions gegenüber.
+4. **Paketierbarkeit:** Code-basierte Route-Objekte (3, 4, 6, 7) stehen File-Routes mit Host-`Register` (1, 5, 8) und appDirectory-gebundenem Typegen (2) gegenüber.
+5. **SSR im Worker (1, 2) vs. statische SPA (3–8).**
 
 ---
 
-## 4. Achsen-Analyse
+## 3. Überblick der 8 Varianten
 
-### 4a. API-Schicht
+| #   | Variante          | Branch / PR                          | API-Adapter über Operationen                                                                                   | Routing                                                             | Data-Fetching / Cache                                                                              | SSR/SPA                   |
+| --- | ----------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------- |
+| 1   | `tanstack-start`  | `main`                               | `createServerFn().validator(operationInput<…>).handler(operationHandler(op))`, 3 Zeilen pro UI-Op              | TanStack Router, virtual file routes (Ordner-Discovery), Codegen    | Loader `fetchQuery` + `usePageQuery`; TQ, Keys `[moduleId,…]` handgeschrieben; `staleTime` 30 s    | SSR `data-only` im Worker |
+| 2   | `rr-framework`    | `react-router`, #13                  | generische Resource-Route `POST /api/:module/:operation` + `useOperations().run("op", input)`; 0 Zeilen pro Op | RR v8 framework mode, `routes.ts` pro Modul, `react-router typegen` | Loader rufen Operationen in-process auf (Single Fetch); kein Client-Cache; `revalidateOnChangesOf` | SSR im Worker (Pflicht)   |
+| 3   | `hono-rr-data`    | `claude/hono-j27p9n`, #14            | Hono-Sub-App pro Modul, `.on(...operationRoute(METHOD, path, op))`; Client `createClient<typeof api>(id)`      | RR data mode + eigenes `defineRoute` (155 LOC)                      | Loader, kein Cache; `reloadModules` + `moduleShouldRevalidate`                                     | SPA (static assets)       |
+| 4   | `hono-rr-decl-tq` | `hono-react-router-declarative`, #16 | wie 3                                                                                                          | RR declarative + `defineRoute` (47 LOC)                             | TQ in der Komponente (keine Loader), `queryOptions` handgeschrieben; Hover-Prefetch nur Daten      | SPA                       |
+| 5   | `hono-tsr-tq`     | `hono-tanstack-router`, #19          | wie 3                                                                                                          | TanStack Router, virtual file routes, `autoCodeSplitting`           | Loader `loadPageQuery` + `usePageQuery`; TQ, `queries.ts` handgeschrieben; Preload on intent       | SPA                       |
+| 6   | `trpc-rr-data`    | `trpc`, #15                          | tRPC-Router pro Modul, `x: query(op)`/`mutation(op)`; `createModuleClient<Router>(id)`; `httpBatchLink`        | RR data mode + `defineRoute` (86 LOC)                               | Loader, kein Cache; `moduleData.ts` (gezählte Map)                                                 | SPA                       |
+| 7   | `trpc-rr-decl-tq` | `trpc-react-router-declarative`, #17 | wie 6; `createModuleApi` = `createTRPCOptionsProxy` mit `keyPrefix`                                            | RR declarative + `defineRoute({ query, page })` (179 LOC)           | TQ; Code und Daten parallel; Invalidierung automatisch in `MutationCache.onSettled`                | SPA                       |
+| 8   | `trpc-tsr-tq`     | `trpc-tanstack-router`, #18          | wie 6; `createModuleApi` = kombinierter Call-/Options-Proxy                                                    | TanStack Router, virtual file routes, `autoCodeSplitting`           | Loader `loadPageQuery` + `usePageQuery`; TQ-Keys aus tRPC; Preload on intent                       | SPA                       |
 
-| | Start Server Functions (1) | RR Loader/Actions/Intents (2) | Hono REST + `hc` (3, 4, 5) | tRPC (6, 7, 8) |
-|---|---|---|---|---|
-| End-to-End-Typen DB → Client | ja, inferiert; Dates bleiben Dates | Loader via typegen ja; Intents: Params `Record<string,string>`, Ergebnis gecastet (`useIntents.ts:54`) | ja, inferiert inkl. Status-Unions (typisierter 422-Body); `Date` → `string` | ja, inferiert; superjson erhält Dates; Fehler untypisiert (`error.data as …`) |
-| Boilerplate pro Operation | gering (`createServerFn` + `useServerFn`) | Intent + `action`/`clientAction`-Exports pro Route, Host-Route nötig (`?index`) | hoch: Methode, Pfad, Statuscodes, 422-Zweige auf Server und Client (je 6×), handgeschriebene Query-Factories mit TQ | gering; mit TQ: Keys und Fetcher gratis (`trpc.x.queryOptions()`, `pathFilter()`) |
-| Eine Definition → UI + Chat + MCP | mittel: Operation-Layer darunter nötig, plus Top-Level-Wrapper pro Op (Compiler-Constraint); Server Functions laufen nicht im DO | schwer: Intents hängen an Route-Params und werfen Redirects | mittel: eigenes `defineOperation`, das typisierte `.route()`-Ketten erzeugen muss, oder In-Process-`app.request()` mit User-Injection | **gut:** `.meta({tool})`, `_def.inputs`, `createCaller({user})` funktionieren im DO und im MCP-Handler |
-| Request-Anzahl | N RPCs (unbatched) | 1 (Single Fetch) | N+2 (unbatched) | 1 (`httpBatchLink`) |
-| TS-Check-Kosten (Instantiations) | 589k | 431k | 633k–772k (eine riesige verkettete `Api`) | 430k–580k |
-| Externe API für Dritte | nein | nein | **ja, echtes REST** | eingeschränkt (tRPC-HTTP; OpenAPI nur über Zusatzlib); MCP deckt AI-Clients ab |
-| Cloudflare | Teil des SSR-Frameworks | Teil des SSR-Frameworks | Workers-nativ, offiziell dokumentiert | fetch-Adapter Workers-nativ, 114 kB |
-| Library-Extraktion | schlecht (Start-Compiler muss Paket-Source transformieren) | schlecht (an Routen gebunden) | gut (Sub-App hängt nur vom Env-Typ ab) | gut (braucht gemeinsame `t`-Instanz als Peer) |
+Gemeinsam in allen 8 Varianten:
 
-**Fazit API:** tRPC > Start ≈ Hono > RR framework.
-- **tRPC** liegt bei Duplikation, AI/MCP-Vereinheitlichung, Request-Batching und TS-Kosten vorn.
-- **Hono** hat die beste Cloudflare-Story und typisierte Fehlercodes, ist aber pro Operation am wortreichsten. Die Vereinheitlichung mit Tools kämpft gegen die `hc`-Typinferenz.
-- **Start** ist kompakt, aber an Compiler und Request-Kontext gebunden.
-- **RR-Intents** sind eigener Glue-Code ohne Library-Rückhalt.
-
-### 4b. Client-Routing und Daten
-
-| | RR data mode (3, 6) | RR declarative + TQ (4, 7) | TanStack Router + TQ (5, 8) | Framework: Start (1) / RR framework (2) |
-|---|---|---|---|---|
-| Typisierte Params/Search/Links | kaum: `pathParam(params,'listId')` (3), `params.listId ?? ""` (6), Loader-Daten per Cast | nur mit eigenem Helper: `PathParam` (4), `defineRoute` mit `href`/Search (7); keine Existenzprüfung, Links bleiben `string` | **vollständig gegen generierten Tree**: Links, Params, Search, Redirect, Loader-Daten, Route-IDs auf dem Server | 1: wie TSR. 2: typegen für Params, `loaderData` und `href()`, aber `<Link to>` ist `string`, Action-Params sind untypisiert |
-| Daten-UX | Loader, aber Revalidate-all; kein Cache | Cache, gezielte Invalidierung; aber render-then-fetch, keine Loader und kein Prefetch | Loader + Cache + Preload on intent + Batched Requests | Loader, kein Cache, Revalidate-all |
-| Codegen | keins | keins | `routeTree.gen.ts` (committed; `lint:tsc` regeneriert ihn nicht) | 1: `routeTree.gen.ts`; 2: `+types` (in `lint:tsc` enthalten) |
-| Code-Splitting | nein (RR `lazy` ungenutzt) | nein (`React.lazy` möglich, erzeugt ohne Loader aber Wasserfälle) | 8: `autoCodeSplitting: true`; 5: fehlt (1 Zeile) | automatisch |
-| Module eigenständig | gut (RouteObject[]), aber Navigation über untypisierten Layout-Loader | **am besten** (`{path, Component}`, eigene Sidebar-Query) | 3 zentrale Dateien, `/_app`-Literale, Register-Augmentation | 3 zentrale Dateien; Codegen bzw. Compiler bindet Module an den Host |
-| Library-Extraktion | gut | **am besten** | schwer für Client-Module (File-Routes, Generator schreibt in Dateien) | am schwersten |
-| Konzepte | wenige | wenige im Router, Komplexität wandert in Seiten und eigene Helper | viele (Router-Kontext, `loaderDeps`, `notFound`, zwei Caches) | SSR, Hydration, Boundaries |
-
-**Fazit Routing:** Für große Apps ist TanStack Router + TQ klar am stärksten, gefolgt von RR declarative + TQ ≈ Start, dann RR framework, dann RR data mode. Für Library-Extraktion gilt die umgekehrte Reihenfolge: declarative ist am besten, TSR und die Frameworks am schwersten.
-
-### 4c. Welche Achse ist wichtiger?
-
-**Die API-Achse ist die folgenreichere Entscheidung.**
-- Der API-Stil bestimmt das Operationsmodell. Jede zukünftige Operation in jedem Modul wird in diesem Stil geschrieben, und genau daraus sollen Chat-Tool und MCP-Tool entstehen. Ein späterer Wechsel des API-Stils fasst jede Operation an.
-- Gleichzeitig gewinnt hier eine Option klar: tRPC liegt in allen drei Routing-Klassen beim Potenzial vor Hono.
-
-| Routing-Klasse | tRPC (Potenzial) | Hono (Potenzial) |
-|---|---|---|
-| TSR | 8,36 | 7,65 |
-| declarative | 8,16 | 7,76 |
-| data | 7,69 | 7,59 |
-
-**Die Routing-Achse ist danach die Abwägung zwischen 8 und 7.**
-- Variante 8 ist bei Typsicherheit, Daten-UX und Skalierung stärker.
-- Variante 7 ist bei Codegen-Freiheit und Library-Extraktion stärker.
-- Ein Router-Wechsel ist lokal auf die Seiten begrenzt und mechanisch. Der Umbau von 6 auf 8 umfasste 48 Dateien mit +1148/−517 Zeilen. Er berührt weder Server, Tools noch MCP.
-
-RR data mode scheidet für große Apps aus: untypisierte Routen und kein Cache. Die SSR-Frameworks scheiden für diese App-Familie aus: SSR bringt keinen Nutzen, erhöht aber CPU-Last, Bundle-Größe und Komplexität. RR framework kann auf Cloudflare außerdem SSR nicht abschalten, weil der SPA-Modus mit dem Cloudflare-Vite-Plugin nicht unterstützt wird.
+- Cloudflare Access (Auth einmal pro Request);
+- AIChatAgent-DO pro User;
+- stateless MCP über `createMcpHandler`;
+- `@cloudflare/vite-plugin` 1.67 mit workerd;
+- Previews mit eigener D1;
+- eine Drizzle-Migrationshistorie;
+- Größe von `src`: 4123–4495 LOC (ohne generierte Dateien).
 
 ---
 
-## 5. Varianten im Detail
+## 4. Haupt-Bewertung
 
-### 5.0 Gemeinsame Befunde (alle 8 Varianten, keine Unterscheidungsmerkmale)
+Skala 0–10, jede Zelle **aktuell / Potenzial**.
 
-Diese Punkte betreffen jede Variante gleichermaßen und sollten im gewählten Template ohnehin behoben werden:
+- **Potenzial** heißt: was im selben Stack mit realistischen Verbesserungen erreichbar ist (Helper, Typ-Constraints, Konfiguration), ohne Wechsel einer Stack-Komponente.
+- **Herkunft der Scores:** Alle Spalten übernehmen die kalibrierten Scores der Querschnitts-Bewertungen. Library-Extraktion hat heute eine eigene Querschnitts-Bewertung mit Paketierungsexperiment.
 
-1. **Doppelte Operationen:** `src/modules/todos/tools.server.ts` (161 LOC), `notes/tools.server.ts` (173 LOC), `src/mcp/mcp.server.ts` und `src/modules/todos/db/todos.server.ts` sind in allen 8 Worktrees byte-identisch (md5 geprüft). Jede Operation existiert zweimal: einmal als UI-API (Server Function, Intent, Hono-Route oder Procedure) und einmal als AppTool, jeweils mit eigenem zod-Schema. Die Regeln weichen bereits voneinander ab:
-   - leerer Titel → `{error}` in der API, aber `min(1)` im Tool;
-   - Existenzprüfung nur im Tool;
-   - `appendToNote` gibt es nur als Tool.
-2. **`mutatingToolNames: string[]`** wird im Client von Hand gepflegt (z. B. `todos/module.ts:16–20`). Wird ein Tool umbenannt oder vergessen, kompiliert der Code trotzdem, und die UI aktualisiert nach Assistant-Aktionen nicht mehr. Mehrere Experimente haben das bestätigt.
-3. **Chat-Page-Kontext** `{routeId: string, params: Record<string,string>}` (`src/chat/chat.ts`). `page.params.listId` wird in `module.server.ts` untypisiert gelesen. Wird ein Param umbenannt, geht der Kontext stillschweigend verloren.
-4. **Bug im Repository:** `todos.server.ts:101–110` (`update`) gibt `true` zurück, auch wenn keine Zeile getroffen wurde. Ein Update auf eine fremde oder nicht existierende Todo-ID meldet in der UI-API Erfolg (No-op). Dasselbe gilt für `rename` bei Listen und Notebooks. Die Tools sind davon nicht betroffen, weil sie vorher `getTodo` aufrufen. Zur Korrektur `.returning()` verwenden, wie es Notes bereits tut.
-5. **Spread-Conditional-PATCH-Body** `...(cond && { dueDate })` in allen List-Seiten (z. B. trpc-tsr-tq: `lists.$listId.tsx:189–192`). Die Excess-Property-Prüfung greift hier nicht: Wird ein API-Feld umbenannt, kompiliert der Code, zod entfernt das unbekannte Feld, und das Update wird zum stillen No-op.
-6. **Grid-Search auf dem Wire untypisiert:** `z.looseObject`-`gridInputSchema` in 1, 6, 7, 8 (`gridSearch.ts:56`) bzw. `z.record`-`gridQueryValidator` in 3, 4, 5 (`hono.server.ts:16–17`). Hinzu kommen Filter-Casts in `todoSearch.ts:22` und `noteSearch.ts:36` sowie `GridColDef`-`field`-Strings, die nicht gegen den Row-Typ geprüft werden.
-7. **Collection-Copy-Paste** zwischen Modulen: `lists.server.ts` vs. `notebooks.server.ts` (14 normalisierte Diff-Zeilen), Navigation-Komponenten, Default-Redirect, Header und CRUD-Tools.
-8. **Eine Drizzle-Migrationshistorie** für alle Module (Glob `src/modules/*/db/schema.ts`). Für Library-Module braucht es eine Konvention pro Paket.
-9. **Pre-1.0-Abhängigkeiten:** `@mui/x-chat 9.0.0-alpha.21`, `@cloudflare/ai-chat 0.12`, `agents 0.33`.
-10. **Gleicher Worker-Großteil:** agents, AI SDK, MCP-SDK und zod machen ~0,9 MB gz aus, unabhängig von der API-Wahl.
+Gewichtung: Typsicherheit 20 %, Einfachheit 15 %, Unabhängige Module 15 %, Wenig Duplikation 10 %, AI/MCP 15 %, Library-Extraktion 10 %, Cloudflare & Reife 7,5 %, Skalierung 7,5 %.
 
-### 5.1 `tanstack-start` (Baseline, main)
+| Variante          | Typsicherheit | Einfachheit | Unabh. Module | Wenig Duplikation | AI/MCP    | Library-Extraktion | Cloudflare & Reife | Skalierung | **Gesamt aktuell** | **Gesamt Potenzial** |
+| ----------------- | ------------- | ----------- | ------------- | ----------------- | --------- | ------------------ | ------------------ | ---------- | ------------------ | -------------------- |
+| 1 tanstack-start  | 8,5 / 9,5     | 6,5 / 7,5   | 8,25 / 8,75   | 7 / 8             | 8,5 / 9   | 5,5 / 6,5          | 7,5 / 8,5          | 7,5 / 8,5  | 7,56               | 8,41                 |
+| 2 rr-framework    | 6,5 / 8       | 7,5 / 8     | 8,5 / 9       | 8 / 8,5           | 7,5 / 8,5 | 5 / 6,5            | 7,5 / 8            | 6,5 / 7,5  | 7,18               | 8,09                 |
+| 3 hono-rr-data    | 7 / 8         | 7 / 7,5     | 8,25 / 9      | 7 / 7,5           | 8 / 8,5   | 8 / 8,5            | 8 / 8,5            | 6 / 7,5    | 7,44               | 8,15                 |
+| 4 hono-rr-decl-tq | 7 / 8         | 6,5 / 7,5   | 8 / 8,5       | 6,5 / 7,5         | 8,5 / 9   | 8 / 9              | 8 / 9              | 6,5 / 8    | 7,39               | 8,28                 |
+| 5 hono-tsr-tq     | 8 / 9         | 6 / 7       | 8 / 8,75      | 6,5 / 7,5         | 8,5 / 9   | 6,5 / 7,5          | 8,5 / 9            | 7,5 / 8,5  | 7,48               | 8,33                 |
+| 6 trpc-rr-data    | 7 / 8         | 7 / 7,5     | 8 / 8,75      | 7,5 / 8,5         | 8 / 8,5   | 7,5 / 8,5          | 8,5 / 9            | 6,5 / 7,5  | 7,48               | 8,25                 |
+| 7 trpc-rr-decl-tq | 7,5 / 8,5     | 7 / 7,5     | 8 / 8,5       | 7,75 / 9          | 8,5 / 9   | 7,5 / 8,5          | 8,5 / 9            | 7 / 8      | 7,71               | 8,48                 |
+| **8 trpc-tsr-tq** | **8,5 / 9,5** | 6,5 / 7,5   | 8 / 8,75      | 7,5 / 8,5         | 8,5 / 9   | 6 / 7,5            | **9 / 9,5**        | **8 / 9**  | **7,78**           | **8,68**             |
+
+Exakte Werte (vor dem Runden auf 2 Stellen, kaufmännisch):
+
+|           | 1      | 2      | 3      | 4      | 5     | 6     | 7      | 8     |
+| --------- | ------ | ------ | ------ | ------ | ----- | ----- | ------ | ----- |
+| aktuell   | 7,5625 | 7,175  | 7,4375 | 7,3875 | 7,475 | 7,475 | 7,7125 | 7,775 |
+| Potenzial | 8,4125 | 8,0875 | 8,15   | 8,275  | 8,325 | 8,25  | 8,475  | 8,675 |
+
+Variante 5 und 6 sind aktuell exakt gleichauf.
+
+### 4.1 Rangfolge
+
+| Rang | aktuell                        |      | Potenzial         |      |
+| ---- | ------------------------------ | ---- | ----------------- | ---- |
+| 1    | `trpc-tsr-tq`                  | 7,78 | `trpc-tsr-tq`     | 8,68 |
+| 2    | `trpc-rr-decl-tq`              | 7,71 | `trpc-rr-decl-tq` | 8,48 |
+| 3    | `tanstack-start`               | 7,56 | `tanstack-start`  | 8,41 |
+| 4    | `hono-tsr-tq` / `trpc-rr-data` | 7,48 | `hono-tsr-tq`     | 8,33 |
+| 5    | (geteilt)                      | –    | `hono-rr-decl-tq` | 8,28 |
+| 6    | `hono-rr-data`                 | 7,44 | `trpc-rr-data`    | 8,25 |
+| 7    | `hono-rr-decl-tq`              | 7,39 | `hono-rr-data`    | 8,15 |
+| 8    | `rr-framework`                 | 7,18 | `rr-framework`    | 8,09 |
+
+### 4.2 Sensitivität
+
+Drei alternative Gewichtungen, jeweils exakt berechnet. Die Reihenfolge der Gewichte ist Typ / Einf / Module / Dup / AI / Lib / CF / Skal:
+
+- **A** alle gleich: 12,5 % je Kategorie.
+- **B** Einfachheit + Library schwerer: 15 / 25 / 15 / 10 / 10 / 20 / 2,5 / 2,5.
+- **C** Typsicherheit + Skalierung schwerer: 30 / 10 / 15 / 7,5 / 12,5 / 7,5 / 5 / 12,5.
+
+| Variante          | A aktuell | A Potenzial | B aktuell | B Potenzial | C aktuell | C Potenzial |
+| ----------------- | --------- | ----------- | --------- | ----------- | --------- | ----------- |
+| 1 tanstack-start  | 7,41      | 8,28        | 7,16      | 8,04        | 7,75      | 8,61        |
+| 2 rr-framework    | 7,13      | 8,00        | 7,03      | 7,94        | 7,08      | 8,08        |
+| 3 hono-rr-data    | 7,41      | 8,13        | 7,49      | 8,13        | 7,31      | 8,13        |
+| 4 hono-rr-decl-tq | 7,38      | 8,31        | 7,34      | 8,23        | 7,31      | 8,24        |
+| 5 hono-tsr-tq     | 7,44      | 8,28        | 7,10      | 8,00        | 7,60      | 8,48        |
+| 6 trpc-rr-data    | 7,50      | 8,28        | 7,43      | 8,20        | 7,36      | 8,19        |
+| 7 trpc-rr-decl-tq | 7,72      | 8,50        | **7,59**  | **8,35**    | 7,66      | 8,46        |
+| 8 trpc-tsr-tq     | **7,75**  | **8,66**    | 7,33      | 8,33        | **7,93**  | **8,84**    |
+
+Lesart:
+
+- **8 führt bei Basis, A und C,** jeweils aktuell und im Potenzial.
+- **Bei B führt 7.** Aktuell liegt 7 klar vorn (7,59; dahinter 3 mit 7,49 und 6 mit 7,43; 8 nur auf Platz 5 mit 7,33). Im Potenzial ist der Vorsprung knapp (8,35 vs. 8,33).
+- **Platz 2 ist nicht stabil.** Bei C rückt `tanstack-start` mit 8,61 vor 7 (8,46) und 5 (8,48). Bei A liegt 4 im Potenzial auf Platz 3.
+- **Die Plätze 3–7 liegen bei der Basisgewichtung innerhalb von 0,175 Punkten** (aktuell 7,39–7,56) und sind nicht belastbar geordnet.
+- **Robust ist nur:** 8 und 7 gehören in die Spitzengruppe, 2 liegt in jeder Gewichtung hinten.
+
+### 4.3 Gesamt aktuell gestern → heute
+
+| Variante          | gestern aktuell | heute aktuell | Δ     | gestern Potenzial | heute Potenzial | Haupttreiber                                                                                                                                 |
+| ----------------- | --------------- | ------------- | ----- | ----------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 tanstack-start  | 6,30            | 7,56          | +1,26 | 7,64              | 8,41            | Module 5,5→8,25 (Discovery, keine Navigation-Casts). AI 6,5→8,5. Skalierung 6→7,5 (TQ statt `router.invalidate()` von allem). Library 4→5,5. |
+| 2 rr-framework    | 5,72            | 7,18          | +1,46 | 7,12              | 8,09            | Intents-Layer weg: Duplikation 5→8, Einfachheit 6→7,5, Module 5→8,5. Typsicherheit unverändert 6,5 (Loader-Input `unknown`).                 |
+| 3 hono-rr-data    | 6,16            | 7,44          | +1,28 | 7,59              | 8,15            | AI 6→8, Library 6→8, Typsicherheit 5,5→7 (`defineRoute`). Einfachheit 7,5→7 (neuer eigener Routing-Layer).                                   |
+| 4 hono-rr-decl-tq | 6,46            | 7,39          | +0,93 | 7,76              | 8,28            | AI 6→8,5, Duplikation 4,5→6,5. Cloudflare 8,5→8 (Code→Daten-Wasserfall, unbatched).                                                          |
+| 5 hono-tsr-tq     | 6,42            | 7,48          | +1,06 | 7,65              | 8,33            | AI 6,5→8,5, Module 6→8, Skalierung 6,5→7,5. Typsicherheit 8,5→8: der Hono-Statuscode-Vorteil ist weg, GET-Query-Falle.                       |
+| 6 trpc-rr-data    | 6,28            | 7,48          | +1,20 | 7,69              | 8,25            | Typsicherheit 5→7 (`defineRoute`), AI 6→8, Skalierung 5→6,5. Einfachheit 8→7.                                                                |
+| 7 trpc-rr-decl-tq | 6,72            | 7,71          | +0,99 | 8,16              | 8,48            | Duplikation 5→7,75 (Auto-Invalidierung), AI 6→8,5, Skalierung 6,5→7.                                                                         |
+| 8 trpc-tsr-tq     | 6,80            | 7,78          | +0,98 | 8,36              | 8,68            | Module 6→8, Duplikation 5,5→7,5, AI 6,5→8,5, Cloudflare 8,5→9.                                                                               |
+
+**Warum der Vorsprung schrumpft:** Der gemeinsame Kern hob alle Varianten in AI/MCP und Duplikation um 1,5–3 Punkte. Am stärksten profitierten Varianten mit großem Rückstand (2: +1,46, 3: +1,28, 1: +1,26). Den gestrigen Potenzialvorsprung von tRPC hat der Kern weitgehend vorweggenommen und allen Varianten gegeben. Er ist heute zum Großteil in allen 8 realisiert.
+
+---
+
+## 5. Achsen-Analyse
+
+### 5a. API-Schicht (alle über dieselben Operationen)
+
+So sieht der Adapter pro Operation im Code aus:
+
+```ts
+// 1 tanstack-start: src/modules/todos/todos.functions.ts:19-21 (statische Top-Level-Deklaration, Compiler-Pflicht)
+export const updateTodo = createServerFn({ method: "POST" })
+    .validator(operationInput<typeof todoOperations.updateTodo>)
+    .handler(operationHandler(todoOperations.updateTodo));
+
+// 2 rr-framework: kein Adapter; Aufruf im Component über die generische Route /api/:module/:operation
+const { run } = useTodoOperations();
+await run("updateTodo", { id: row.id, done });
+
+// 3/4/5 Hono: src/modules/todos/api.server.ts:18
+.on(...operationRoute("PATCH", "/todos/:id", todoOperations.updateTodo))
+
+// 6/7/8 tRPC: src/modules/todos/api.server.ts:15
+updateTodo: mutation(todoOperations.updateTodo),
+```
+
+|                            | Start Server Functions (1)                                                                                                         | RR framework Resource-Route + Loader (2)                                                                                           | Hono `operationRoute` (3, 4, 5)                                                                                             | tRPC `query(op)`/`mutation(op)` (6, 7, 8)                                                      |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Zeilen pro UI-Operation    | 3, nicht generierbar (statisch)                                                                                                    | 0 für Writes; Reads 1 Zeile im Loader                                                                                              | 1 + Wahl von Methode/Pfad                                                                                                   | 1                                                                                              |
+| Wire-Typtreue              | seroval: `Date`, `ValidationError`-Klasse bleiben                                                                                  | turbo-stream: `Date` bleibt                                                                                                        | JSON: `Date`→`string` korrekt typisiert; **GET-Query als Schema-Typen typisiert, real Strings → 422** (`hono.server.ts:29`) | superjson: `Date`, `boolean`/`number` auch in GET                                              |
+| Bindung Client ↔ Operation | per Import; **Lücke:** Validator und Handler können verschiedene Ops nennen, kompiliert (`operationHandler.ts:14` `data: unknown`) | `run()` per Op-Name typisiert, Modul-ID gegen Server-Modul geprüft; **Loader-Input `unknown`** (`routeOperations.server.ts:35,53`) | `createClient<typeof api>(moduleId: string)`: ID nicht an Mount gebunden; Path-Params nicht gegen Input-Keys geprüft        | `createModuleApi<Router>(moduleId)`: ID nicht an Router gebunden (`AnyRouter`)                 |
+| Query-Keys / Options       | handgeschrieben (`queries.ts`)                                                                                                     | – (kein Cache)                                                                                                                     | handgeschrieben (4, 5); keine (3)                                                                                           | **generiert** (`queryOptions`, `queryKey`, `pathFilter`)                                       |
+| Request-Anzahl             | erster Load 1 (SSR-Dokument), Mutation ~3 (unbatched)                                                                              | 1 pro Navigation (Single Fetch), Mutation 2                                                                                        | erster Load N+2, Mutation 3                                                                                                 | erster Load 1 (Batch), Mutation 2                                                              |
+| TS-Kosten pro Modul        | 37,9k Inst. / 0,25 s                                                                                                               | 26,4k / 0,14 s                                                                                                                     | 37,6–44,6k / 0,17–0,25 s                                                                                                    | 27,0–35,0k / 0,14–0,16 s                                                                       |
+| Module eigene Endpunkte    | Server Routes möglich                                                                                                              | Resource-Routes möglich                                                                                                            | **ja**, beliebige unter `/api/<id>`                                                                                         | nein, nur Procedures (Core-Edit nötig)                                                         |
+| Paketierung Server-Teil    | nur als Source (Compiler + `Register`)                                                                                             | einfach (kein Adapter)                                                                                                             | **beste Grenze** (eigene Sub-App-Instanz, `.d.ts`-Emit verifiziert)                                                         | gut; braucht Core-`initTRPC`-Instanz; Core-Client importiert heute die Registry (`CoreRouter`) |
+| Externe API                | nein                                                                                                                               | nein                                                                                                                               | echtes REST (Cache-Control möglich)                                                                                         | tRPC-Wire, nicht CDN-cachebar                                                                  |
+
+**Fazit API:** tRPC ≈ Start > Hono > RR framework, bei Typsicherheit und Skalierung. Für die Library-Extraktion ist es umgekehrt: Hono ≥ tRPC > RR framework ≈ Start.
+
+Die Unterschiede sind kleiner als gestern. Jeder Adapter ist dünn, und keiner beeinflusst AI/MCP, weil Tools die Operationen direkt aufrufen.
+
+### 5b. Client-Routing und Daten
+
+|                                          | RR data mode (3, 6)                                                         | RR declarative + TQ (4, 7)                                                            | TanStack Router + TQ (5, 8)                                                     | Frameworks: Start (1) / RR framework (2)                                        |
+| ---------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Link-/Navigate-Typprüfung                | `route.href()` typisiert; `<Link to>`/`navigate(string)` beliebig           | wie data; 7: branded `Href` an Shared-Props                                           | **vollständig** (`<Link to="/listz">` → TS2820, falsche Search/Params → Fehler) | 1: wie TSR; 2: `href()` typisiert, `<Link to>` beliebig, **Search untypisiert** |
+| Route-Hooks                              | Casts (`useRouteLoaderData(id) as Data`); nicht gemountete Route kompiliert | Casts (`useParams() as …`); Seite nicht an Route gebunden (4)                         | Route-Objekt file-lokal per Konvention (Fremdaufruf kompiliert ebenfalls)       | 2: Route-gebundene `ComponentProps`                                             |
+| Cache                                    | keiner                                                                      | TQ, `staleTime` 30 s                                                                  | TQ, `staleTime` 30 s                                                            | 1: TQ; 2: keiner                                                                |
+| Laden                                    | Loader vor Render, Chunk parallel                                           | 7: Query parallel zum Lazy-Chunk; **4: Code→Daten-Wasserfall**                        | Loader parallel zu Route-Chunks, Preload on intent                              | 1: Daten im SSR-Dokument; 2: Single Fetch                                       |
+| Layouts/Boundaries                       | `RouteObject` mit `children`, native `ScrollRestoration`/`errorElement`     | flach `{path, Component}`, ErrorBoundary/ScrollToTop selbst gebaut, kein `useBlocker` | verschachtelte File-Routes, `pendingComponent`, `notFound`, `scrollRestoration` | verschachtelt, nativ                                                            |
+| Codegen                                  | keins                                                                       | keins                                                                                 | `routeTree.gen.ts` (committed, in `lint:tsc` regeneriert)                       | 1: `routeTree.gen.ts`; 2: `.react-router/types` (gitignored)                    |
+| Paketierung Client-Teil                  | **standalone typcheckbar**                                                  | **standalone typcheckbar**                                                            | nur als Workspace-Source (Host-`Register`)                                      | 1: nur Source; 2: verliert Route-Typen außerhalb `appDirectory`                 |
+| Eigene Glue-Zeilen (gesamt pro Variante) | 382 (3) / 437 (6)                                                           | 406 (4) / 502 (7)                                                                     | 344 (5) / 347 (8)                                                               | 252 (1) / 217 (2)                                                               |
+
+### 5c. Welche Achse ist jetzt wichtiger?
+
+**Die Routing-Achse.** Gestern hieß es noch: die API-Achse, weil der API-Stil das Operationsmodell bestimmt. Das gilt nicht mehr:
+
+1. **Das Operationsmodell ist stack-neutral.** Ein API-Wechsel betrifft nur noch `api.server.ts`/`api.ts` pro Modul (≈ 1 Zeile pro Operation) und die Call-Sites. Operationen, Tools, MCP und Chat bleiben unberührt.
+2. **Der Router entscheidet die meisten Kategorien.** In Typsicherheit, Skalierung und Library-Extraktion liegen die Spannen zwischen den Routing-Klassen bei 1,5–3 Punkten. Zwischen den API-Klassen sind es höchstens 0,5–1. Beispiele:
+    - Typsicherheit: TSR-Varianten 8–8,5, RR-Varianten 6,5–7,5.
+    - Library: code-basierte Routen 7,5–8, File-Routes 5,5–6,5.
+    - Skalierung: TSR + TQ 7,5–8, ohne Cache 6–6,5.
+3. **Ein Router-Wechsel fasst jede Seite an.** Ein API-Wechsel betrifft dagegen nur eine dünne Schicht.
+
+Innerhalb jeder Routing-Klasse liegt tRPC beim Potenzial weiterhin vor Hono. Bei TSR und declarative ist der Abstand knapper als gestern (heute 0,35 bzw. 0,20), im data mode unverändert (0,10):
+
+| Routing-Klasse  | tRPC (Potenzial) | Hono (Potenzial) | Abstand gestern |
+| --------------- | ---------------- | ---------------- | --------------- |
+| TanStack Router | 8,68 (8)         | 8,33 (5)         | 0,71            |
+| declarative     | 8,48 (7)         | 8,28 (4)         | 0,40            |
+| data            | 8,25 (6)         | 8,15 (3)         | 0,10            |
+
+Damit ist die Wahl zwischen 8 und 7 im Kern eine Router-Wahl: **framework-typisiert + skalierend (TSR)** gegen **codegen-frei + paketierbar (declarative + `defineRoute`)**.
+
+---
+
+## 6. Varianten im Detail
+
+Kennzahlen pro Variante:
+
+- **LOC:** `src` roh / Code-Zeilen ohne Kommentare.
+- **Glue:** stack-spezifische Code-Zeilen.
+- **Op:** Zeilen pro neuer UI+AI-Operation.
+- **TS:** Instantiations bei 2 Modulen / Zuwachs pro Modul / Check-Zeit bei 32 Modulen.
+- **Bundle:** Worker gz / initiales Client-JS gz.
+
+Gemeinsame Rest-Lücken des Kerns (alle 8, kein Unterscheidungsmerkmal):
+
+- Modul-IDs sind `string` (z. B. `chat/chat.ts:28`).
+- Tool-Namen stehen untypisiert in Instruction-Texten (`notes/operations.server.ts:199-203`).
+- Entity-IDs sind nicht gebrandet.
+- `if (!x) throw new NotFoundError` kommt 14× vor.
+- `supportedOperators(...)` steht 9× pro Spalte.
+- Die Navigation-Zwillinge `ListsNavigation`/`NotebooksNavigation` sind 32–38 LOC groß und unterscheiden sich in 4–8 Zeilen.
+- `scripts/fixtures.ts` importiert das Notes-Schema, sodass `lint:tsc` nach dem Entfernen eines Moduls bricht.
+
+### 6.1 `tanstack-start` (main, `d45be65`) – aktuell 7,56 / Potenzial 8,41
+
+**Kennzahlen**
+
+- LOC 4250 / 3383 (+ `routeTree.gen.ts` 204). Glue 252.
+- Op: ~16 Zeilen in 3 Dateien (Operation 10–12, Server Function 3, Call 2); Reads zusätzlich 3 Zeilen `queries.ts` plus Loader und `usePageQuery`.
+- TS: 605k / +37,9k / 11,5 s.
+- Bundle: Worker 1.798 KiB gz gesamt, davon eager 1.059 KiB; Client 607 KiB gz gesamt.
 
 **Stärken**
-- Wenigster Glue-Code aller Varianten (~220 LOC Plumbing).
-- Die Server Function ist API und Client-Aufruf zugleich. Dates bleiben erhalten.
-- Volle Typisierung durch TanStack Router. Eine Umbenennung des Route-Params ergab 12 Fehler, inklusive der Route-ID im Chat-Kontext (`todos/module.server.ts:7`, `keyof FileRoutesById`).
-- Kleinste Codebasis (3771 LOC). Offizieller Cloudflare-Support. Gute README.
+
+- Typsicherheit auf TSR-Niveau. Jeder Rename-Test (Route-Param, Input, Output, Chat-Feld, Grid-Feld, Op-Key) brach den Build an allen Verwendungsstellen. Der Generator schrieb Route-IDs selbst um.
+- Kein Client-Fetch-Layer: `mutate(updateTodo({ data }))`. `ValidationError` überlebt die Serialisierung (`start.ts:34-39`), `NotFoundError` wird zu `notFound()` (`start.ts:22-31`).
+- Bester erster Load aller 8: Data-only SSR (`_app.tsx:29`) liefert Daten inklusive Sidebar im Dokument-Request. Die Hydration-Fallen von gestern sind weg.
+- Auth an einer Stelle (`server.ts:18`). Kleinster Core (1429 Code-Zeilen).
 
 **Schwächen**
-- SSR im Worker ohne Nutzen. Das bringt Hydration-Sonderfälle mit sich (`useToday` liefert auf dem Server `null`, `dates.ts:31`), isomorphe Loader und ein Server-Bundle von 1,78 MB gz, weil DataGrid und ChatPanel mitgerendert werden.
-- Kein Cache: Jede Mutation, jeder Autosave (`notes.$notebookId.$noteId.tsx:129`) und jeder Tool-Call löst `router.invalidate()` aus.
-- Navigation per N unbatched Server-Function-RPCs (`registry.ts:12–16`).
-- Ein eigener Worker-Entry umgeht die Start-Middleware für Chat und MCP (`server.ts:37–63`).
-- Start ist das jüngste und am schnellsten bewegte Framework im Vergleich.
+
+- Die meiste Framework-Magie:
+    - Compiler-extrahierte Server Functions;
+    - Request-/Function-Middleware und Serialization-Adapter;
+    - `Register`-Augmentation an drei Stellen;
+    - ein Skript, das den Plugin-Footer kopiert (`scripts/routeTree.ts:7-15`).
+- Zwei Datenschichten: Loader `fetchQuery` (`lists.$listId.tsx:34`) plus `usePageQuery` (`:43`). `invalidateModules` = `invalidateQueries` + `router.invalidate()`. Mit 31 Invalidierungsreferenzen in den Modulen ist das der Höchstwert.
+- 19 statische 3-Zeilen-Adapter (108 LOC in 4 `*.functions.ts`). Größter Modulcode aller 8 (1954 Code-Zeilen).
+- Der Worker trägt die ganze UI (DataGrid 251 KiB gz im Server-Bundle), obwohl nie serverseitig gerendert wird. Server Functions sind unbatched.
 
 **Typlücken**
-- `todos/navigation.ts:9`: `as Awaited<ReturnType<typeof listLists>>`. `useNavigationData` liefert `unknown` (`modules/navigation.ts:6`), und ein falscher Loader kompiliert.
-- `start.ts:13`: `context as unknown as RequestContext`.
-- `ChatPanel.tsx:121`: `as Record<string,string>`.
-- `lists.functions.ts:21–29`: ad-hoc-Union `{error, id}`.
 
-**Duplikate**
-- `todos.functions.ts:49–64` vs. `tools.server.ts:119–140`.
-- `lists.functions.ts` vs. `notebooks.functions.ts` (8 Diff-Zeilen).
+- `operationHandler.ts:14`: Validator und Handler können verschiedene Ops nennen, ohne dass es auffällt (neu, verifiziert: `createTodo`-Validator + `deleteTodo`-Handler → 0 Fehler).
+- `start.ts:15`: `as unknown as RequestContext`.
+- `lists.$listId.tsx:156`: rohe Filter-Strings (kein `filterParam`).
+- Handgeschriebene Query-Keys (`todos/queries.ts:14,23`).
+- `useServerGrid.ts:32` liest die globale Location.
 
 **Potenzial**
-- TanStack-Query-Integration (offiziell unterstützt).
-- Ein aggregierter Navigation-Call.
-- Operation-Layer mit 3-Zeilen-`createServerFn`-Wrapper pro Op.
-- `tsr generate` in `lint:tsc`.
-- Selective SSR bzw. `ssr:false`.
 
-Die AI-Vereinheitlichung bleibt umständlicher als bei tRPC. Tools laufen im Durable Object außerhalb der Start-Pipeline. Eine Server Function kann deshalb nicht selbst das Tool sein, es braucht einen Operation-Layer darunter. Die Korrektur senkt das AI-Potenzial des Berichts von 9 auf 8.
+- `operationHandler` gegen den Validator typisieren (1 Zeile).
+- `filterParam` und eine Key-Factory portieren.
+- Ein `pageQueryRoute`-Helper (Loader + `usePage` aus einer Deklaration).
+- `appModules` per Glob finden.
+- SPA/Client-only-Modus prüfen, damit die UI nicht im Worker-Bundle landet.
 
 **Risiken**
-- Ein veralteter `routeTree.gen.ts` kann `tsc` bestehen.
-- `notes/tools.server.ts:116` kann `created: undefined` liefern (Race).
 
-### 5.2 `rr-framework` (PR #13)
+- Jüngstes und am schnellsten bewegtes Framework (1.169.x). Der Routegen-Footer hängt an Plugin-Interna.
+- Höchste TS-Check-Kosten pro Modul (0,25 s, 951 MB bei 32 Modulen). Ursache ist Start (`createServerFn`/`Register`), nicht TSR.
+
+### 6.2 `rr-framework` (PR #13, `07f6f1f`) – 7,18 / 8,09
+
+**Kennzahlen**
+
+- LOC 4123 / 3269 (kleinster Code). Glue 217 (kleinster).
+- Op: 0 Adapterzeilen; ~25 Zeilen in 2–3 Dateien inklusive Repo-Methode.
+- TS: 431k / +26,4k / 6,6 s (günstigstes).
+- Bundle: Worker 1.675 KiB gz gesamt, eager 896 KiB; Client 597 KiB gz.
 
 **Stärken**
-- Lesezugriffe sind am einfachsten: Der Loader liest das Repository direkt, eine Lese-API gibt es nicht.
-- Typegen (in `lint:tsc` enthalten, also nie stale) liefert Params, `loaderData` und `href()`.
-- Single Fetch bündelt alle Loader zu einem Request.
-- Code-Splitting pro Route automatisch.
-- Geringste TS-Kosten (431k).
-- RR ist reif und hat eine große Community.
+
+- Für Modul-Autoren am einfachsten:
+    - Lesen: `loadGridOperation(todoOperations.listTodos, …)` in-process im Loader (`lists.$listId.tsx:32`).
+    - Schreiben: `run("updateTodo", …)`.
+    - Revalidierung nach Actions ist automatisch. Mit nur 3 Invalidierungsreferenzen in den Modulen ist das der Bestwert.
+- Einzige Variante, deren Client↔Server-Modul-Bindung per ID typgeprüft ist: `useOperations<typeof serverModule>(moduleId: Module['id'])`.
+- Modul-eigene Route-Config mit `prefix()`, Typegen gitignored. Reifer Stack mit offiziellem Cloudflare-Template.
 
 **Schwächen**
-- Der eigene Intents-Layer ist nicht standardisierter Glue: `intents.ts` (69) + `useIntents.ts` (67). Er erkennt Redirects über die Identität der Fetcher-Daten (`useIntents.ts:33`), nutzt eine Queue und ein separates `send()`.
-- Mutationen hängen an Seitenrouten. Die Sidebar postet auf `` `${href("/lists")}?index` `` (`ListsNavigation.tsx:14`).
-- Jede Action, auch der Note-Autosave im Sekundentakt, revalidiert die Navigation aller Module (`_app.tsx:21–23`).
-- SSR ist Pflicht: Laut Cloudflare-Doku ist der SPA-Modus mit dem Vite-Plugin nicht unterstützt.
-- Module sind über file-path-Strings relativ zu `src/` eingebunden. Typegen erzeugt nur für Dateien in `appDirectory` Typen, im Experiment entstanden für eine Route außerhalb keine `+types`.
+
+- Der Lesepfad ist untypisiert: `loadOperation(…, input: unknown)` und `loadGridOperation(params: Record<string,string>)` (`routeOperations.server.ts:35,53`). Verifiziert: Ein Rename von `listTodos.listId` liefert 0 Fehler und zur Laufzeit einen 500er.
+- Search-Params sind nicht router-typisiert. Sie werden von Hand geparst, und Links verketten `stringifySearch` (`notes.$notebookId.index.tsx:55`).
+- Nicht offensichtlicher Write-Glue: eine modulglobale Outcome-Map pro Call-Zähler, Fehler kommen mit HTTP 200 und werden in `clientAction` umgemappt (`client.ts:21-65`, `api.ts:36-54`).
+- Revalidierung ist subtil: drei Fix-Commits (`c60f9ef`, `13d74e1`, `07f6f1f`).
+- Kein Client-Cache. Der Layout-Loader lädt nach jeder Action die Navigation **aller** Module (`registry.server.ts:25-28`, `_app.tsx:25-27`): O(N) D1-Queries pro Mutation.
+- Der Chat-Refresh ignoriert die Modulliste (`ChatPanel.tsx:39` `() => revalidate()`).
+- SSR ist Pflicht (SPA-Modus mit dem Cloudflare-Plugin nicht unterstützt, README:92). Einzige Variante mit hydration-sensitivem Code (`dates.ts:30-35`).
+- Auth an drei Stellen.
 
 **Typlücken**
-- `intents.ts:16`: `params: Record<string,string|undefined>`. `params.listId ?? ""` in `todos/intents.server.ts:41,46,60` wird beim Rename nicht erkannt: stiller No-op bzw. 404.
-- `useIntents<I>(action: string)` ist nicht an die URL gebunden.
-- Layout-ID `"app"` als String (`navigation.ts:8`). Umbenennen führt zu 0 tsc-Fehlern und zu einem Laufzeit-Crash.
-- `<Link to>` ist `string` (RR 8.5.1).
 
-**Duplikate**
-- `todos/intents.server.ts:66–81` vs. `tools.server.ts:119–140`.
-- `export const action = intentAction(x); export const clientAction = clientIntentAction;` 5×.
-- `useIntents<ListIntents>(href(…))` 3× pro Datei (`lists.$listId.tsx:65,217,235`).
+- `client.ts:46,73,104`: Casts.
+- `api.ts:22`: kaputtes JSON gibt 500 statt 422.
+- `revalidateOnChangesOf(moduleId: string)`.
+- `lists.$listId.tsx:154`: Filter-Strings.
 
 **Potenzial**
-- `intentAction<Route.ActionArgs>` und `useFetcher<typeof action>`.
-- Resource-Routes statt Intents.
-- Selektives `shouldRevalidate`.
-- Generisches `AppModule<Nav>`.
 
-Die SSR-Last bleibt in jedem Fall. Library-Extraktion ganzer Module bleibt schwach.
+- Loader-Input als `OperationInput<Op>` (1 Zeile, schließt die größte Lücke).
+- Navigation pro Modul laden.
+- Modul-gezielter Chat-Refresh.
+- `Link prefetch="intent"` nutzen (bisher nirgends verwendet).
+
+Die Obergrenze bleibt durch die fehlende Search-Typisierung, den fehlenden Cache und die Pflicht-SSR bestimmt.
 
 **Risiken**
-- Kein Emotion-SSR-Cache bzw. kein angepasstes `entry.server`: FOUC und Style-Mismatch prüfen.
-- Tools machen 3–4 sequentielle D1-Queries ohne Batch (gilt für alle Varianten).
 
-### 5.3 `hono-rr-data` (PR #14)
+- Revalidierungs-Regressionen beim Hinzufügen von Seiten.
+- Die Outcome-Map ist anfällig bei RR-Upgrades.
+- Komponenten können keine Read-Operationen aufrufen (`api.ts:17`), sodass Comboboxen und Lazy-Dialoge neue Resource-Routes brauchen.
 
-**Stärken**
-- Einfaches mentales Modell: REST plus SPA, kein Codegen außer `wrangler types`, keine SSR.
-- `hc<Api>` typisiert Pfade, Bodies, Responses und Status-Unions.
-- Die REST-API ist ein echter Vertrag, auch für Dritte nutzbar.
-- Worker ohne React (888 kB gz).
-- Hono ist Workers-nativ.
+### 6.3 `hono-rr-data` (PR #14, `4341f1a`) – 7,44 / 8,15
 
-**Schwächen**
-- Routing faktisch untypisiert:
-  - `pathParam(params: Params, name: string)` (`client/params.ts:4`);
-  - `useLoaderData<typeof loader>()` nicht an die Route gebunden (`ListPage.tsx:51`);
-  - Links als `string`;
-  - Navigation `Promise<unknown>` + Cast (`todos/navigation.ts:14`, `modules/navigation.ts:7`).
-- Kein Cache und kein Batching: N+2 Worker-Invocations pro Revalidate.
-- Der Note-Autosave revalidiert gar nicht, die Notizliste bleibt deshalb veraltet.
-- `modulesApi` muss von Hand verkettet werden (`registry.server.ts:13–15`, „chain, don't loop“).
-- TS-Kosten 633k.
+**Kennzahlen**
 
-**Duplikate**
-- 422-Konvention je 6× auf Server (`, 422)`) und Client (`response.status === 422`, z. B. `ListsNavigation.tsx:28–31`, `ListPage.tsx:218–221`).
-- `todos/api.server.ts:16–19,67–71,89–95` vs. `tools.server.ts:15–18,106–111,123–130`.
-
-**Potenzial**
-- Per-Modul-Clients `hc<typeof todosApi>`: beheben den Typzyklus, erlauben Registrierung per Loop und senken die TS-Kosten.
-- `defineRoute`-Helper nach Art von Variante 7.
-- `submitWithFieldError`.
-- `defineOperation` → Route + AppTool.
-
-Ohne TanStack Query bleibt die Decke bei der Daten-UX niedrig.
-
-**Risiko:** `PATCH /api/todos/:todoId` liefert 204 statt 404 (siehe 5.0 Nr. 4).
-
-### 5.4 `hono-rr-decl-tq` (PR #16)
+- LOC 4360 / 3447. Glue 382 (Client-Routing davon 163).
+- Op: ~13–17 Zeilen in 3 Dateien (1 `operationRoute`-Zeile).
+- TS: 611k / +37,6k / 9,3 s.
+- Bundle: Worker 895 KiB gz; initial 210 KiB gz.
 
 **Stärken**
-- Sehr wenig Magie im Router (`AppRoutes.tsx` 43 LOC).
-- Module liefern `{path, Component}` und laden ihre Sidebar per eigener typisierter Query. Die `unknown`-Navigation aus Variante 3 entfällt.
-- Gezielte Invalidierung per Modul-Präfix (`useMutate(todosQueryKey)`).
-- Echtes Cache-Patching beim Note-Autosave (`setQueryData`, `NotePage.tsx:108`).
-- Sehr gut für Library-Extraktion: Hono-Sub-Apps sind natürliche Paketgrenzen.
+
+- Einfachstes Laufzeitmodell: REST plus statische SPA, keine SSR, kein Codegen. Der Worker-Entry hat 55 LOC, eine Hono-Middleware deckt `/api`, `/mcp` und `/chat-agent` ab.
+- Module sind reine Werte: `RouteObject[]` mit `children` und eigener Navigation-Data-Route. Die Hono-Sub-App kann beliebige Endpunkte besitzen. Standalone typcheckbar, `.d.ts`-Emit sauber (Library 8).
+- Typisierte Routen ohne Codegen (`defineRoute`, `client/routing.ts`). Die Rename-Tests werden alle gefangen.
 
 **Schwächen**
-- Wie Variante 3 auf der API-Seite (422-Zweige, handverkettete `Api`, 647k Instantiations).
-- Dazu handgeschriebene Query-Factories pro Modul (`notes/queries.ts` 37 LOC).
-- Keine Loader und kein Prefetch: render-then-fetch.
-- Weder `useBlocker` noch `ScrollRestoration` im declarative mode, daher ein eigener `ScrollToTop`.
-- Eigene `ErrorBoundary`-Klasse (`errors.tsx`, 88 LOC).
-- `DefaultRedirect` mit POST im `queryFn` (`pages.tsx:25`).
-- Globales `throwOnError: true` (`queryClient.ts:13`) ersetzt Seiten trotz vorhandener Cache-Daten durch die Fehlerseite.
-- Kein Code-Splitting (425 kB gz).
 
-Die Querschnitts-Bewertung korrigiert die Einfachheit von 8 auf 6.
+- 22 `parseResponse(todosClient.lists[":listId"]…)`-Aufrufe. Methode und Pfad als zweiter Name pro Operation.
+- Kein Cache, kein Batching: erster Load N+2 Requests, Mutation 3. Damit ist das die request-ineffizienteste SPA (Skalierung 6).
+- Modulglobales `reloadingModules`-Set ohne Zähler, im `finally` geleert (`routing.ts:114-126`): fragil bei überlappenden UI- und Chat-Reloads. Variante 6 macht es mit einer gezählten Map richtig.
+- Implizite Regel: Eine Route ohne `Component` ist ein Redirect außerhalb des Layouts (`router.tsx:17`).
 
 **Typlücken**
-- `params.ts:11` (Cast mit Laufzeit-Match).
-- Links und Navigate als Strings.
-- Query-Keys als untypisierte Arrays (`queries.ts:16,23`).
+
+- `routing.ts:75,93-97`: `useLoaderData` fremder Routen kompiliert.
+- `types.ts:23`: Eine nicht registrierte Route kompiliert.
+- `hono.server.ts:29`: GET-Query-Falle (boolean/number kompiliert, 422 zur Laufzeit).
+- `client.ts:14`: ID nicht an den Mount gebunden.
+- `useMutate("todo")` kompiliert und lädt still nichts neu.
 
 **Potenzial**
-- Per-Modul-Clients.
-- `useApiMutation` mit 422-Handling.
-- Collection-Kit.
-- `React.lazy`-Seiten mit Prefetch.
 
-Die handgeschriebenen Query-Keys bleiben ohne generischen `hc → queryOptions`-Helper bestehen.
+- `defineRoute` als Registrierungseinheit.
+- Typisierte Modul-IDs.
+- `parseResponse` in den Client falten.
+- TanStack Query nachrüsten. Damit konvergiert die Variante gegen 4/5.
 
-### 5.5 `hono-tsr-tq` (PR #19)
+**Risiken**
 
-**Stärken**
-- Router-Layer wie in Variante 8: typisierter Tree, `LinkOptions` in der Sidebar, Route-ID-Konstanten als `keyof FileRoutesById` (`todos/module.server.ts:8`).
-- Typisierte 422-Bodies.
-- Ein einzelner Hono-Middleware-Stack für `/api`, `/mcp` und `/chat-agent` ist der natürlichste Worker-Entry aller Varianten.
+- Der eigene Routing-Layer muss gepflegt werden (`client/routing.ts` + `router.tsx`: 163 Code-Zeilen; stack-spezifischer Glue gesamt 382, ohne das in allen 8 vorhandene `useServerGrid`).
+- `readSearch` ist toter Code (`searchParams.ts:26`).
 
-**Schwächen**
-- Größter Konzept-Stack: Hono + zValidator + `hc`/`parseResponse`/`DetailedError` + TSR + TQ.
-- Kein Options-Proxy. Pro Seite sind deshalb eine `queryOptions`-Factory, eine Load-Funktion und ein `ReturnType`-Alias nötig (`lists.$listId.tsx:35–61`).
-- `notFoundComponent` ist an jeder Route mit 404-Loader nötig (`errors.tsx:12–14`).
-- `staleTime: 0` (`queryClient.ts:10`): Der Cache wirkt kaum, jede Navigation lädt neu. Diesen Punkt hatte keiner der Berichte gemeldet.
-- Kein `autoCodeSplitting`, kein `defaultPreload`.
-- Höchste TS-Kosten (772k Instantiations, 5,8 s).
-- Einfachheit 5,5 statt der 6,5 aus dem Bericht.
+### 6.4 `hono-rr-decl-tq` (PR #16, `9f85a33`) – 7,39 / 8,28
 
-**Typzyklen**
-- `module.server.ts:1` importiert `~/client/routeTree.gen`.
-- Module-Client → `~/api/client` (`Api` aller Module).
+**Kennzahlen**
 
-**Potenzial**
-- Per-Modul-Clients.
-- `autoCodeSplitting` (1 Zeile).
-- `staleTime`.
-- `defineOperation`.
-- `apiQuery`-Helper.
-
-Das ergibt praktisch die Hono-Version von Variante 8, aber mit mehr Zeremonie und einer schwierigeren Tool-Ableitung.
-
-**Korrektur:** Mehrere Zeilenangaben im Bericht liegen außerhalb der jeweiligen Datei, etwa `mcp.server.ts:168` bei einer Datei mit 47 Zeilen. Inhaltlich stimmen die Befunde.
-
-### 5.6 `trpc-rr-data` (PR #15)
+- LOC 4459 / 3511. Glue 406.
+- Op: ~15–25 Zeilen (1 Route-Zeile; Reads zusätzlich eine `queryOptions`-Factory).
+- TS: 621k / +40,0k / 10,5 s.
+- Bundle: Worker 896 KiB gz; initial 201 KiB gz (kleinstes).
 
 **Stärken**
-- Wenigste Konzepte aller Varianten: tRPC-Procedures plus `createBrowserRouter`-Objektbaum.
-- Kein Codegen, keine SSR, kein Cache.
-- `httpBatchLink` fasst Layout- und Seiten-Loader zu einem Request zusammen.
-- Module sind reine Objekte und damit gut paketierbar.
+
+- Beste Paketgrenze aller 8, verifiziert: `todos` nach `packages/todos` verschoben, 4 Host-Config-Edits, 0 Zeilen Modulcode geändert. `tsc`, Build und drizzle-kit grün, Standalone-Check 0 Fehler (Library 8 / 9).
+- Seiten sind `{path, Component}`. Modul-Präfix-Invalidierung bildet sich 1:1 auf `data-changes` ab (`ChatPanel.tsx:40`).
 
 **Schwächen**
-- Schwächste Routing-Typisierung:
-  - `params.listId ?? ""` (`list.tsx:34`); `:listId → :id` kompiliert;
-  - handgebaute Pfade (`paths.ts`, `navigate('/lists')` in `list.tsx:219`);
-  - Loader-Daten per Cast (`routing.ts:31`);
-  - Navigation `unknown` + Cast (`todos/navigation.ts:8`); ein Tausch auf `api.notebooks.list` kompiliert.
-- Revalidate-all nach jeder Mutation und jedem Autosave (`note.tsx:130`).
-- Kein Code-Splitting.
 
-**Duplikate**
-- `todos.api.server.ts:51–66` vs. `tools.server.ts:119–140`.
-- `lists.api.server.ts` vs. `notebooks.api.server.ts` (41 LOC, 12 Diff-Zeilen).
-- Das Modul steht doppelt in `registry.server.ts:8,12`.
-
-**Potenzial**
-- Procedure → Tool-Ableitung (wie bei Variante 8).
-- Eigene typisierte Route-Helper.
-- RR `lazy`.
-
-Feingranulares Caching würde de facto Variante 7 bedeuten. Die Typsicherheit wurde auf 5 korrigiert und liegt damit unter Variante 3, weil keinerlei Param-Namen-Prüfung stattfindet.
-
-### 5.7 `trpc-rr-decl-tq` (PR #17), 2. Wahl
-
-**Stärken**
-- tRPC-Inferenz plus Options-Proxy: keine handgeschriebenen Keys, Invalidierung über `trpc.todos.pathFilter()`.
-- Beste Invalidierungs-Disziplin aller Varianten: Der Note-Autosave invalidiert nur `trpc.notes`.
-- `staleTime` 30 s, `keepPreviousData` für Grids, Batching.
-- Kleiner, typisierter Route-Layer (`routeDefinition.ts`, 48 LOC) mit `href(params, search)`, `useRouteParams` und `useRouteSearch`. Er ist mit dem Server teilbar und braucht kein App-weites `Register`.
-- Kein Codegen. Module als reine Objekte, dadurch die beste Ausgangslage für npm-Extraktion.
-- Niedrige TS-Kosten (447k).
-
-**Schwächen**
-- Keine Loader und kein Prefetch: render-then-fetch, Spinner bei jeder Erstnavigation.
-- Mit `React.lazy` entstehen Chunk-then-Data-Wasserfälle.
-- Größtes Core-Plumbing (~480 LOC): eigene `ErrorBoundary` (`routes/root.tsx`), `useApiQuery`-Throw-Semantik und `RedirectTo` mit Mutation im Effect (`routing.tsx:53`, doppelte Default-Liste unter StrictMode möglich).
-- 38 Invalidierungs-Referenzen (Varianten 6 und 8: 14).
-- Flache Seitenliste ohne verschachtelte Layouts.
-- Kein Code-Splitting (433 kB gz).
+- Code→Daten-Wasserfall: Die Query startet erst in der Lazy-Komponente, nach dem Page-Chunk und dem DataGrid-Chunk. Der Hover-Prefetch wärmt nur Daten.
+- Unbatched REST.
+- Selbstgebaute Router-Features: `errors.tsx` (Class-ErrorBoundary mit Pathname-Reset), `DefaultRedirect.tsx`, `usePageQuery` mit `useDeferredValue` + `useStableValue`, `useLeavePage`/`flushSync`. Glue 406, mehr als bei 3/5/8.
+- Handgeschriebene `queries.ts`. Höchste Zahl an Modul-ID-Referenzen (25). 22× `parseResponse`.
+- Flache Seitenliste: keine Modul-Layouts, doppelte Pfade überschatten sich still.
 
 **Typlücken**
-- `routing.tsx:31` `match.params as RouteParams<Path>` (Laufzeitprüfung).
-- `<Link to>` und `NavigationItem.path` sind `string`.
-- Eine fehlende `id` an `listRoute` kompiliert und schaltet den Chat-Kontext stillschweigend ab.
-- `api/client.ts:24,29` (`error.data`-Casts).
 
-**Kopplung:** `registry.ts:13` importiert `todos/paths` für `startPath` (Core → Modul).
+- `routing.ts:33`: `useParams() as RouteParams<Path>`.
+- `NavigationList.tsx:14`: `link: string`.
+- `hono.server.ts:29`: GET-Falle (E15).
+- `hono.server.ts:40-44`: Path-Param nicht gegen den Input geprüft (E17).
+- `ListPage.tsx:154`: Filter-String-Tippfehler wird still ignoriert (E16).
+- `client.ts:13-14`: `createClient<typeof notesApi>(todosModuleId)` kompiliert.
 
 **Potenzial**
-- Tools aus Procedures.
-- `route.matchChatPage(page)`.
-- zod-Search-Schemas statt `looseObject`.
-- `defineServerModules(...)` mit Tupel-Inferenz.
-- Modul-lokale `createTRPCOptionsProxy`.
-- `React.lazy` plus `prefetch`-Hooks.
+Variante 7s `defineRoute({ query, page })` übernehmen (paralleles Laden, Seite an Route gebunden), dazu eine `apiQuery`-Helper über `hc`, typisierte `RouteLink` und den Batch-Endpunkt. Das ist realistisch, weil es derselbe Stack ist.
 
-**Wann 7 statt 8?** Wenn ganze Module früh als vorkompilierte npm-Pakete erscheinen sollen und das Team selbstgebaute Route-Typisierung statt Codegen bevorzugt.
+**Risiken**
 
-### 5.8 `trpc-tsr-tq` (PR #18), 1. Wahl
+- Die `flushSync`-Leave-before-invalidate-Regel muss jeder Delete-Flow kennen.
+- Der ErrorBoundary-Reset greift nur bei Pfadwechsel.
+
+### 6.5 `hono-tsr-tq` (PR #19, `0fda83e`) – 7,48 / 8,33
+
+**Kennzahlen**
+
+- LOC 4429 / 3510 (+ `routeTree.gen.ts` 215). Glue 344.
+- Op: Write 12–17 Zeilen; Read 18–24 Zeilen in 3–4 Dateien.
+- TS: 772k / +44,6k / 9,2 s. Meiste Instantiations, aber moderate Check-Zeit.
+- Bundle: Worker 895 KiB gz; initial 214 KiB gz.
 
 **Stärken**
-- Höchste Typsicherheit. `router.tsx:25` registriert den Router. Links, Params, `validateSearch`, Redirects und Loader-Daten werden geprüft.
-- Server-Route-IDs werden über `CheckedRouteId` geprüft (`trpc-tsr-tq: src/chat/chat.ts:14–17`, `src/modules/todos/paths.ts:6–8`). Ein Rename der Route-Datei ergab 13 Fehler.
-- Die Sidebar ist eine typisierte `useSuspenseQuery` ohne Cast.
-- Als einzige SPA sind alle Skalierungs-Features aktiv:
-  - `autoCodeSplitting: true` (`vite.config.ts:25`);
-  - `defaultPreload: "intent"` (`router.tsx:17`);
-  - `staleTime` 30 s (`api/query.ts:16`);
-  - Batched Requests;
-  - Route-Chunks 3–34 kB gz, Client gesamt ~600 kB gz.
-- Worker 0,9 MB gz ohne UI-Code.
-- Nur +24 LOC gegenüber Variante 6, dafür mit typisierter Navigation und Cache.
+
+- TSR-Routing-Typen (Param-Rename: 8 korrekte Fehler) und `filterParam`.
+- Nur ~6 Casts in `src`.
+- Volle TSR-Daten-UX: Preload, `autoCodeSplitting`, Cache.
+- Echtes REST, auch für Dritte nutzbar.
 
 **Schwächen**
-- Viele Konzepte: tRPC + TQ + Options-Proxy + TSR (virtual file routes, Codegen, `loaderDeps`, `beforeLoad`, `shouldReload`, `Register`).
-- Zwei Client-Handles: `api` für Mutationen (`api/client.ts`) und `trpc` für Queries (`api/query.ts`).
-- `queryOptions` steht in Loader und Komponente doppelt (`lists.$listId.tsx:38` und `:55`), mit dem Proxy aber je nur ein Ausdruck.
-- Grobe Aktualisierung: `useRefresh` (`src/routing.ts:28–38`) markiert alle Queries als stale und führt die aktuellen Loader neu aus. Das passiert gebatcht und nur für die aktuellen Matches, also nicht als „Refetch-Storm“, ist aber grob.
-- Der `_app`-Loader (`routes/_app.tsx:13–17`, `shouldReload: true`) blockiert den ersten Render, bis die Navigation aller Module geladen ist.
-- 3 zentrale Dateien und 4 Listen pro neuem Modul: `registry.ts`, `registry.server.ts:8` und `:12` (doppelte Liste `serverModules`/`moduleApis`) sowie `routes.ts`.
-- `routeTree.gen.ts` wird nur von Vite regeneriert. Es gibt keine `@tanstack/router-cli`, und `lint:tsc` regeneriert die Datei nicht.
+Die höchste Konzeptlast:
+
+- Hono, `hc`, `parseResponse` (21×) und die bedingten Typen von `operationRoute`;
+- TSR-Generator, `Register` und `loaderDeps`;
+- die TQ-Choreografie (`moduleQueries.ts:28-44`);
+- handgeschriebene `queries.ts` (30/44 LOC) und die Wahl von REST-Methode und Pfad pro Operation.
+
+Dazu kommt keine Request-Bündelung: N Sidebar-Requests beim Betreten der App.
 
 **Typlücken**
-- `ChatPanel.tsx:127` (`as Record<string,string>`).
-- `module.server.ts:16` liest `page.params.listId` untypisiert.
-- `types.ts:33` `mutatingToolNames?: string[]`.
-- `client.ts:22` und `query.ts:32` (`error.data`-Casts).
-- `gridSearch.ts:7–13`: Sort und Filter als `'field:op:value'`-Strings.
-- `lists.$listId.tsx:246–248`: FormData-Felder untypisiert.
 
-**Typzyklus:** `modules/types.ts` importiert `RouterContext` aus `~/api/query`. Dieses ist über `AppRouter` typisiert, der über `registry.server` wieder auf die Module verweist. `CheckedRouteId` ist bereits ein Workaround dafür.
+- GET-Query-Falle und ungeprüfte Path-Params (`hono.server.ts:22-30`).
+- `client.ts:14`: `Hono<any,any,any>`.
+- `client.ts:28`: Fehler-Bodies nicht typisiert.
+- `gridSearch.ts:145-147`: `GridColumns` akzeptiert `keyof Fields`, deshalb kompilierte die Spalte `done` nach dem Output-Rename weiter.
+- Shared Core: Der Handler reicht `...values` ohne Excess-Check ans Repo weiter (`operations.server.ts:148-153`).
 
-**Bugs und Risiken**
-- `api.lists.getDefault.mutate()` läuft in `beforeLoad` (`trpc-tsr-tq: src/modules/todos/routes/lists.index.tsx:10`). Mit `defaultPreload: "intent"` löst schon ein Hover über den Link einen Write aus.
-- `todos.update` und `lists.rename` melden für nicht existierende IDs Erfolg (5.0 Nr. 4).
-- Ein Spread von `values` ins Repository auf dem Server ignoriert umbenannte Felder stillschweigend.
+**Potenzial**
 
-**Potenzial (Typsicherheit 9,5, Duplikation 8,5, AI 9)**
-- Tools aus Procedures (Abschnitt 6).
-- Typisierter Chat-Kontext.
-- Gezielte Invalidierung per `pathFilter`/`pathKey`.
-- CRUD-Collection-Factory.
-- `createGridRoute`-Helper.
-- `tsr generate` in `lint:tsc`.
-- Auto-Discovery der Registries mit typisiertem Router-Merge.
-- Code-basierte Route-Factories für paketierte Module.
+- `apiQuery`-Helper statt `queries.ts`.
+- `pageQuery`-Helper.
+- Typ-Constraints für GET-Inputs und Path-Params.
+- Ein Batch- bzw. Navigation-Endpunkt.
 
----
+**Risiken**
 
-## 6. AI-Chat & MCP
+- Committeter `routeTree.gen.ts` verursacht Merge-Churn.
+- Nach einem neuen Modulordner ist vermutlich ein Dev-Restart nötig (gilt ebenso für 1 und 8).
 
-### 6.1 Ist-Zustand (alle Varianten gleich)
+### 6.6 `trpc-rr-data` (PR #15, `5e5494a`) – 7,48 / 8,25
 
-`AppTool` (`src/modules/types.ts`) ist framework-neutral: `title`, `description`, `inputSchema`, `effect: read|write|delete` und `execute`. `registry.server.ts` sammelt die Tools pro User, erkennt Namenskollisionen und speist zwei Adapter:
-- den AI SDK-Adapter (`chat/tools.server.ts`, `delete` → `needsApproval`);
-- den MCP-Adapter (`mcp/mcp.server.ts`, `effect` → `readOnlyHint` bzw. `destructiveHint`).
+**Kennzahlen**
 
-Instructions und `chatContext` kommen aus den Modulen. Das ist eine gute Basis: Chat und MCP teilen sich bereits eine Definition.
+- LOC 4356 / 3455. Glue 437 (Routing/Invalidierung davon 163: `routing.ts` 58, `moduleData.ts` 50, `navigation.tsx` 26, `router.tsx` 29).
+- Op: ~12 Zeilen Definition + 1 Router-Zeile + 1–2 UI-Zeilen.
+- TS: 440k / +27,0k / 6,7 s.
+- Bundle: Worker 909 KiB gz; initial 215 KiB gz.
 
-**Warum es trotzdem wie ein Fremdkörper wirkt**
-- Die Tools sind eine **zweite API** neben der UI-API, mit eigenen Schemas, eigenen Existenzprüfungen und eigener Fehler-Semantik.
-- Der Client pflegt `mutatingToolNames` von Hand.
-- Der Seitenkontext ist ein String-Protokoll.
-- Nach jedem schreibenden Tool wird alles neu geladen. Die Variante lädt dabei entweder alle Loader neu (`router.invalidate`, `revalidate`) oder invalidiert alle Queries.
+**Stärken**
 
-**Wichtig für jede Vereinheitlichung:** Die Chat-Tools laufen **im ChatAgent Durable Object** (`agent.server.ts`, `userId = this.name`), nicht in einem Request der App-Pipeline. Wiederverwendbare Operationen müssen deshalb ohne Request-Kontext aufrufbar sein.
+- 1-Zeilen-Procedures. Kein Codegen, keine generierten Dateien.
+- Günstiger Typcheck.
+- Loader-Batching (Seite + Modul-Sidebars = 1 GET).
+- Gezählte Revalidierungs-Map, robust bei Überlappung.
+- Kleinste Note-Seite (260 Code-Zeilen). Module sind standalone typcheckbar.
 
-### 6.2 Vereinheitlichung je API-Stil
+**Schwächen**
 
-| API-Stil | Muster „eine Definition → UI + Chat + MCP“ | Aufwand und Reibung | Potenzial |
-|---|---|---|---|
-| tRPC | `procedure.meta({ tool })` + Router-Introspektion (`_def.procedures`, `_def.inputs`, `_def.type`) + `createCaller({ user })` | ~80–120 LOC Core-Adapter. Query → read, Mutation → write, `delete` per Meta. Der Procedure-Pfad ist zugleich der TQ-Invalidierungs-Key | 8–9 |
-| Start | gemeinsamer Operation-Layer `op = {input, effect, handler(ctx, input)}`; `defineTool(op)` + handgeschriebener Top-Level-`createServerFn(...).validator(op.input).handler(...)` pro Op | Wrapper pro Op (Compiler braucht statische Deklaration); keine Introspektion | 8 |
-| Hono | `defineOperation({method, path, input, effect, handler})` erzeugt eine typisierte `.route()`-Kette und ein AppTool; alternativ `@hono/zod-openapi` als Schema-Quelle oder In-Process-`app.request()` | Generics für die `hc`-Typen sind heikel; In-Process-Aufrufe brauchen User-Injection und HTTP-Status-Mapping | 7–7,5 |
-| RR framework | `defineIntent` um Tool-Metadaten erweitern | Intents müssen vorher von Route-Params und Redirects entkoppelt werden | ≤ 7,5 |
+- Kein Cache, keine Dedupe, kein Preload.
+- Home-grown `defineRoute`/`defineNavigation`/`moduleData.ts` (Glue 437).
+- Der `lastPageWithRows`-Block ist pro Grid-Route kopiert (`todos/routes.ts:28-31`, `notes/routes.ts:29-32`).
+- Modul-ID wird 21× von Hand durchgereicht.
+- Client-Hack auf semi-internen tRPC-APIs: `httpBatchLink(...)({})` mit Fake-Runtime und `TRPCUntypedClient`-Subklasse (`client.ts:15,19-37`).
+- Veraltete TanStack-Start-Kommentare in 5 Dateien.
 
-Externe Bibliotheken wie `trpc-to-mcp` oder Hono-MCP-Adapter gibt es, sie sind aber inoffiziell und wenig verbreitet. Realistisch ist ein eigener kleiner Adapter auf das bestehende `AppTool`-Interface. So bleiben die bestehenden Chat- und MCP-Adapter unverändert.
+**Typlücken**
 
-### 6.3 Empfohlenes Muster für `trpc-tsr-tq`
+- `routing.ts:30`: `useRouteLoaderData(id) as Data` (E12: fremde Route kompiliert, `undefined` zur Laufzeit).
+- Nicht gemountete Route kompiliert (E9).
+- `createModuleClient<TodosRouter>('notes')` kompiliert (E5/E6).
+- `moduleData.ts:47`: `to: string`.
+- Server-Code-Leak wird nur zufällig vom Build abgefangen, über `cloudflare:workers` (E14).
 
-```ts
-// src/api/trpc.server.ts – Meta-Typ registrieren
-export type OperationMeta = {
-    tool?: {
-        title: string;
-        description: string;
-        effect?: "delete";      // query => read, mutation => write (Default)
-        name?: string;          // sonst aus dem Pfad: "todos.update" -> "todos_update"
-    };
-};
-const t = initTRPC.context<ApiContext>().meta<OperationMeta>().create({ transformer: superjson /* … */ });
-export const router = t.router;
-export const procedure = t.procedure;
-export const createCallerFactory = t.createCallerFactory;
-```
+**Potenzial**
 
-```ts
-// src/modules/todos/todos.api.server.ts – EINE Definition für UI, Chat und MCP
-const updateTodoInput = z.object({
-    id: z.string(),
-    title: z.string().trim().min(1).max(maxTodoTitleLength).optional(),
-    description: descriptionSchema.optional(),
-    dueDate: dueDateSchema.optional(),
-    done: z.boolean().optional(),
-    listId: z.string().optional().describe("Moves the todo to this list"),
-});
+- `routerFromOperations` (Query/Mutation aus `effect`).
+- `defineModuleApi`.
+- An das Modul gebundene Hooks.
+- `defineGridRoute`.
+- Optional ein Cache-Layer. Damit konvergiert die Variante gegen 7.
 
-export const todosApi = router({
-    update: procedure
-        .meta({ tool: { title: "Update todo", description: "Updates a todo … Omitted fields stay unchanged." } })
-        .input(updateTodoInput)
-        .mutation(async ({ input: { id, ...values }, ctx: { user } }) => {
-            // Existenz-/Ownership-Prüfung genau einmal, hier (Repo mit .returning())
-            const todo = await getTodoRepository().update(user.id, id, values);
-            if (!todo) throw notFound();
-            return todo;
-        }),
-});
-```
+**Risiken**
 
-```ts
-// src/ai/toolsFromRouter.server.ts – Core-Adapter (einmalig)
-import type { AnyRouter } from "@trpc/server";
-import { TRPCError } from "@trpc/server";
+- Upgrade-Bruch des tRPC-Client-Hacks.
+- Jeder `BAD_REQUEST` wird zu `ValidationError` und erscheint als Formulartext (`client.ts:48-53`).
 
-export function toolsFromRouter(appRouter: AnyRouter, ctx: ApiContext): Record<string, AppTool> {
-    const caller = createCallerFactory(appRouter)(ctx);
-    const tools: Record<string, AppTool> = {};
-    for (const [path, proc] of Object.entries(appRouter._def.procedures as Record<string, AnyProcedure>)) {
-        const { meta, inputs, type } = proc._def;
-        if (!meta?.tool) continue;
-        const name = meta.tool.name ?? path.replaceAll(".", "_");
-        tools[name] = {
-            title: meta.tool.title,
-            description: meta.tool.description,
-            inputSchema: inputs[0],                              // zod-Schema der Procedure
-            effect: type === "query" ? "read" : (meta.tool.effect ?? "write"),
-            execute: async (input) => {
-                try {
-                    return await path.split(".").reduce<any>((node, key) => node[key], caller)(input);
-                } catch (error) {
-                    // TRPCError -> verständliche Meldung fürs Modell
-                    throw new Error(error instanceof TRPCError ? `${error.code}: ${error.message}` : "Operation failed");
-                }
-            },
-        };
-    }
-    return tools;
-}
+### 6.7 `trpc-rr-decl-tq` (PR #17, `30dc958`) – 7,71 / 8,48 (2. Wahl)
 
-// registry.server.ts
-export const createTools = (userId: string) => ({
-    ...toolsFromRouter(appRouter, { user: { id: userId } }),
-    ...aiOnlyTools(userId), // nur AI-spezifische Ops (findTodos, appendToNote) bleiben handgeschrieben
-});
-```
+**Kennzahlen**
 
-**Konsequenzen**
-- Pro neuer Operation schreibt man **ein** Procedure-Objekt plus `meta`. Chat und MCP bekommen sie automatisch, die UI ruft sie typisiert über `trpc.todos.update.mutationOptions()` auf.
-- Es gibt **ein** Schema und **eine** Fehler- und Existenzlogik. Die Abweichungen aus 5.0 Nr. 1 verschwinden.
-- Voraussetzung für Validierungsfehler: Procedures **werfen** sie (`TRPCError` `BAD_REQUEST` bzw. zod), statt `{error}` zurückzugeben. Die UI mappt zod-Issues auf Formularfelder.
-- Grid-Listen-Procedures mit `looseObject`-Input sind keine guten Tool-Kandidaten. Dafür gibt es die AI-spezifischen `find*`-Tools.
-- `_def` ist eine interne tRPC-API. Deshalb einmal im Core kapseln und mit Tests absichern (Pfade, Typ, Meta).
+- LOC 4495 / 3556 (größter `src`; Core 1675 Code-Zeilen). Glue 502 (größter).
+- Op: ~21–25 Zeilen, davon 1 stack-spezifisch; Invalidierung 0 Zeilen.
+- TS: 464k / +33,1k / 7,3 s.
+- Bundle: Worker 909 KiB gz; initial 211 KiB gz.
 
-### 6.4 Seitenkontext und UI-Refresh
+**Stärken**
 
-**Typisierter Seitenkontext ohne Route-ID-Strings.** Jedes Modul definiert in einer geteilten Datei (nicht `.server`) ein zod-Schema für seinen Seitenkontext. Die Seite meldet, was sie zeigt, statt dass der Server Route-IDs parst:
+- Die schlanksten Seiten und Mutations-Sites. Eine Route ist 6 Zeilen (`todos/routes.tsx:27-32`: `path`, `validateSearch`, `query: … todosApi.listTodos.queryOptions(…)`, `page: () => import(…)`).
+- `MutationCache.onSettled` invalidiert automatisch pro Modul (`client.ts:97-106`). 8 Modul-ID-Referenzen, Bestwert aller 8 (2: 13, sonst 18–25).
+- Cast-freier tRPC-Client (`createTRPCOptionsProxy` mit `keyPrefix`, `client.ts:115`). Der Key-Präfix ist erzwungen und identisch mit dem Mount-Pfad, deshalb ist der Chat-Refresh strukturell sicher.
+- Code und Daten laden parallel (`routing.tsx:122-126`), Hover-Preload für beides.
+- Module sind Werte und standalone typcheckbar, `.d.ts`-Emit sauber.
+- Größtes Duplikations-Potenzial (9): Leitet man `api.server.ts` aus den Operationen ab, ist der Adapter 0 Zeilen.
 
-```ts
-// src/modules/todos/chatPage.ts (shared)
-export const todosChatPage = z.object({ listId: z.string() });
+**Schwächen**
 
-// routes/lists.$listId.tsx – Params typisiert aus TanStack Router
-const { listId } = Route.useParams();
-useChatPage("todos", { listId });           // useChatPage<K extends keyof ChatPages>(module: K, page: ChatPages[K])
+- Selbstgebautes Mini-Framework: mit 502 Code-Zeilen der größte stack-spezifische Glue aller 8 (u. a. `routing.tsx` 179 LOC, `routes/root.tsx` 112, `api/client.ts` 120, dazu `collections`, `searchParams`, `useMutate`). Es hat keine verschachtelten Layouts, keine Route-Boundaries und keine Route-Metadaten, und `useBlocker`/`ScrollRestoration` fehlen (nur in RR data mode verfügbar). Der Note-Editor verlässt sich auf Save-on-unmount.
+- `list.tsx:33/35` deklariert `updateTodo` zweimal als Mutation-Hook.
+- Der Client-Teil nutzt eine `TRPCUntypedClient`-Subklasse mit Fake-Link-Runtime.
 
-// module.server.ts
-chatContext: async (userId, page?: z.infer<typeof todosChatPage>) => …
-```
+**Typlücken**
 
-Wird ein Param umbenannt, bricht damit der Build in der Route. Der Server hängt nicht mehr vom Route-Tree ab, und der `CheckedRouteId`-Zyklus-Workaround entfällt.
+- `routing.tsx:100`: `useParams() as …`. `listRoute.useParams()` in einer fremden Seite kompiliert (E11).
+- RR `<Link to="/listz">` und `navigate(string)` kompilieren (E13). Die `Href`-Brand schützt nur Shared-Props.
+- `createModuleApi<TodosRouter>('notes')` und fehlendes `api` kompilieren (E8/E10). Der resultierende `NOT_FOUND` erscheint als normale 404-Seite und verdeckt den Verdrahtungsfehler.
+- `meta.invalidates: QueryKey[]` (E14).
+- Flache Routen mit Key = Pfad: doppelte Pfade überschatten sich still.
 
-**Refresh nach Tool-Calls.**
-- Der Agent sendet nach jedem Tool mit `effect !== "read"` einen Data-Part, z. B. `data-invalidate: ["todos"]`. Den Namespace leitet er aus dem Procedure-Pfad ab.
-- Der Client führt `queryClient.invalidateQueries(trpc.todos.pathFilter())` und anschließend `router.invalidate()` aus.
-- Damit entfällt `mutatingToolNames` ganz.
-- Fallback: Der Client invalidiert nach jedem Tool, das in einem vom Server generierten Manifest nicht als `read` markiert ist.
+**Potenzial**
 
-**Approval.** `delete` → `needsApproval` (Chat) bzw. `destructiveHint` (MCP) funktioniert unverändert über `effect`.
+- Page-Props statt globaler Route-Hooks.
+- `defineModule`, das Router-Typ und ID bindet.
+- Eine typisierte `navigate`-Hülle plus Lint-Regel.
+- `api.server.ts` aus den Operationen ableiten.
+- Verschachtelte `defineRoute`-Children.
 
----
+**Risiken**
 
-## 7. Library-Extraktion
+- Wachsende Eigenverantwortung für Router-Features bei 100+ Seiten.
+- Grobe Modul-Invalidierung. `mutateAsync` resolved erst nach dem Refetch.
+- Server-Code-Grenze nur über den Build abgesichert.
+- Veraltete Start-Kommentare.
 
-### 7.1 Was paketierbar ist
+### 6.8 `trpc-tsr-tq` (PR #18, `ac62e6c`) – 7,78 / 8,68 (1. Wahl)
 
-| Teil | 1 Start | 2 RR fw | 3 Hono data | 4 Hono decl | 5 Hono TSR | 6 tRPC data | 7 tRPC decl | 8 tRPC TSR |
-|---|---|---|---|---|---|---|---|---|
-| Core-Shell (Layout, Auth, Komponenten) | mittel (SSR, Start-Kontext) | mittel | gut | gut | gut | gut | gut | gut |
-| Chat (Agent-DO, ChatPanel, Adapter) | gut | gut | gut | gut | gut | gut | gut | gut |
-| MCP-Handler + AppTool-Adapter | gut | gut | gut | gut | gut | gut | gut | gut |
-| Grid-Helper (`gridSearch`, `useServerGrid`, `filters.server`) | gut | gut | gut | gut | gut (TSR-`useMatch`) | gut | gut | gut (TSR) |
-| Server-Teil eines Moduls (API, Repos, Tools, Schema) | schlecht (Start-Compiler) | schlecht (Route-gebunden) | gut (Sub-App) | gut | gut | gut (braucht Core-`t`) | gut | gut |
-| Client-Teil eines Moduls (Seiten, Navigation) | schlecht | schlecht | gut (RouteObject[]) | **sehr gut** | schwer | gut | **sehr gut** | schwer |
+**Kennzahlen**
 
-### 7.2 Blocker
+- LOC 4406 / 3504 (+ `routeTree.gen.ts` 215). Glue 347. Modul-Glue 73 (zweitkleinster).
+- Op: ~22–25 Zeilen in 3–4 Dateien, 1 Router-Zeile, keine Keys und keine Tool-Registrierung.
+- TS: 615k / +35,0k / 8,0 s.
+- Bundle: Worker 909 KiB gz (kein React/MUI); initial 222 KiB gz.
 
-| Blocker | betrifft | Bemerkung |
-|---|---|---|
-| File-Routes mit Generator, der `createFileRoute("/_app/...")`-Literale umschreibt; `physical()`-Pfade relativ ins App-Verzeichnis | 1, 5, 8 | In `node_modules` kann (und darf) der Generator nicht schreiben |
-| `Register`-Augmentation der App für typisierte Links; `routeTree.gen` als Typquelle in `module.server.ts` | 1, 5, 8 | Module lassen sich nicht standalone typchecken |
-| typegen nur für `appDirectory` (getestet) | 2 | Paket-Routen verlieren `+types` |
-| Start-Compiler muss die Paket-Source transformieren | 1 | nur Workspace-Pakete mit TS-Source |
-| globaler Client `hc<Api>` bzw. `trpc`/`api`, typisiert über die ganze App → Typzyklus | 3–8 | Lösung: modul-lokale Clients (`hc<typeof todosApi>("/api")` bzw. `createTRPCOptionsProxy<{lists, todos}>`); funktioniert, weil Modul-APIs auf Root-Ebene gemountet sind |
-| `~/`-Alias-Importe in Core-Interna; `getDb()` an `env.DB` gebunden | alle | Core-Paket mit injizierter DB bzw. vereinbartem Binding-Namen als Vertrag |
-| eine Migrationshistorie, Schema-Glob | alle | Konvention für Schema- und Migrations-Export pro Paket |
-| Router-Komposition (`.route()`-Kette, `moduleApis`-Spread) muss für Typen von Hand geschrieben werden | 3–8 | per-Modul-Clients erlauben Loop bzw. Glob; bei tRPC alternativ ein `defineServerModules(...)` mit Tupel-Inferenz |
+**Stärken**
 
-### 7.3 Empfohlener Weg für `trpc-tsr-tq`
+- Stärkste Typabdeckung, verifiziert:
+    - `<Link to="/listz">` → TS2820, `search {page:'x'}` → TS2322, `params {id}` → TS2353.
+    - Route-Param-Rename: 8 Fehler. Grid-Feld-Rename: 13 Fehler.
+    - superjson erhält `Date` und GET-Typen. `filterParam` typisiert den Preset-Filter (`gridSearch.ts:134`).
+- tRPC generiert `queryOptions`/`queryKey`/`pathFilter`, deshalb gibt es kein `queries.ts`.
+- Vollständiges Skalierungs-Toolkit:
+    - Cache mit `staleTime` 30 s (`client.ts:25`);
+    - Preload on intent (`router.tsx:18`) und `autoCodeSplitting`;
+    - `pendingComponent`, `scrollRestoration`, `notFound`-Mapping (`moduleQueries.ts:58`);
+    - Batching von Seite und Sidebars in 1 Request, Mutation = 2 Worker-Aufrufe.
+- Lineare TS-Kosten bis 32 Module (1,67M Instantiations, 8,0 s).
 
-1. **Monorepo mit Workspace-Paketen, die TS-Source exportieren.** Kurzfristig realistisch und ohne Typverlust. Der Generator verarbeitet Quell-Dateien im Workspace.
-2. **Core-Paket:** `procedure`/`router`/`OperationMeta`, `toolsFromRouter`, AppTool-Adapter für AI SDK und MCP, ChatAgent-Basis, Grid-Helper, Shell-Komponenten, `getDb(binding)` und Typen (`AppModule`, `ServerModule`).
-3. **Modul-Pakete exportieren:**
-   - `serverModule` (Router, Schema, Instructions, Chat-Kontext-Schema);
-   - `appModule` (Navigation, Suggestions);
-   - einen modul-lokalen Options-Proxy;
-   - Routen.
-4. **Routen vorkompilierter npm-Module:** code-basierte Route-Factories `createTodosRoutes(parentRoute)` mit `createRoute({ getParentRoute })`. TanStack Router unterstützt das vollständig typisiert. Wie sich solche Teilbäume in einen file-basierten Host-Tree einhängen lassen, ist vor der Template-Freigabe per Spike zu verifizieren. Das ist der zentrale offene Punkt bei 8 gegenüber 7.
-5. **Migrationen:** pro Paket ein eigener Ordner, App-Konfiguration aggregiert die Schemas.
+**Schwächen**
 
-Mit diesen Schritten steigt Library-Extraktion bei Variante 8 von 5 auf ~7. Variante 7 hat den Routing-Blocker gar nicht und erreicht deshalb ~8,5.
+- Drei Bibliotheken mit zwei Cache-Schichten. Die Koordination in `moduleQueries.ts:21-45` ist der schwierigste Teil: `invalidateQueries` + `router.invalidate()`, `refetchType: "none"` vor dem Navigieren, `defaultPreloadStaleTime` 0.
+- Loader und Komponente bauen die `queryOptions` doppelt (`lists.$listId.tsx:33` vs. `:42`).
+- Kombinierter Call-/Options-Proxy mit `as unknown as` (`client.ts:48-60`), keine dokumentierte tRPC-Nutzung.
+- Client-Routen sind an den Host-Tree gebunden (Library 6).
+
+**Typlücken**
+
+- `client.ts:56`: `createModuleApi<NotesRouter>(todosModuleId)` kompiliert.
+- `client.ts:70`: `.subscribe` landet am falschen Proxy.
+- `trpc.server.ts:58`: `input as z.output<Input>`.
+- `types.ts:43`: `api?: AnyRouter`.
+- `useServerGrid.ts:32`: globale Location statt Route-Search.
+- `lists.$listId.tsx:233-235`: `FormData`-Feldnamen untypisiert.
+- Client-Seiten importieren Typen aus Server-Dateien (`lists.$listId.tsx:25`).
+
+**Potenzial**
+
+- `defineModuleApi`/Modul-ID-Union, Proxy von Variante 7 übernehmen (siehe 9.2).
+- `pageQuery`-Helper.
+- Spalten aus Feldart ableiten, Collection-Kit.
+- Entity-Level-Invalidierung über `pathFilter`.
+- Code-basierte Route-Factories für Pakete.
+
+**Risiken**
+
+- Index-Loader schreiben (`getDefaultList`), nur über das Preload-Flag geschützt (`collections.ts:25`).
+- Committeter Route-Tree.
+- tRPC-Wire ist nicht REST/OpenAPI.
 
 ---
 
-## 8. Empfehlung & nächste Schritte
+## 7. AI-Chat & MCP
 
-### 8.1 Entscheidung
+### 7.1 Das gemeinsame Muster
 
-**`trpc-tsr-tq` (PR #18) wird Basis-Template.** `trpc-rr-decl-tq` ist die dokumentierte Ausweichoption, falls der Spike zu code-basierten Route-Factories (7.3 Schritt 4) scheitert und Library-Extraktion ganzer Module kurzfristig zwingend ist.
+Alle 8 Varianten verwenden denselben Code:
 
-Die Server-Seite (tRPC, Tools, MCP, Agent) ist in 7 und 8 identisch. Ein späterer Wechsel des Routers ist auf die Seiten begrenzt.
+- Eine Operation mit `ai`-Metadaten ist automatisch Chat-Tool und MCP-Tool.
+- `effect: "delete"` setzt `needsApproval` im Chat (`chat/tools.server.ts:14`) und `destructiveHint` in MCP (`mcp/mcp.server.ts:14-19`).
+- Modul-Instructions fließen in den System-Prompt und in die MCP-Instructions.
+- Die Tools laufen im ChatAgent-DO (`userId = this.name`) und rufen die Operation direkt auf, ohne HTTP.
 
-### 8.2 Verbesserungen vor der Freigabe als Template (nach Priorität)
+**Eine Operation hinzufügen** (Variante 8, Stil aus `src/modules/todos/operations.server.ts`):
 
-1. **Operation-Layer:** Tools aus Procedures ableiten (`OperationMeta`, `toolsFromRouter`, Abschnitt 6.3).
-   - Handgeschriebene `tools.server.ts` nur noch für AI-spezifische Ops.
-   - Procedures werfen Validierungsfehler, statt `{error}` zurückzugeben.
-   - Tests für Introspektion und Namensbildung.
-2. **Repository-Korrektheit:** `update`/`rename` mit `.returning()` und `notFound` bei 0 Zeilen (5.0 Nr. 4). Server-seitig explizite Felder statt Spread von `values`.
-3. **`mutatingToolNames` entfernen:** Der Agent sendet `data-invalidate` mit den Namespaces, der Client invalidiert gezielt (`trpc[ns].pathFilter()`). `useRefresh` invalidiert ebenfalls gezielt, statt alles als stale zu markieren.
-4. **Typisierter Chat-Seitenkontext** über modul-eigene zod-Schemas und `useChatPage(module, payload)` (6.4). `routeId`- und `params`-Strings entfallen.
-5. **Registrierung vereinfachen:**
-   - `defineServerModules(...)` bzw. typisierter Router-Merge (eine Liste statt `serverModules` plus `moduleApis`);
-   - `import.meta.glob` für die Client-Registry;
-   - `routes.ts` aus der Modulliste erzeugen;
-   - Ziel: ein neues Modul ohne Edits in zentralen Dateien.
-6. **Codegen in CI:** `@tanstack/router-cli` ergänzen, `tsr generate` in `lint:tsc` aufnehmen und in CI auf Diff prüfen.
-7. **Generische Helper:**
-   - `createGridRoute` (`validateSearch`, `loaderDeps`, Loader mit `loadOrNotFound`/`lastPageWithRows`, Wiederverwendung der Query in der Komponente);
-   - `useApiMutation(trpc.x.mutationOptions(), { invalidates })` als einzige Client-Fassade (statt `api` und `trpc`);
-   - Collection-Factory (Repo + Router + Navigation + Default-Redirect + Header) für „Container + Items“-Entitäten.
-8. **Typisierte Grid-Suche:** zod-Search-Schema mit Sort-/Filter-Tupeln statt `'field:op:value'`, gemeinsam für Route und Procedure. Damit entfallen `looseObject` und die Filter-Casts. Optional `GridColDef`-Felder über einen Helper `col<Todo>("title", …)` absichern.
-9. **Fehlertypen:** `TRPCClientError<AppRouter>` statt `error.data as …` (`client.ts:22`, `query.ts:32`).
-10. **Default-Entity ohne Write im Preload:** `getDefault` nicht in `beforeLoad` ausführen bzw. vom Preload ausnehmen (`lists.index.tsx:10`). Alternativ eine Read-Query mit separater Create-Mutation.
-11. **Navigation-Loading:** Navigationsdaten pro Modul nicht blockierend im `_app`-Loader laden (Prefetch statt `await`) oder in einer einzigen gebatchten Query bündeln. Das hält die Startzeit mit 20+ Modulen stabil.
-12. **Library-Spike:** Monorepo-Struktur (Core-Paket plus ein Modul als Workspace-Paket) und code-basierte Route-Factory für ein Modul prototypisch umsetzen (7.3).
-13. **README aktualisieren**, mit den Konzepten, die neue Entwickler lernen müssen: Procedure + Meta, `queryOptions` in Loader und Komponente, Invalidierung, Modul-Anatomie, Rezept „neue Operation“.
+```ts
+// 1) src/modules/todos/operations.server.ts – die einzige fachliche Definition
+completeList: defineOperation({
+    input: z.object({ listId: z.string() }),
+    effect: "write",                                   // read | write | delete (delete: Bestätigung im Chat, destructiveHint in MCP)
+    ai: { title: "Complete todo list", description: "Marks all open todos of a list as done." },
+    handler: async ({ userId }, { listId }) => {
+        await getList(userId, listId);                 // Existenz-/Ownership-Prüfung genau einmal (wirft NotFoundError)
+        const count = await getTodoRepository().completeAll(userId, listId);
+        return { completed: count };
+    },
+}),
+// → ab hier: Chat-Tool "completeList", MCP-Tool mit Annotations, UI-Refresh des Moduls nach dem Tool-Call
 
-### 8.3 Worauf achten
+// 2) src/modules/todos/api.server.ts – nur wenn die UI sie aufruft (1 Zeile, Typen aus der Operation)
+completeList: mutation(todoOperations.completeList),
 
-- **TS-Performance:** Ein einzelner `AppRouter` plus der TSR-`Register` kostet heute 580k Instantiations (`tsc` ~10 s). Bei vielen Modulen früh modul-lokale Proxies einsetzen und die Instantiations in CI beobachten (`--extendedDiagnostics`).
-- **Interne tRPC-API:** `_def.procedures` und `_def.meta` sind intern. Zugriff nur im Core-Adapter, bei Minor-Updates Tests laufen lassen.
-- **Pre-1.0-Abhängigkeiten:** `@mui/x-chat` (alpha), `@cloudflare/ai-chat` und `agents` (0.x) pinnen und Upgrades bündeln.
-- **Worker-Größe:** Der Worker wird vom AI-Stack dominiert (~0,9 MB gz). Das ist weit unter den Limits (3 MB free / 10 MB paid komprimiert), wächst aber mit Tools und Instructions.
-- **Keine SSR:** Die erste Darstellung wartet auf JS und einen API-Batch. Für Access-geschützte interne Apps ist das akzeptabel. Für öffentliche Seiten wäre eine andere Lösung nötig.
-- **Externe REST-API:** Falls Dritte eine klassische REST- oder OpenAPI-Schnittstelle brauchen, liefert tRPC sie nicht nativ. Optionen sind ein OpenAPI-Adapter oder separate Hono-Routen im selben Worker. Für AI-Clients deckt MCP den Bedarf bereits ab.
-- **Disziplin bei Operationen:** Jede fachliche Operation wird genau einmal als Procedure definiert. Tools ohne Procedure gibt es nur, wenn sie AI-spezifisch sind. Am besten per Review-Checkliste bzw. Lint absichern.
+// 3) Seite – typisierter Aufruf, Invalidierung des Moduls über useMutate
+const mutate = useMutate(todosModuleId);
+void mutate(todosApi.completeList.mutate({ listId }));
+```
+
+Zum Vergleich: Schritt 2 ist in 1 ein `createServerFn`-3-Zeiler, in 3/4/5 eine `operationRoute`-Zeile mit Methode und Pfad und in 2 entfällt er ganz. Schritt 1 ist in allen 8 identisch.
+
+**Seitenkontext** (in allen 8 identisch, je 1 Zeile pro Seite):
+
+```ts
+// src/modules/todos/chatPage.ts
+export const todosChatPage = defineChatPage(todosModuleId, z.object({ listId: z.string() }));
+// Seite (8: routes/lists.$listId.tsx:60)
+useChatPage(todosChatPage, { listId: list.id });
+// src/modules/todos/module.server.ts:16 – serverseitig mit demselben Schema validiert
+chatContext: defineChatContext(todosChatPage, async (userId, page) => { /* page.listId typisiert */ }),
+```
+
+**Refresh nach Tool-Calls:**
+
+1. `createChatTools(userId, onChange)` meldet nach Tools mit `effect !== "read"` das Modul.
+2. Der Agent schreibt `{ type: "data-changes", data: { modules: [module] } }` (`agent.server.ts:36-38`).
+3. `useChatChanges` dedupliziert und ruft den stack-spezifischen Refresh auf.
+
+### 7.2 Was noch stack-abhängig ist
+
+| Variante | Refresh-Zeile im ChatPanel                        | Wirkung                                                                                       |
+| -------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| 1, 5, 8  | `invalidateModules(queryClient, router, modules)` | TQ-Präfix-Invalidierung des Moduls, danach `router.invalidate()` (Loader lesen aus dem Cache) |
+| 4        | `invalidateModules(queryClient, modules)`         | nur TQ, Präfix per Konvention (handgeschriebene Keys)                                         |
+| 7        | `invalidateModules(modules)`                      | nur TQ, Präfix durch `keyPrefix` erzwungen = Mount-ID                                         |
+| 6        | `revalidateModules(modules)`                      | Loader-Revalidierung pro Modul (gezählte Map, robust)                                         |
+| 3        | `reloadModules(modules, revalidate)`              | wie 6, aber nicht gezähltes Set (fragil bei Überlappung)                                      |
+| 2        | `() => revalidate()`                              | Modulliste ignoriert: Seite + Navigation **aller** Module neu                                 |
+
+Weitere Unterschiede:
+
+- **UI-Adapter pro AI-fähiger Operation:** 0 (2), 1 (6/7/8), 1 + Pfad (3/4/5), 3 (1).
+- **Worker-Entry:** Hono hat eine Middleware für API, MCP und Chat. Bei 1 und 6/7/8 läuft `getUser` einmal oben im Fetch-Switch. Bei 2 liegt die Auth an drei Stellen.
+- **Spielraum nach oben:** Feinerer Refresh als auf Modul-Ebene oder `setQueryData` aus Tool-Ergebnissen gibt es nur mit TanStack Query. Am leichtesten geht es mit tRPC + TQ (7, 8): Procedure-Name = Operation-Name = Tool-Name, und `pathFilter`/`pathKey` sind typisiert.
+
+**Gemeinsame offene Punkte** (alle 8):
+
+- Modul-IDs in `data-changes` sind `string`.
+- Tool-Namen in Prompt-Texten sind untypisiert.
+- MCP-Ergebnisse sind JSON-Text ohne `outputSchema`.
+- Alle Tools gehen bei jedem Request ans Modell, ohne Filter pro Seite. Das wird bei 20+ Modulen relevant.
 
 ---
 
-## Anhang A: Gemessene Kennzahlen (Auszug)
+## 8. Library-Extraktion
 
-| Variante | src-LOC | Worker gz | Client-Main gz | Route-Splitting | TS-Instantiations | Zentrale Edits / Modul |
-|---|---|---|---|---|---|---|
-| 1 tanstack-start | 3771 | 1,78 MB (SSR, gesamt) | 82 kB Entry | ja | 589k | 3 Dateien |
-| 2 rr-framework | 3855 | 1,71 MB (SSR, gesamt) | ~600 kB gesamt, gesplittet | ja | 431k | 3 Dateien |
-| 3 hono-rr-data | 3880 | 888 kB | 434 kB | nein | 633k | 2 Dateien / 3 Edits |
-| 4 hono-rr-decl-tq | 4054 | 888 kB | 425 kB | nein | 647k | 2 / 3 |
-| 5 hono-tsr-tq | 3934 | 888 kB | 437 kB | nein (1 Zeile) | 772k | 3 Dateien |
-| 6 trpc-rr-data | 3943 | 901 kB | 439 kB | nein | 430k | 2 / 3 |
-| 7 trpc-rr-decl-tq | 4117 | ~900 kB | 433 kB | nein | 447k | 2 / 3 |
-| 8 trpc-tsr-tq | 3967 | 902 kB | ~600 kB gesamt, Routen 3–34 kB | ja | 580k | 3 Dateien / 4 Listen |
+Paketierungstest der Querschnitts-Bewertung: `src/modules/todos` nach `packages/todos` verschoben, nur Host-Config geändert. Danach wurde das Paket standalone typgecheckt (nur `packages/todos`, Env-Typen gestubbt).
 
-Bei den SSR-Varianten wird der SSR-Teil dynamisch importiert. Der eager ausgewertete `index.js` ist 765 kB bzw. 619 kB gz groß und damit nicht größer als der SPA-Worker. SSR verschlechtert also nicht den Cold Start für API, Chat und MCP. Es kostet CPU pro Dokument-Render und erhöht die Upload-Größe.
+Zwei Szenarien sind zu unterscheiden:
 
-## Anhang B: Wesentliche Korrekturen der Querschnitts-Bewertungen an den Berichten
+- **(a) Workspace-Source-Paket:** Der Host kompiliert das Paket mit.
+- **(b) Vorkompiliertes Paket:** JS + `.d.ts`, eigenständig test- und publizierbar.
+
+| Variante          | Server-Teil paketierbar           | Client-Teil paketierbar                  | (a) Workspace-Source                                                              | (b) vorkompiliert                               | Hauptblocker                                                                                                  | Score     |
+| ----------------- | --------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | --------- |
+| 1 tanstack-start  | ja (Operationen neutral)          | Routen + `*.functions.ts` nur als Source | ✓ verifiziert (Server Functions weiter extrahiert, Client nur `/_serverFn`-Stubs) | ✗ (TS2345 in Routen und `ServerFn<Register,…>`) | Start-Compiler + Host-`Register`                                                                              | 5,5 / 6,5 |
+| 2 rr-framework    | **am einfachsten** (kein Adapter) | Route-Module verlieren Typen             | läuft, aber **untypisiert** (keine `+types` außerhalb `appDirectory`)             | ✗                                               | Typegen nur für `appDirectory`; Core-`client.ts` typisiert gegen `Register['routeFiles']` und `~/routes/_app` | 5 / 6,5   |
+| 3 hono-rr-data    | ja (Sub-App)                      | ja (`RouteObject[]`)                     | ✓                                                                                 | ✓ (0 Fehler, `.d.ts` ok)                        | breiterer Host-Vertrag (Revalidierungsprotokoll, `isRedirect`-Regel)                                          | 8 / 8,5   |
+| 4 hono-rr-decl-tq | ja (Sub-App)                      | ja (`{path, Component}`)                 | ✓ verifiziert, 0 Zeilen Modulcode geändert                                        | ✓                                               | nur gemeinsame Blocker                                                                                        | **8 / 9** |
+| 5 hono-tsr-tq     | ja                                | File-Routes an Host-Tree gebunden        | ✓ verifiziert (`physical()` ohne Rewrite, Splitting ok)                           | ✗ (TS2345 `createFileRoute`)                    | Host-`routeTree.gen`/`Register`                                                                               | 6,5 / 7,5 |
+| 6 trpc-rr-data    | ja (braucht Core-`initTRPC`)      | ja                                       | ✓                                                                                 | ✓                                               | Core-`client.ts` → `CoreRouter` → `registry.server`                                                           | 7,5 / 8,5 |
+| 7 trpc-rr-decl-tq | ja (braucht Core-`initTRPC`)      | ja (`defineRoute`-Objekte)               | ✓ verifiziert                                                                     | ✓                                               | wie 6; `routing.tsx` importiert App-Singleton `queryClient`                                                   | 7,5 / 8,5 |
+| 8 trpc-tsr-tq     | ja (braucht Core-`initTRPC`)      | File-Routes an Host-Tree gebunden        | ✓ (analog 5)                                                                      | ✗                                               | Host-`Register` + `CoreRouter`-Kante                                                                          | 6 / 7,5   |
+
+Gemeinsame Blocker in allen 8:
+
+- `~/`-Alias-Importe (~20 Core-Dateien pro Modul) müssen zu `@acme/core/...` werden.
+- Die `import.meta.glob`-Discovery sieht keine Pakete. Pro Paket ist 1 expliziter Eintrag nötig.
+- Eine Drizzle-Migrationshistorie.
+- `worker-configuration.d.ts` enthält `import('./src/server')`, sodass jeder `env`-Nutzer gegen die ganze App typcheckt. Ein Core-Paket braucht ein eigenes `Env`-Interface.
+- `chat/agent.server.ts`, `chat/tools.server.ts` und `mcp.server.ts` importieren die Registry direkt und müssen parametrisiert werden (`createTools(modules)`).
+
+**Empfohlener Weg für `trpc-tsr-tq`:**
+
+1. **Kurzfristig: Monorepo mit Workspace-Source-Paketen.** Das funktioniert in TSR ohne Typverlust (in 5 verifiziert, 8 ist strukturell gleich). Routen werden per `physical('<pkg>/routes')` eingehängt. Die IDs bleiben layout-relativ (`/_app/...`) und damit gültig.
+2. **Core-Paket schneiden:**
+    - `coreRouter` aus `api/router.server.ts` in eine eigene Datei, damit `api/client.ts` nicht mehr die Registry importiert;
+    - eigenes `Env`;
+    - Chat/MCP mit injizierten Modulen;
+    - `@acme/core`-Pfade statt `~/`.
+3. **Modul-Paket:**
+    - `./server`: `serverModule`, `todosRouter`, `type TodosRouter`;
+    - `./client`: `todosModule`, `todosApi`, Navigation, `chatPage`;
+    - `./routes` als TS-Source;
+    - `./schema` und ein eigener Migrationsordner. Die Host-Config aggregiert die Schemas.
+4. **Nur für vorkompilierte npm-Pakete:** Spike mit code-basierten Factories `createTodosRoutes(getParentRoute)` und `createRoute`. Das kostet File-Route-Ergonomie, und Links bleiben global typisiert.
+
+Ist (b) früh Pflicht, ist Variante 7 die bessere Wahl. Dort ist der Client-Teil heute schon standalone typcheckbar.
+
+---
+
+## 9. Empfehlung & nächste Schritte
+
+### 9.1 Entscheidung
+
+**`trpc-tsr-tq` (PR #18) wird Basis-Template. `trpc-rr-decl-tq` (PR #17) ist die dokumentierte Ausweichoption.** Auf 7 umzusteigen lohnt sich, wenn eine dieser Bedingungen eintritt:
+
+- vorkompilierte Modul-Pakete werden kurzfristig Pflicht;
+- das Team gewichtet Codegen-Freiheit und Einfachheit der Seiten höher als framework-seitige Routing-Typisierung.
+
+Die Server-Seite ist in 6/7/8 identisch. Ein Router-Wechsel zwischen 7 und 8 betrifft nur Seiten und Client-Glue.
+
+`tanstack-start` ist bei Typsicherheit ebenbürtig (8,5) und bei Skalierung knapp dahinter (7,5 vs. 8), aber nicht empfohlen:
+
+- Library-Extraktion 5,5: Vorkompilieren ist unmöglich (Compiler + `Register`).
+- Der Worker trägt die ganze UI (1,8 MB gz), Server Functions sind unbatched.
+- Es ist das jüngste Framework mit der meisten Magie.
+- Data-only SSR bringt für Access-geschützte interne Apps nur einen schnelleren ersten Paint.
+
+Wer SSR künftig braucht (öffentliche Seiten), sollte 1 neu prüfen.
+
+### 9.2 Verbesserungen vor der Freigabe als Template (nach Priorität)
+
+1. **Modul-API typsicher binden.**
+    - `createModuleApi` auf Variante 7s cast-freien `createTRPCOptionsProxy({ keyPrefix: moduleId })` umstellen. Damit entfallen die `as unknown as`-Casts in `client.ts:48-60` und die `.subscribe`-Falle. Vanilla-Calls laufen über `mutationOptions`/`useMutation` oder einen getypten `TRPCClient`.
+    - Einen `defineModule({ id: "todos" as const, router })` einführen, aus dem Server-Mount und Client entstehen. Dazu eine Modul-ID-Union für `useMutate`, `invalidateModules` und `ChatDataParts`.
+2. **Eine Seitendeklaration statt zwei.** Ein `pageQuery(route, (params, search) => todosApi.x.queryOptions(...))` liefert `loader`, `loaderDeps` und `usePage()`. Das entfernt die doppelte Deklaration in allen 3 Seiten.
+3. **Automatische Invalidierung** nach Variante 7: `MutationCache.onSettled` invalidiert das Modul der Mutation, danach `router.invalidate()`. Dadurch fallen die meisten der 17 manuellen Invalidierungsreferenzen weg. `useInvalidateModule(navigate)` bleibt für Navigation nach Delete.
+4. **Optional `routerFromOperations`.** `api.server.ts` würde damit aus den Operationen abgeleitet (`read` → query, sonst mutation; Opt-in per `ui: true`). Abzuwägen ist der Verlust der expliziten UI-Liste.
+5. **Grid-Spalten aus den Feldern ableiten:** `gridColumn(todoFields, "dueDate", {...})` setzt `filterOperators` und Typ. Das spart 9× `supportedOperators`.
+6. **Collection-Kit** für Navigation, Index-Route und Header. Index-Loader sollen nicht mehr schreiben: Default-Collection lesen und nur bei Bedarf explizit anlegen (`collections.ts:25`).
+7. **Server/Client-Grenze erzwingen:**
+    - ESLint `no-restricted-imports`, damit Client-Dateien nur `import type` aus `*.server.ts` nutzen;
+    - getrennte `tsconfig` für Worker und Browser;
+    - UI-Typen aus `TodosApiOutputs` statt aus `operations.server.ts`.
+8. **Library-Vorbereitung:**
+    - `coreRouter` aus `router.server.ts` lösen;
+    - eigenes `Env`;
+    - Chat/MCP mit injizierter Modulliste;
+    - `scripts/fixtures.ts` modul-lokal machen;
+    - Spike für Workspace-Paket und code-basierte Route-Factory (8, Schritt 4).
+9. **Kern-Typlücken schließen** (betrifft alle Varianten):
+    - Tool-Namen in Instructions über `keyof typeof todoOperations`;
+    - Excess-Property-Schutz zwischen Handler und Repository;
+    - gebrandete Entity-IDs, wo es sich lohnt.
+10. **Skalierung vorbereiten:**
+    - Entity-Hinweise in `data-changes` und `pathFilter`-genaue Invalidierung für große Module;
+    - Tool-Filter pro Seite oder Modul;
+    - Instantiations in CI messen (`--extendedDiagnostics`, aktuell +35k pro Modul).
+11. **README:** Rezept „neue Operation“ und „neues Modul“, Cache-Choreografie, Grenzen des Proxys (die README ist schon gut, nach 1–3 aktualisieren).
+
+### 9.3 Worauf achten
+
+- **Zwei Cache-Schichten** (TSR-Loader + TQ): die gefährlichste Fehlerquelle für neue Entwickler. Bis Punkt 2/3 umgesetzt sind, muss das Muster aus `moduleQueries.ts` strikt eingehalten werden.
+- **Committeter `routeTree.gen.ts`:** Konflikte durch Regenerieren lösen (`npm run routegen`), nicht von Hand. Bei neuen Modulordnern den Dev-Server neu starten.
+- **tRPC ist kein REST:** Batch-URLs sind nicht CDN-cachebar, und es gibt kein OpenAPI. Brauchen Dritte eine REST-Schnittstelle, Hono-Routen im selben Worker über dieselben Operationen ergänzen (`operationRoute` existiert in 3/4/5). Für AI-Clients reicht MCP.
+- **Keine SSR:** Der erste Paint wartet auf ~222 KiB gz JS plus einen Batch-Request. Für interne Access-Apps ist das ok.
+- **Pre-1.0-Abhängigkeiten** (alle Varianten): `@mui/x-chat` (alpha), `@cloudflare/ai-chat`, `agents`. Pinnen und Upgrades bündeln.
+- **Modul-Invalidierung ist grob:** In großen Modulen werden alle aktiven Queries neu geladen. Entity-Keys früh einplanen.
+- **Tool-Anzahl:** Alle Tools gehen an jedes Modell-Request. Ab ~20 Modulen filtern.
+- **Disziplin:** Jede fachliche Operation genau einmal in `operations.server.ts` definieren. Keine Logik im Adapter oder in Komponenten.
+
+---
+
+## Anhang A: Gemessene Kennzahlen
+
+### A.1 Code und Glue
+
+Legende:
+
+- „Code“ = Zeilen ohne Kommentare und Leerzeilen.
+- „Glue“ = stack-spezifische Zeilen ohne Worker-Entry, Shared Core und `useServerGrid`.
+- „Modul-Glue“ = `functions`/`api`/`queries`/`routes`/`client`/`navigation`/`module.ts` beider Module.
+
+| Variante          | src-LOC roh | Code gesamt | Code Core | Code Module | Glue | Modul-Glue | Zeilen pro UI-Op (Adapter) | Inval.-Refs in Modulen | Modul-ID-Refs | `parseResponse` |
+| ----------------- | ----------- | ----------- | --------- | ----------- | ---- | ---------- | -------------------------- | ---------------------- | ------------- | --------------- |
+| 1 tanstack-start  | 4250        | 3383        | 1429      | 1954        | 252  | 125        | 3                          | 31                     | 21            | 0               |
+| 2 rr-framework    | 4123        | 3269        | 1469      | 1800        | 217  | 57         | 0                          | 3                      | 13            | 0               |
+| 3 hono-rr-data    | 4360        | 3447        | 1546      | 1901        | 382  | 146        | 1 + Pfad                   | 14                     | 20            | 22              |
+| 4 hono-rr-decl-tq | 4459        | 3511        | 1569      | 1942        | 406  | 147        | 1 + Pfad (+ queryOptions)  | 20                     | 25            | 22              |
+| 5 hono-tsr-tq     | 4429        | 3510        | 1570      | 1940        | 344  | 105        | 1 + Pfad (+ queryOptions)  | 19                     | 23            | 21              |
+| 6 trpc-rr-data    | 4356        | 3455        | 1571      | 1884        | 437  | 153        | 1                          | 16                     | 21            | 0               |
+| 7 trpc-rr-decl-tq | 4495        | 3556        | 1675      | 1881        | 502  | 121        | 1                          | 9                      | 8             | 0               |
+| 8 trpc-tsr-tq     | 4406        | 3504        | 1610      | 1894        | 347  | 73         | 1                          | 17                     | 18            | 0               |
+
+### A.2 TypeScript-Kosten
+
+Messung: `tsc --extendedDiagnostics -p tsconfig.cloudflare.json`, nicht inkrementell. Skalierungstest: das todos-Modul K-mal geklont (eigene ID, eigener URL-Präfix), Route-Tree bzw. Typegen neu erzeugt, 0 Fehler. Der Zuwachs war in allen 8 Varianten streng linear.
+
+| Variante | Instantiations (2 Module) | Check (s) | pro Modul Inst. | pro Modul Check (s) | 32 Module Inst. | 32 Module Check / RAM |
+| -------- | ------------------------- | --------- | --------------- | ------------------- | --------------- | --------------------- |
+| 1        | 604.818                   | 3,90      | 37,9k           | 0,25                | 1,74M           | 11,46 s / 951 MB      |
+| 2        | 431.220                   | 2,47      | 26,4k           | 0,14                | 1,22M           | 6,55 s / 822 MB       |
+| 3        | 610.539                   | 2,91      | 37,6k           | 0,21                | 1,74M           | 9,30 s / 909 MB       |
+| 4        | 621.436                   | 3,03      | 40,0k           | 0,25                | 1,82M           | 10,53 s / 952 MB      |
+| 5        | 772.215                   | 4,14      | 44,6k           | 0,17                | 2,11M           | 9,23 s / 1008 MB      |
+| 6        | 439.660                   | 2,65      | 27,0k           | 0,14                | 1,25M           | 6,74 s / 858 MB       |
+| 7        | 464.368                   | 2,71      | 33,1k           | 0,15                | 1,46M           | 7,29 s / 944 MB       |
+| 8        | 614.762                   | 3,15      | 35,0k           | 0,16                | 1,67M           | 8,00 s / 981 MB       |
+
+### A.3 Bundles und Requests
+
+Gemessen auf den heutigen Builds (gzip level 6). Request-Anzahl aus dem Code abgeleitet.
+
+| Variante | Worker gesamt raw / gz | Worker eager gz | Client gesamt gz | initiales JS gz (SPA) | Requests erster Load   | Requests pro Mutation |
+| -------- | ---------------------- | --------------- | ---------------- | --------------------- | ---------------------- | --------------------- |
+| 1        | 7.850 / 1.798 KiB      | 1.059 KiB       | 607 KiB          | – (SSR)               | 1 (Dokument mit Daten) | ~3 (unbatched)        |
+| 2        | 7.474 / 1.675 KiB      | 896 KiB         | 597 KiB          | – (SSR)               | 1 (SSR)                | 2                     |
+| 3        | 3.816 / 895 KiB        | ~863 KiB        | 582 KiB          | 210 KiB               | N+2                    | 3                     |
+| 4        | 3.821 / 896 KiB        | ~863–876 KiB    | 573 KiB          | 201 KiB               | N+2                    | 3                     |
+| 5        | 3.818 / 895 KiB        | ~863–876 KiB    | 594 KiB          | 214 KiB               | N+2                    | 3                     |
+| 6        | 3.875 / 909 KiB        | ~863–876 KiB    | 586 KiB          | 215 KiB               | 1 (Batch)              | 2                     |
+| 7        | 3.879 / 909 KiB        | ~863–876 KiB    | 581 KiB          | 211 KiB               | 1 (Batch)              | 2                     |
+| 8        | 3.877 / 909 KiB        | ~863–876 KiB    | 602 KiB          | 222 KiB               | 1 (Batch)              | 2                     |
+
+Lazy-Chunks in allen 8: DataGrid ~157–159 KiB gz, ChatPanel ~142–143 KiB gz (≈ 147 kB).
+
+Versionen: TanStack Start 1.169.4, react-router 8.5.1, hono 4.13.17, @trpc/server 11.19.0, @tanstack/react-router 1.170.46, @tanstack/react-query 5.107.1, @cloudflare/vite-plugin 1.67.0, vite 8.3.5.
+
+### A.4 Feature-Matrix Daten-UX (im Code verifiziert)
+
+| Feature                                         | 1       | 2             | 3   | 4             | 5   | 6   | 7                | 8   |
+| ----------------------------------------------- | ------- | ------------- | --- | ------------- | --- | --- | ---------------- | --- |
+| Client-Cache (`staleTime` 30 s)                 | ✓       | –             | –   | ✓             | ✓   | –   | ✓                | ✓   |
+| Laden vor/parallel zum Render (kein Wasserfall) | ✓       | ✓             | ✓   | –             | ✓   | ✓   | ✓                | ✓   |
+| Preload Code + Daten on hover                   | ✓       | – (ungenutzt) | –   | nur Daten     | ✓   | –   | ✓ (`route.link`) | ✓   |
+| Request-Batching                                | SSR-1st | Single Fetch  | –   | –             | –   | ✓   | ✓                | ✓   |
+| ScrollRestoration                               | ✓       | ✓             | ✓   | selbst gebaut | ✓   | ✓   | selbst gebaut    | ✓   |
+| Optimistic Updates                              | –       | –             | –   | –             | –   | –   | –                | –   |
+| `useBlocker`                                    | –       | –             | –   | –             | –   | –   | –                | –   |
+| Modul-Ordner-Discovery, 1 zentrale Datei        | ✓       | ✓             | ✓   | ✓             | ✓   | ✓   | ✓                | ✓   |
+| Duplicate-Modul-ID-Check                        | –       | Ordner = ID   | –   | –             | –   | ✓   | ✓                | ✓   |
+
+## Anhang B: Korrekturen der Querschnitts-Bewertungen an den Berichten
 
 **Typsicherheit**
-- Die Spread-Conditional-Lücke beim PATCH (Bericht 4) und das `looseObject`-Grid-Schema (Bericht 7) gibt es in allen Varianten. Sie sind kein Unterscheidungsmerkmal.
-- Variante 8 liegt vor Variante 1, weil Variante 1 noch die `unknown`-Navigation und den `RequestContext`-Cast hat.
-- Variante 6 liegt hinter Variante 3, weil Variante 6 keinerlei Prüfung der Param-Namen hat.
-- „Typisierter Router mit RR unmöglich“ (Bericht 3) ist überzogen. Variante 7 zeigt mit ~50 LOC typisierte Params, Search und `href`. Was fehlt, ist nur die Existenzprüfung von Routen.
+
+- **1:** Die neue Adapter-Lücke war im Bericht nicht erfasst: `.validator(operationInput<typeof ops.createTodo>).handler(operationHandler(ops.deleteTodo))` kompiliert (`operationHandler.ts:14`). 9 → 8,5.
+- **2:** 7,5 → 6,5. Der Loader-Input ist `unknown` (Rename → 0 Fehler, 500 zur Laufzeit), Search-Params sind komplett untypisiert. Richtig erkannt hat der Bericht die einzigartige ID-Bindung von `useOperations`.
+- **5:** 8,5 → 8. Hono-spezifische Lücken, die tRPC nicht hat: GET-Query-Falle, ungeprüfte Path-Params, handgeschriebene Keys.
+- **7:** 8 → 7,5. „No casts“ gilt nur für `api/client.ts`. `routing.tsx:93,96,100,140` sind Casts, und RR `<Link to="/listz">` kompiliert.
+- **Route-Hooks:** „Hooks nicht an die rendernde Route gebunden“ gilt auch für TSR. Ein importiertes fremdes `Route.useParams()` kompiliert in 8 ebenfalls. Der Unterschied ist die Konvention file-lokaler Route-Objekte.
+- **Fehlertypen:** Der Hono-Vorteil typisierter 422-Unions von gestern ist entfallen.
+- **`filterParam`:** Gibt es nur in 5 und 8, nicht im gemeinsamen Kern.
 
 **Einfachheit**
-- Variante 4: 8 → 6 (Fehlerbehandlung, `DefaultRedirect`, Query-Factories nicht mitgezählt).
-- Variante 5: 6,5 → 5,5.
-- Variante 7: Der Glue-Code umfasst ~230 und nicht ~150 LOC. Das Core-Plumbing ist mit ~480 LOC das größte aller Varianten.
-- Start ist mit 6,5 einfacher als RR framework mit 6, weil RR framework den Intents-Layer braucht.
 
-**Module und Library**
-- Start (Bericht: 7) liegt auf einer gemeinsamen Skala unter den Varianten 3, 4, 6 und 7.
-- Die Library-Scores von 4 und 7 müssen gleich sein.
-- Typzyklen über den globalen Client bestehen in allen Hono- und tRPC-Varianten. In 1, 5 und 8 kommt ein zweiter Zyklus über `routeTree.gen` hinzu.
+- **4:** 8 → 6,5. Nicht mitgezählt waren `errors.tsx`, `DefaultRedirect.tsx`, `client/queries.ts`, die `queries.ts`-Dateien, 22× `parseResponse` und 20 Invalidierungsreferenzen. Glue 406.
+- **5:** 7 → 6. Alles aus 8, zusätzlich `queries.ts`, REST-Pfade und `parseResponse`.
+- **2:** Sie ist die einzige Variante mit hydration-sensitivem Code, hat aber den kleinsten Glue (217) und nur 3 Invalidierungsreferenzen. Deshalb 7,5, Rang 1.
+- **7:** Das „~400 LOC Mini-Framework“ ist mit 502 Glue-Zeilen das größte.
+- **1:** „Query doppelt deklariert“ ist keine Start-Eigenheit. 5 und 8 haben das Muster genauso.
+
+**Unabhängige Module**
+
+- Der 0,5-Abstand der Berichte (4/7/8 bei 8,5, die anderen bei 8) ist nicht gedeckt. Registry und Discovery sind in allen 8 gleich geformt.
+- `startPath` koppelt in allen 8 den Core an todos, ist aber überall typgeprüft. Das ist kein Unterscheidungsmerkmal.
+- In 2 bleibt ein type-only-Zyklus zwischen Core und Modulen (`modules/client.ts:7` → `~/routes/_app` → `registry.ts`). Der Bericht hatte ihn nicht erfasst.
+- Doppelte Modul-IDs bleiben in 1/3/4/5 unentdeckt. In Hono überschattet das zweite `api.route` still.
+- Allen Berichten fehlte, dass `scripts/fixtures.ts` das Notes-Schema importiert.
+
+**Library-Extraktion** (erstmals mit eigener Querschnitts-Bewertung und Experiment)
+
+- **1/5:** „Generator kann nicht in `node_modules` schreiben“ ist überzogen. Workspace-Pakete funktionieren ohne Rewrite. Unmöglich ist nur das Vorkompilieren.
+- **4/3:** Die Sorge um `.d.ts`-Emit von `hc`-Typen ist unbegründet. Der Emit ist fehlerfrei.
+- **6/7/8:** Die Berichte übersehen die Kante Core-Client → `CoreRouter` → `registry.server`.
+- **2:** 5,5 → 5. `client.ts` hängt an `Register['routeFiles']` und `_app`, ein Standalone-Check zieht das ganze Notes-Modul mit.
+- **Alle Varianten:** `worker-configuration.d.ts` importiert `./src/server`. Ein Core-Paket braucht ein eigenes `Env`.
 
 **Duplikation**
-- `tools.server.ts` ist überall byte-identisch. Die „Hauptduplikation“ unterscheidet die Varianten also nicht.
-- Die 422-Prüfung kommt in den Hono-Varianten 6× vor, nicht 4× bzw. 5×.
-- Das Hono-Potenzial liegt bei 6,5 statt 7,5, weil es keinen Options-Proxy gibt.
+
+- **2:** `chatPage.ts` ist Shared Core. Der stack-spezifische Modul-Glue sind nur 57 Code-Zeilen (Bestwert).
+- **1:** 7,5 → 7 (größter Modulcode, 19 statische Adapter, doppelte Query).
+- **4:** 7,5 → 6,5.
+- **5:** 7 → 6,5.
+- **7:** 8 → 7,75 (größter Core, doppelte `updateTodo`-Mutation in `list.tsx:33/35`).
+- Die Navigation-Zwillinge gibt es in allen 8 und unterscheiden die Varianten nicht.
 
 **AI/MCP**
-- Agent, Adapter und Tools sind in allen 8 Varianten identisch. Der Vorsprung, den Bericht 1 für Start aktuell sieht (7), ist unbegründet.
-- Das AI-Potenzial von Start sinkt von 9 auf 8, weil Tools im Durable Object außerhalb der Start-Pipeline laufen.
-- `trpc-to-mcp` ist ein Beleg dafür, dass das Muster funktioniert. Als Abhängigkeit ist es nicht geeignet.
-- Laut Bericht 1 fehlt `min(1)` im updateTodo-Schema der Server Function. Tatsächlich ist es vorhanden. Die Divergenz betrifft nur create und die Namensschemas.
+
+- Alle Berichte gaben unkalibriert 8,5 / 9, obwohl die AI-Schicht byte-identisch ist.
+- **2:** 8,5 → 7,5. Der Refresh ignoriert die Module und lädt die Navigation aller Module neu. Die Auth liegt an drei Stellen.
+- **3:** Das nicht gezählte `reloadingModules`-Set kann Markierungen bei Überlappung verlieren (8).
+- **1/5/8:** „Nur das geänderte Modul“ gilt für Queries. `router.invalidate()` läuft trotzdem für alle aktiven Loader (billig, aus dem Cache).
+- **7:** Der Präfix ist strukturell erzwungen (`keyPrefix` = Mount-ID), in 4 nur Konvention.
 
 **Cloudflare**
-- „SSR verschlechtert den Cold Start“ ist für API-, Chat- und MCP-Requests überzogen (dynamische Imports).
-- „Best-in-class“-Aussagen einzelner SPA-Berichte sind nicht haltbar: Alle 6 SPAs haben eine byte-identische Asset-Konfiguration. tRPC hat dabei den Vorteil des Batchings.
-- SSR lässt sich bei RR framework auf Cloudflare nicht abschalten.
+
+- **3:** 9 → 8. Die Asset-Konfiguration ist identisch mit den anderen SPAs. Es ist die einzige SPA ohne Batching und ohne Cache.
+- **2:** 8,5 → 7,5. Pflicht-SSR der MUI-Seiten, kein Cache, O(N)-Navigation pro Action.
+- **1:** 8 → 7,5. Der eager Graph umfasst 1.059 KiB gz (~20 % mehr Parse-Arbeit für API/Chat/MCP-Cold-Starts), Server Functions sind unbatched. Die gestrige Aussage „SSR verschlechtert den Cold Start nicht“ gilt für 1 nicht mehr, für 2 weiterhin (`server-build` wird dynamisch importiert).
+- **4:** 8,5 → 8 (Wasserfall, unbatched).
+- **7:** 8 → 8,5 (Batching + paralleles Laden).
+- Hono vs. tRPC ist bei der Bundle-Größe vernachlässigbar (895 vs. 909 KiB gz). Hono gewinnt bei Reife und REST-Semantik, nicht bei der Laufzeit.
 
 **Skalierung**
-- „Refetch-Storms“ sind überzogen. `invalidateQueries()` lädt nur aktive Queries neu, und `refetchType: "none"` zusammen mit `router.invalidate()` lädt nur die aktuellen Matches neu.
-- Variante 5 hat `staleTime: 0` (in keinem Bericht erwähnt).
-- Die TS-Kosten von tRPC sind niedriger als die von Hono. Das größte Risiko für die Typprüfungs-Performance ist die verkettete Hono-`Api`.
+
+- **TSR-Typkosten:** Die Sorge, der Route-Tree „explodiere“, ist widerlegt. Das Wachstum ist linear. Die höheren Check-Kosten von 1 kommen von Start, nicht von TSR (8 mit demselben Router: 0,16 s pro Modul).
+- **Instantiations vs. Check-Zeit:** Instantiations allein sortieren falsch. 5 hat die meisten Instantiations, aber eine geringere Check-Zeit als 1, 3 und 4.
+- **4 und 5:** Ihre Berichte verschweigen, dass jede Modul-Navigation ein eigener Request ist.
+- **2:** `Link prefetch="intent"` ist im Framework vorhanden, wird aber nirgends genutzt.
+- **Optimistic Updates** hat keine Variante. Das ist kein Unterscheidungsmerkmal.
+- **Gestrige Aussagen zu 1 und 5 sind veraltet:** Gestern hieß es, Variante 1 habe keinen Cache und lade nach jeder Änderung alles neu (`router.invalidate()`). Für Variante 5 hieß es, ihr fehle `autoCodeSplitting` und sie habe `staleTime` 0. Beides trifft nicht mehr zu.
