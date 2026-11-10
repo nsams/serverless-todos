@@ -24,8 +24,8 @@ export async function action({ params, request, url, context }: Route.ActionArgs
         return operationError(error);
     }
     const redirectTo = url.searchParams.get("redirectTo");
-    // only paths of the app (no open redirect)
-    if (redirectTo?.startsWith("/") && !redirectTo.startsWith("//")) {
+    // only paths of the app (no open redirect: browsers read "//host" and "/\host" as another host)
+    if (redirectTo?.startsWith("/") && !redirectTo.startsWith("//") && !redirectTo.startsWith("/\\")) {
         throw redirect(redirectTo);
     }
     return { result };
