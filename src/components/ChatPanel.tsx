@@ -4,6 +4,7 @@ import { Alert, Box, IconButton, Toolbar, Tooltip, Typography } from "@mui/mater
 import { ChatBox } from "@mui/x-chat";
 import type { ChatAdapter, ChatMessage as MuiChatMessage, ChatMessagePart } from "@mui/x-chat/headless";
 import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "@tanstack/react-router";
 import { useAgent } from "agents/react";
 import { getToolName, isToolUIPart } from "ai";
 import { useMemo } from "react";
@@ -12,6 +13,7 @@ import { chatAgentPath, type ChatMessage, type ChatRequestBody } from "~/chat/ch
 import { useChatChanges } from "~/chat/useChatChanges";
 import { useChatPageGetter } from "~/chat/useChatPage";
 import { toDateString } from "~/dates";
+import { invalidateModules } from "~/moduleQueries";
 import { appModules } from "~/modules/registry";
 
 const suggestions = appModules.flatMap((module) => module.chat?.suggestions ?? []);
@@ -23,6 +25,7 @@ const suggestions = appModules.flatMap((module) => module.chat?.suggestions ?? [
 // forwards sending, stopping and approvals to useAgentChat.
 export default function ChatPanel({ onClose }: { onClose: () => void }) {
     const queryClient = useQueryClient();
+    const router = useRouter();
     // what the user is looking at (reported by the page with useChatPage)
     const getChatPage = useChatPageGetter();
 
@@ -36,11 +39,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
 
     // A tool changed the data of modules (reported by the agent, src/chat/agent.server.ts): reload exactly their data (the keys of a
     // module's queries start with its id, src/moduleQueries.ts)
-    useChatChanges(messages, (modules) => {
-        for (const module of modules) {
-            void queryClient.invalidateQueries({ queryKey: [module] });
-        }
-    });
+    useChatChanges(messages, (modules) => void invalidateModules(queryClient, router, modules));
 
     const adapter = useMemo(
         (): ChatAdapter => ({

@@ -1,15 +1,22 @@
-import { type QueryKey, useQueryClient, useSuspenseQuery, type UseSuspenseQueryOptions } from "@tanstack/react-query";
-import { isNotFound, useRouter } from "@tanstack/react-router";
+import { type QueryClient, type QueryKey, useQueryClient, useSuspenseQuery, type UseSuspenseQueryOptions } from "@tanstack/react-query";
+import { type AnyRouter, isNotFound, useRouter } from "@tanstack/react-router";
 import { useCallback, useEffect } from "react";
 
 // The modules' data in TanStack Query's cache (src/router.tsx): every query key of a module starts with the module's id
 // (e.g. [todosModuleId, "lists"], see src/modules/todos/queries.ts), so a change reloads exactly the data of its module:
 // after a change in the UI (useInvalidateModule, useMutate) and after the assistant changed it (src/components/ChatPanel.tsx).
 
-// Reloads the data of a module (the queries shown are reloaded right away, the others when they are shown again)
+// Reloads the data of modules: the queries shown right away, the others when they are shown again. Then the route loaders run again,
+// e.g. for the page title (they read the reloaded queries from the cache, no further requests).
+export async function invalidateModules(queryClient: QueryClient, router: AnyRouter, moduleIds: string[]) {
+    await Promise.all(moduleIds.map((moduleId) => queryClient.invalidateQueries({ queryKey: [moduleId] })));
+    await router.invalidate();
+}
+
 export function useInvalidateModule(moduleId: string) {
     const queryClient = useQueryClient();
-    return useCallback(() => queryClient.invalidateQueries({ queryKey: [moduleId] }), [queryClient, moduleId]);
+    const router = useRouter();
+    return useCallback(() => invalidateModules(queryClient, router, [moduleId]), [queryClient, router, moduleId]);
 }
 
 // The main data of a page: loaded by the route's loader (queryClient.fetchQuery: fresh data from the cache, otherwise loaded), kept up to
