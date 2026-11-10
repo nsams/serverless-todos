@@ -10,7 +10,7 @@ The app runs on two platforms with the same code, only the server entry differs 
 | Database          | D1                                                                                                                     | libSQL: [Bunny Database](https://docs.bunny.net/database)                                              |
 | Static files      | Workers static assets                                                                                                  | Storage Zone, served by the script                                                                     |
 | Login             | Cloudflare Access (Entra ID)                                                                                           | OpenID Connect in the app (Entra ID), `src/platform/oidc.server.ts`                                    |
-| Deployment        | `npm run deploy`, Workers Builds, Worker Previews                                                                      | GitHub Actions (`.github/workflows/bunny.yml`)                                                         |
+| Deployment        | `npm run deploy`, Workers Builds, Worker Previews                                                                      | GitHub Actions (`.github/workflows/release-on-bunny.yml`)                                              |
 | Local development | `npm run dev`: Workers runtime (workerd) via `@cloudflare/vite-plugin`, D1 emulated by Miniflare in `.wrangler/state/` | `npm run dev:bunny`: in Node, SQLite file `.data/app.db`                                               |
 
 The bunny.net platform uses no Cloudflare service; neither does the chat assistant on either platform: its model is called with an API key (`AI_API_KEY`), without one there is no chat assistant (see [Chat assistant](#chat-assistant)). No external database is needed for development.
@@ -267,7 +267,7 @@ A pull request closed without merging keeps its Preview and database until its b
 
 ## Deployment (bunny.net)
 
-The app runs as a standalone script on [bunny.net Edge Scripting](https://docs.bunny.net/scripting) with a [Bunny Database](https://docs.bunny.net/database) (libSQL), without any Cloudflare service. Every push to `main` runs `.github/workflows/bunny.yml`: it builds the script, applies the pending migrations to the database (`scripts/migrate.ts`), uploads the static files and the app module to a Storage Zone and deploys the script (bunny.net's [GitHub Action](https://docs.bunny.net/scripting/github-actions)).
+The app runs as a standalone script on [bunny.net Edge Scripting](https://docs.bunny.net/scripting) with a [Bunny Database](https://docs.bunny.net/database) (libSQL), without any Cloudflare service. Every push to the branch `bunny` runs `.github/workflows/release-on-bunny.yml` (created by bunny.net's [GitHub integration](https://docs.bunny.net/scripting/github-integration), extended): it builds the script, applies the pending migrations to the database (`scripts/migrate.ts`), uploads the static files and the app module to a Storage Zone and deploys the script (bunny.net's [GitHub Action](https://docs.bunny.net/scripting/github-actions)).
 
 ```bash
 npm run build:bunny  # PLATFORM=bunny vite build + scripts/bunnyBuild.ts: dist/bunny/script.js (the Edge Script),
@@ -285,7 +285,7 @@ Setup (once):
 
 1. Bunny Database: create a database (dashboard → Database), generate tokens (Access → Generate Tokens). Note the URL and the token (`BUNNY_DATABASE_URL`, `BUNNY_DATABASE_AUTH_TOKEN`): the script needs them and the GitHub workflow (migrations). The first run of the workflow creates the tables.
 2. Storage Zone for the static files and the app module, with a Pull Zone (its URL, e.g. `https://todos-assets.b-cdn.net`, is `ASSETS_URL`). The workflow uploads to it with the Storage Zone's password.
-3. Edge Scripting: create a standalone script (its Pull Zone is the app's URL; a custom hostname can be added there), without bunny.net's GitHub integration (the workflow deploys it; the deployed file is `dist/bunny/script.js`). Environment variables and secrets of the script:
+3. Edge Scripting: create a standalone script with the GitHub integration (Deploy with GitHub, this repository; install command `npm ci`, build command `npm run build:bunny`, entry file `dist/bunny/script.js`). Its Pull Zone is the app's URL (a custom hostname can be added there). The integration commits the workflow `.github/workflows/release-on-bunny.yml` (it authenticates with GitHub's OIDC token: no deploy key) and overwrites it when its settings are changed: then add the migration and upload steps again (see the file in git). Environment variables and secrets of the script:
     - `BUNNY_DATABASE_URL`, `BUNNY_DATABASE_AUTH_TOKEN` (secret)
     - `ASSETS_URL`: the Storage Zone's Pull Zone
     - `OIDC_ISSUER` (Entra ID: `https://login.microsoftonline.com/<tenant-id>/v2.0`), `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` (secret)
@@ -295,7 +295,7 @@ Setup (once):
     - MCP server (optional): `MCP_OAUTH_AUDIENCE`, `MCP_OAUTH_SCOPE`, see [MCP server](#mcp-server-external-ai-clients)
 4. Entra ID (or another OpenID Connect provider): an app registration (single tenant) with the redirect URI `https://<app>/auth/callback` (platform "Web") and a client secret; optional claim `email` for the ID token. To allow only some users of the tenant: Enterprise applications → the app → Properties → Assignment required, then assign users or groups.
 5. GitHub (repository settings → Secrets and variables → Actions):
-    - secrets `BUNNY_SCRIPT_ID`, `BUNNY_DEPLOY_KEY` (the script → Deployments → Settings), `BUNNY_STORAGE_PASSWORD` (the Storage Zone → FTP & API Access), `BUNNY_DATABASE_URL`, `BUNNY_DATABASE_AUTH_TOKEN`
-    - variables `BUNNY_STORAGE_ZONE` (its name; the workflow only runs when it is set), optionally `BUNNY_STORAGE_HOST` (the Storage Zone's region endpoint, default `storage.bunnycdn.com`)
+    - secrets `BUNNY_STORAGE_PASSWORD` (the Storage Zone → FTP & API Access), `BUNNY_DATABASE_URL`, `BUNNY_DATABASE_AUTH_TOKEN`
+    - variables `BUNNY_STORAGE_ZONE` (its name), optionally `BUNNY_STORAGE_HOST` (the Storage Zone's region endpoint, default `storage.bunnycdn.com`)
 
 There are no Preview deployments per branch on bunny.net.
