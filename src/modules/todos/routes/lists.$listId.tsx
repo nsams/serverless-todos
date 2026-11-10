@@ -153,10 +153,7 @@ function Todos() {
                     <Button
                         startIcon={<Warning />}
                         color="error"
-                        disabled={today === null}
-                        onClick={() =>
-                            today !== null && updateSearch({ filter: [`dueDate:before:${today}`, "done:is:false"], filterLogic: undefined })
-                        }
+                        onClick={() => updateSearch({ filter: [`dueDate:before:${today}`, "done:is:false"], filterLogic: undefined })}
                     >
                         Show overdue
                     </Button>

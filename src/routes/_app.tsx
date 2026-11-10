@@ -1,5 +1,17 @@
 import { Chatbot, Hamburger, Logout } from "@dextinity/admin-icons";
-import { AppBar, Box, CircularProgress, Divider, Drawer, IconButton, ListSubheader, Skeleton, Toolbar, Typography } from "@mui/material";
+import {
+    AppBar,
+    Box,
+    CircularProgress,
+    Divider,
+    Drawer,
+    IconButton,
+    LinearProgress,
+    ListSubheader,
+    Skeleton,
+    Toolbar,
+    Typography,
+} from "@mui/material";
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { Fragment, lazy, Suspense, useState } from "react";
@@ -10,6 +22,11 @@ import { getCurrentUser } from "~/user.functions";
 
 // Layout of the app pages: app bar and the navigation of the modules in a sidebar
 export const Route = createFileRoute("/_app")({
+    // The app's pages are rendered in the browser only, their data is still loaded on the server (in the same request, sent with the
+    // page). An app behind Cloudflare Access gains nothing from rendering them on the server (no search engines, the user waits for the
+    // scripts anyway), it would only cost CPU time per page view and need hydration-safe components: e.g. dates formatted in the
+    // user's time zone (the grids' date columns, useToday) would differ between the server and the browser.
+    ssr: "data-only",
     loader: async ({ context: { queryClient } }) => {
         // not awaited: the page doesn't wait for the sidebar, each module's navigation is shown when its data is there
         for (const { navigation } of appModules) {
@@ -18,6 +35,8 @@ export const Route = createFileRoute("/_app")({
         await queryClient.ensureQueryData(userQuery);
     },
     component: AppLayout,
+    // the server's response, until the page is rendered in the browser
+    pendingComponent: () => <LinearProgress />,
 });
 
 // The authenticated user (doesn't change while the app is open)
