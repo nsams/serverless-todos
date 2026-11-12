@@ -26,5 +26,10 @@ export function todosQuery({ listId, ...query }: OperationInput<typeof todoOpera
     });
 }
 
-// A todo as the API returns it (JSON: createdAt is an ISO string)
+// A todo (detail page)
+export function todoQuery(id: string) {
+    return queryOptions({ queryKey: [todosModuleId, "todo", id], queryFn: () => parseResponse(todosClient.todos[":id"].$get({ param: { id } })) });
+}
+
+// A todo as the API returns it, in a list's grid and on its detail page (JSON: createdAt is an ISO string)
 export type Todo = InferResponseType<(typeof todosClient.lists)[":listId"]["todos"]["$get"]>["todos"][number];

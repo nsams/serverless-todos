@@ -12,7 +12,7 @@ const moduleRoutes = readdirSync(modulesDirectory)
     .sort()
     .map((module) => physical(`../modules/${module}/routes`));
 
-// e.g. src/modules/todos/routes/: /lists, /lists/$listId; src/modules/notes/routes/: /notes, /notes/$notebookId, /notes/$notebookId/$noteId
+// e.g. src/modules/todos/routes/: /lists, /lists/$listId, /lists/$listId/$todoId; src/modules/notes/routes/: /notes, /notes/$notebookId, /notes/$notebookId/$noteId
 export const routes = rootRoute("__root.tsx", [
     index("index.tsx"),
     layout("_app.tsx", [
