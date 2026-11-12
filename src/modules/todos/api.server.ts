@@ -15,5 +15,7 @@ export const todosApi = createApi()
     // a page of a list's grid, the query is the grid state in the page's URL (src/gridSearch.ts)
     .on(...operationRoute("GET", "/lists/:listId/todos", todoOperations.listTodos))
     .on(...operationRoute("POST", "/lists/:listId/todos", todoOperations.createTodo))
+    // a todo's detail page
+    .on(...operationRoute("GET", "/todos/:id", todoOperations.getTodo))
     .on(...operationRoute("PATCH", "/todos/:id", todoOperations.updateTodo))
     .on(...operationRoute("DELETE", "/todos/:id", todoOperations.deleteTodo));
