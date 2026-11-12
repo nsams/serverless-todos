@@ -34,14 +34,19 @@
     "ai": {
         "binding": "AI",
     },
-    // The chat assistant: one ChatAgent (Durable Object with SQLite storage for the chat history) per user, see src/chat/
+    // The chat assistant: one ChatAgent (Durable Object with SQLite storage for the chat history) per user, see src/chat/.
+    // The drafts of the todo form: one TodoDraft (shared draft of a todo, live editing) per todo, see src/modules/todos/draft/
     "durable_objects": {
-        "bindings": [{ "name": "ChatAgent", "class_name": "ChatAgent" }],
+        "bindings": [
+            { "name": "ChatAgent", "class_name": "ChatAgent" },
+            { "name": "TodoDraft", "class_name": "TodoDraft" },
+        ],
     },
     "migrations": [
         { "tag": "v1", "new_sqlite_classes": ["TodoChatAgent"] },
         // the assistant serves all modules; keeps the existing chat histories
         { "tag": "v2", "renamed_classes": [{ "from": "TodoChatAgent", "to": "ChatAgent" }] },
+        { "tag": "v3", "new_sqlite_classes": ["TodoDraft"] },
     ],
     "d1_databases": [
         {
@@ -66,9 +71,13 @@
         "ai": {
             "binding": "AI",
         },
-        // Cloudflare creates a separate Durable Object namespace (chat histories) for every Preview; class and migrations are the top-level ones
+        // Cloudflare creates a separate Durable Object namespace (chat histories, todo drafts) for every Preview; classes and migrations
+        // are the top-level ones
         "durable_objects": {
-            "bindings": [{ "name": "ChatAgent", "class_name": "ChatAgent" }],
+            "bindings": [
+                { "name": "ChatAgent", "class_name": "ChatAgent" },
+                { "name": "TodoDraft", "class_name": "TodoDraft" },
+            ],
         },
         // d1_databases: every Preview gets its own database, added at build time by scripts/preview.ts (see vite.config.ts)
     },

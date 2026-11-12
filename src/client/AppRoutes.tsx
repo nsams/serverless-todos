@@ -7,9 +7,9 @@ import { appModules, startPath } from "~/modules/registry";
 import { AppLayout } from "./AppLayout";
 import { NotFoundPage, PageErrorBoundary } from "./errors";
 
-// The routes of the app (React Router, declarative mode, rendered by the catch-all route of the data router in main.tsx): the start
-// page, and the pages of the modules (AppModule.pages) in the app layout. The pages load their data from the REST API themselves, with
-// queries (TanStack Query). The pages report what they show to the chat panel (useChatPage).
+// The routes of the app (React Router, declarative mode, inside the BrowserRouter of main.tsx): the start page, and the pages of the
+// modules (AppModule.pages) in the app layout. The pages load their data from the REST API themselves, with queries (TanStack Query).
+// The pages report what they show to the chat panel (useChatPage).
 export function AppRoutes() {
     return (
         // errors outside the pages, e.g. the user or the sidebar's data failed to load; errors of the pages are shown in the app layout
