@@ -4,8 +4,9 @@ import { appModules, startPath } from "./modules/registry";
 import { AppLayout } from "./routes/app";
 import { NotFound, ScrollToTop } from "./routes/root";
 
-// The app's routes (React Router declarative mode, <BrowserRouter> in src/main.tsx): the pages of the modules (AppModule.routes,
-// created with defineRoute, src/routing.tsx) in the app layout. Each page loads its data with TanStack Query (src/api/client.ts).
+// The app's routes (React Router declarative mode; rendered by a minimal data router in src/main.tsx, only for useBlocker): the pages
+// of the modules (AppModule.routes, created with defineRoute, src/routing.tsx) in the app layout. Each page loads its data with
+// TanStack Query (src/api/client.ts).
 export function AppRoutes() {
     return (
         <>

@@ -23,10 +23,20 @@ export const listsRoute = defineRoute({
     },
 });
 
-// The todos of a list (pages/list.tsx). The grid state (pagination, sorting, filtering) lives in the URL.
+// The todos of a list (pages/list.tsx). The grid state (pagination, sorting, filtering) lives in the URL. A todo's edit action opens its
+// detail page (todoRoute), which keeps the grid state for its back link.
 export const listRoute = defineRoute({
     path: "/lists/:listId",
     validateSearch: validateGridSearch,
     query: ({ params: { listId }, search }) => todosApi.listTodos.queryOptions({ listId, ...search }),
     page: () => import("./pages/list"),
+});
+
+// A todo's detail page (pages/todo.tsx): a form, saved with its Save button. The search params are the state of the list's grid, kept
+// for the back link.
+export const todoRoute = defineRoute({
+    path: "/lists/:listId/:todoId",
+    validateSearch: validateGridSearch,
+    query: ({ params: { todoId } }) => todosApi.getTodo.queryOptions({ id: todoId }),
+    page: () => import("./pages/todo"),
 });

@@ -11,6 +11,7 @@ export const todosRouter = router({
     renameList: mutation(todoOperations.renameList),
     deleteList: mutation(todoOperations.deleteList),
     listTodos: query(todoOperations.listTodos),
+    getTodo: query(todoOperations.getTodo),
     createTodo: mutation(todoOperations.createTodo),
     updateTodo: mutation(todoOperations.updateTodo),
     deleteTodo: mutation(todoOperations.deleteTodo),

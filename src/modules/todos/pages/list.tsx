@@ -1,9 +1,10 @@
-import { Add, Delete, Move, Warning } from "@dextinity/admin-icons";
+import { Add, Delete, Edit, Move, Warning } from "@dextinity/admin-icons";
 import { Box, Button, Checkbox, Container, Paper, Stack, TextField } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import { DataGridPro, getGridBooleanOperators, getGridDateOperators, getGridStringOperators, GridActionsCellItem } from "@mui/x-data-grid-pro";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
+import { useNavigate } from "react-router";
 
 import { useChatPage } from "~/chat/useChatPage";
 import { CollectionHeader } from "~/components/CollectionHeader";
@@ -21,7 +22,7 @@ import { todosChatPage } from "../chatPage";
 import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "../limits";
 import type { todoOperations, TodoView } from "../operations.server";
 import { isOverdue } from "../overdue";
-import { listRoute, listsRoute } from "../routes";
+import { listRoute, listsRoute, todoRoute } from "../routes";
 import { todoFields } from "../todoSearch";
 
 // /lists/:listId (listRoute): the todos of a list. The grid state (pagination, sorting, filtering) lives in the URL.
@@ -34,8 +35,10 @@ export default function ListPage() {
     const deleteTodo = useMutate(todosApi.deleteTodo.mutationOptions());
     const saveTodo = useMutation(todosApi.updateTodo.mutationOptions());
     const today = useToday();
+    const navigate = useNavigate();
+    const search = listRoute.useSearch();
     const { updateSearch, gridProps } = useServerGrid({
-        search: listRoute.useSearch(),
+        search,
         fields: todoFields,
         rows: todos,
         rowCount: totalCount,
@@ -110,6 +113,13 @@ export default function ListPage() {
             field: "actions",
             type: "actions",
             getActions: ({ row }) => [
+                <GridActionsCellItem
+                    key="edit"
+                    icon={<Edit />}
+                    label="Edit"
+                    // the detail page keeps the grid's state for its back link
+                    onClick={() => void navigate(todoRoute.href({ listId: list.id, todoId: row.id }, search))}
+                />,
                 <GridActionsCellItem key="delete" icon={<Delete />} label="Delete" onClick={() => deleteTodo({ id: row.id })} />,
                 ...lists
                     .filter((otherList) => otherList.id !== list.id)

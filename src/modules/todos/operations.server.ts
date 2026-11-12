@@ -94,6 +94,18 @@ export const todoOperations = {
             return { list: listView(list), todos: rows.map(todoView), totalCount };
         },
     }),
+    // A todo for its detail page
+    getTodo: defineOperation({
+        input: z.object({ id: z.string() }),
+        effect: "read",
+        handler: async ({ userId }, { id }) => {
+            const todo = await getTodoRepository().get(userId, id);
+            if (!todo) {
+                throw new NotFoundError(`Todo ${id} not found`);
+            }
+            return todoView(todo);
+        },
+    }),
     findTodos: defineOperation({
         input: z.object({
             listId: z.string().optional().describe("Only todos of this list"),
