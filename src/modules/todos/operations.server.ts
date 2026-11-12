@@ -144,14 +144,13 @@ export const todoOperations = {
         effect: "delete",
         ai: { title: "Delete todo list", description: "Deletes a todo list including all its todos. The user is asked to confirm." },
         handler: async ({ userId }, { listId }) => {
-            // its todos are deleted with it (cascade): their drafts are notified
-            const todoIds = await getTodoRepository().idsOfList(userId, listId);
-            const list = await getListRepository().delete(userId, listId);
-            if (!list) {
+            const deleted = await getListRepository().delete(userId, listId);
+            if (!deleted) {
                 throw new NotFoundError(`List ${listId} not found`);
             }
-            await todoDrafts.deletedMany(todoIds);
-            return { deleted: listView(list) };
+            // its todos were deleted with it
+            await todoDrafts.deletedMany(deleted.todoIds);
+            return { deleted: listView(deleted.list) };
         },
     }),
     // The todos of a list for its grid (one page, sorted and filtered as in the URL)

@@ -21,8 +21,6 @@ type TodoRepository = {
     // open todos first, then by due date (todos without due date last), newest first
     search(userId: string, options: SearchOptions): Promise<Todo[]>;
     get(userId: string, id: string): Promise<Todo | undefined>;
-    // The ids of a list's todos (e.g. to notify their drafts when the list is deleted with them)
-    idsOfList(userId: string, listId: string): Promise<string[]>;
     // undefined if the list doesn't exist (or belongs to another user)
     create(userId: string, listId: string, values: TodoValues): Promise<Todo | undefined>;
     // The updated todo; undefined if the todo or the target list doesn't exist (or belongs to another user)
@@ -82,13 +80,6 @@ export function getTodoRepository(): TodoRepository {
                 .from(todos)
                 .where(and(eq(todos.id, id), eq(todos.userId, userId)))
                 .get();
-        },
-        idsOfList: async (userId, listId) => {
-            const rows = await db
-                .select({ id: todos.id })
-                .from(todos)
-                .where(and(eq(todos.userId, userId), eq(todos.listId, listId)));
-            return rows.map(({ id }) => id);
         },
         create: async (userId, listId, values) => {
             if (!(await listExists(userId, listId))) {

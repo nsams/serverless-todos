@@ -138,18 +138,25 @@ export function initDraft<Values extends DraftValues>(definition: DraftDefinitio
     });
 }
 
-// The definition changed since the draft was started (a field was added, or a value field became a text field): the text fields
-// become Y.Text, with their current value. Only on the server (before any form syncs), so no two forms create competing Y.Texts.
-export function ensureTextFields<Values extends DraftValues>(definition: DraftDefinition<Values>, doc: Y.Doc, stored: Values) {
+// The definition changed since the draft was started: fields that were added start from the stored entity (draft and published),
+// text fields become Y.Text (e.g. a value field that became a text field), with their current value. Only on the server (before any
+// form syncs), so no two forms create competing Y.Texts.
+export function ensureFields<Values extends DraftValues>(definition: DraftDefinition<Values>, doc: Y.Doc, stored: Values) {
     const draft = draftMap(doc);
-    const missing = draftFields(definition).filter((field) => isTextField(definition, field) && !(draft.get(field) instanceof Y.Text));
-    if (missing.length === 0) {
+    const published = publishedMap(doc);
+    const fields = draftFields(definition);
+    const added = fields.filter((field) => !published.has(field));
+    const notText = fields.filter((field) => isTextField(definition, field) && !(draft.get(field) instanceof Y.Text));
+    if (added.length === 0 && notText.length === 0) {
         return;
     }
     doc.transact(() => {
-        for (const field of missing) {
-            const current = draft.get(field);
-            draft.set(field, new Y.Text(String(current ?? stored[field] ?? "")));
+        for (const field of added) {
+            published.set(field, stored[field]);
+            draft.set(field, isTextField(definition, field) ? new Y.Text(String(stored[field] ?? "")) : stored[field]);
+        }
+        for (const field of notText.filter((field) => !added.includes(field))) {
+            draft.set(field, new Y.Text(String(draft.get(field) ?? stored[field] ?? "")));
         }
     });
 }
@@ -183,7 +190,7 @@ export function setDraftValues<Values extends DraftValues>(
                 if (text) {
                     applyTextChange(text, String(value ?? ""));
                 } else {
-                    // (only before ensureTextFields ran, i.e. never: the server ensures them before anyone edits)
+                    // (only before ensureFields ran, i.e. never: the server ensures them before anyone edits)
                     draft.set(field, new Y.Text(String(value ?? "")));
                 }
             } else if (draft.get(field) !== value) {
@@ -193,11 +200,10 @@ export function setDraftValues<Values extends DraftValues>(
     }, origin);
 }
 
-// Where a text changed, as the input's cursor tells it: the changed part starts at or before `start` (the selection's start before
-// the change, or the cursor after it, whichever is smaller) and ends `endFromEnd` characters before the end of the new value (the
-// characters after the cursor). Without it, the change is the part in between the common prefix and suffix, which is ambiguous
-// among repeated characters (e.g. typing "a" in front of "aab").
-export type TextChangeHint = { start: number; endFromEnd: number };
+// Where a text changed, as the input's cursor tells it: the change starts at `start` (the selection's start before the change, or the
+// cursor after it, whichever is smaller). Only decides between equally small changes: an insertion or deletion among repeated
+// characters (e.g. typing "a" in front of "aab" inserts at 0, not at 2).
+export type TextChangeHint = { start: number };
 
 const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff;
 const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
@@ -210,18 +216,24 @@ export function applyTextChange(text: Y.Text, value: string, hint?: TextChangeHi
     if (current === value) {
         return;
     }
-    const maxStart = Math.min(current.length, value.length, hint?.start ?? Infinity);
-    let start = 0;
-    while (start < maxStart && current[start] === value[start]) {
-        start++;
+    const minLength = Math.min(current.length, value.length);
+    let prefix = 0;
+    while (prefix < minLength && current[prefix] === value[prefix]) {
+        prefix++;
+    }
+    let suffix = 0;
+    while (suffix < minLength && current[current.length - 1 - suffix] === value[value.length - 1 - suffix]) {
+        suffix++;
+    }
+    let start = prefix;
+    let end = Math.min(suffix, minLength - prefix);
+    if (prefix + suffix >= minLength) {
+        // a pure insertion or deletion, anywhere from minLength - suffix to prefix: where the cursor says
+        start = Math.max(minLength - suffix, Math.min(prefix, hint?.start ?? prefix));
+        end = minLength - start;
     }
     if (start > 0 && isHighSurrogate(current.charCodeAt(start - 1))) {
         start--;
-    }
-    const maxEnd = Math.min(current.length - start, value.length - start, hint?.endFromEnd ?? Infinity);
-    let end = 0;
-    while (end < maxEnd && current[current.length - 1 - end] === value[value.length - 1 - end]) {
-        end++;
     }
     if (end > 0 && isLowSurrogate(current.charCodeAt(current.length - end))) {
         end--;
@@ -236,15 +248,15 @@ export function applyTextChange(text: Y.Text, value: string, hint?: TextChangeHi
     }
 }
 
-// The stored entity changed (changed elsewhere, e.g. in a grid): the fields the draft doesn't change follow it, the draft's changes
-// are kept. After publishing (`publishedDraft`: the draft that was published), the fields that weren't changed since publishing read
-// the draft follow the saved entity (e.g. a trimmed title); a field changed in the meantime stays a change, also one changed back to
-// the old value.
-export function rebaseDraft<Values extends DraftValues>(definition: DraftDefinition<Values>, doc: Y.Doc, stored: Values, publishedDraft?: Values) {
+// The stored entity changed (changed elsewhere, e.g. in a grid, or published): the fields the draft doesn't change follow it, the
+// draft's changes are kept. base: what the draft is compared with, by default the published entity; after publishing, the draft that
+// was published, so the fields that weren't changed since publishing read the draft follow the saved entity (e.g. a trimmed title),
+// and a field changed in the meantime stays a change, also one changed back to the old value.
+export function rebaseDraft<Values extends DraftValues>(definition: DraftDefinition<Values>, doc: Y.Doc, stored: Values, base?: Values) {
     doc.transact(() => {
         const draft = readDraft(definition, doc);
-        const base = publishedDraft ?? readPublished(definition, doc);
-        const follow = draftFields(definition).filter((field) => draft[field] === base[field]);
+        const compared = base ?? readPublished(definition, doc);
+        const follow = draftFields(definition).filter((field) => draft[field] === compared[field]);
         setDraftValues(definition, doc, Object.fromEntries(follow.map((field) => [field, stored[field]])) as Partial<Values>);
         setPublished(definition, doc, stored);
     });

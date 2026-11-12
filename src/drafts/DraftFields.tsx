@@ -1,4 +1,5 @@
 import { Alert, Box, Button, Chip, Stack, TextField, type TextFieldProps, Typography } from "@mui/material";
+import type { TextFieldOwnerState } from "@mui/material/TextField";
 import { type CompositionEvent, type ReactNode, type SyntheticEvent, useLayoutEffect, useRef, useState } from "react";
 import * as Y from "yjs";
 
@@ -29,6 +30,9 @@ type DraftTextFieldProps<Values extends DraftValues, TextField extends string> =
 
 type Selection = { anchor: Y.RelativePosition; head: Y.RelativePosition };
 
+// An input method's composition: the input's value and selection when it started, the selection's edges in the text
+type Composition = { base: string; start: number; end: number; startPosition: Y.RelativePosition; endPosition: Y.RelativePosition };
+
 // A text field of the draft (MUI TextField, also multiline). The local cursor is kept as Yjs relative position, so it stays at its
 // place when others change the text (the input's value is replaced, which moves the browser's cursor to the end). While an input
 // method composes (e.g. Japanese), the input keeps its own value: the composed text goes into the draft when it is committed.
@@ -44,8 +48,11 @@ export function DraftTextField<Values extends DraftValues, TextField extends str
 }: DraftTextFieldProps<Values, TextField>) {
     const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
     const selection = useRef<Selection | null>(null);
-    // the input's value while an input method composes
+    // While an input method composes: the input's own value (shown instead of the draft's), and where the composition started
     const [composing, setComposing] = useState<string | null>(null);
+    const composition = useRef<Composition | null>(null);
+    // the input's value when the last composition was committed (an input event some browsers send after compositionend)
+    const committed = useRef<string | null>(null);
     const draftValue = String(snapshot.values[field] ?? "");
     const value = composing ?? draftValue;
 
@@ -59,8 +66,12 @@ export function DraftTextField<Values extends DraftValues, TextField extends str
         const start = input.selectionStart ?? 0;
         const end = input.selectionEnd ?? start;
         const backward = input.selectionDirection === "backward";
-        const anchor = Y.createRelativePositionFromTypeIndex(text, backward ? end : start);
-        const head = Y.createRelativePositionFromTypeIndex(text, backward ? start : end);
+        setSelection(text, backward ? end : start, backward ? start : end);
+    };
+
+    const setSelection = (text: Y.Text, anchorIndex: number, headIndex: number) => {
+        const anchor = Y.createRelativePositionFromTypeIndex(text, anchorIndex);
+        const head = Y.createRelativePositionFromTypeIndex(text, headIndex);
         selection.current = { anchor, head };
         session.setPresence({ field, anchor: Y.relativePositionToJSON(anchor), head: Y.relativePositionToJSON(head) });
     };
@@ -75,12 +86,67 @@ export function DraftTextField<Values extends DraftValues, TextField extends str
               )
             : Infinity;
         const cursor = input.selectionEnd;
-        session.setText(
-            field,
-            input.value,
-            cursor === null ? undefined : { start: Math.min(previousStart, cursor), endFromEnd: input.value.length - cursor },
-        );
+        session.setText(field, input.value, cursor === null ? undefined : { start: Math.min(previousStart, cursor) });
         rememberSelection();
+    };
+
+    const startComposition = (input: HTMLInputElement | HTMLTextAreaElement) => {
+        const text = session.text(field);
+        const start = input.selectionStart ?? 0;
+        const end = input.selectionEnd ?? start;
+        composition.current = text
+            ? {
+                  base: input.value,
+                  start,
+                  end,
+                  // the start sticks to the character after it, the end to the one before it: others' typing at the edges stays theirs
+                  startPosition: Y.createRelativePositionFromTypeIndex(text, start),
+                  endPosition: Y.createRelativePositionFromTypeIndex(text, end, -1),
+              }
+            : null;
+        setComposing(input.value);
+    };
+
+    // The committed composition into the draft: only what it changed (the composed text in place of the selection it started with), so
+    // what others changed in the meantime (not shown while composing) is kept
+    const commitComposition = (input: HTMLInputElement | HTMLTextAreaElement) => {
+        const started = composition.current;
+        composition.current = null;
+        committed.current = input.value;
+        setComposing(null);
+        const text = session.text(field);
+        const final = input.value;
+        if (!started || !text) {
+            change(input);
+            return;
+        }
+        const { base, start, end } = started;
+        const suffix = base.slice(end);
+        if (final === base) {
+            return;
+        }
+        if (!final.startsWith(base.slice(0, start)) || !final.endsWith(suffix) || final.length - suffix.length < start) {
+            // changed elsewhere than where it started (unusual): as any change
+            change(input);
+            return;
+        }
+        const composed = final.slice(start, final.length - suffix.length);
+        const from = Y.createAbsolutePositionFromRelativePosition(started.startPosition, session.doc)?.index;
+        const to = Y.createAbsolutePositionFromRelativePosition(started.endPosition, session.doc)?.index;
+        if (from === undefined || to === undefined) {
+            change(input);
+            return;
+        }
+        session.doc.transact(() => {
+            if (to > from) {
+                text.delete(from, to - from);
+            }
+            if (composed) {
+                text.insert(from, composed);
+            }
+        });
+        // the cursor after the composed text (restored by the layout effect)
+        setSelection(text, from + composed.length, from + composed.length);
     };
 
     // the text changed (also by others): the local selection back at its place
@@ -115,7 +181,7 @@ export function DraftTextField<Values extends DraftValues, TextField extends str
         return [{ id: peer.id, name: peerName(peer), color: peer.color, anchor, head }];
     });
 
-    const htmlInput = typeof slotProps?.htmlInput === "object" ? slotProps.htmlInput : undefined;
+    const htmlInputProps = slotProps?.htmlInput;
     return (
         <Box data-remote-cursors-container sx={{ position: "relative" }}>
             <TextField
@@ -123,10 +189,16 @@ export function DraftTextField<Values extends DraftValues, TextField extends str
                 value={value}
                 inputRef={inputRef}
                 onChange={(event) => {
-                    if (composing !== null) {
+                    if (composition.current) {
                         setComposing(event.target.value);
                         return;
                     }
+                    // the input event some browsers send after committing a composition: already in the draft
+                    if (committed.current !== null && committed.current === event.target.value) {
+                        committed.current = null;
+                        return;
+                    }
+                    committed.current = null;
                     change(event.target);
                 }}
                 onFocus={(event) => {
@@ -140,24 +212,27 @@ export function DraftTextField<Values extends DraftValues, TextField extends str
                 }}
                 slotProps={{
                     ...slotProps,
-                    htmlInput: {
-                        ...htmlInput,
-                        maxLength,
-                        onSelect: (event: SyntheticEvent<HTMLInputElement>) => {
-                            htmlInput?.onSelect?.(event);
-                            if (composing === null) {
-                                rememberSelection();
-                            }
-                        },
-                        onCompositionStart: (event: CompositionEvent<HTMLInputElement>) => {
-                            htmlInput?.onCompositionStart?.(event);
-                            setComposing(event.currentTarget.value);
-                        },
-                        onCompositionEnd: (event: CompositionEvent<HTMLInputElement>) => {
-                            htmlInput?.onCompositionEnd?.(event);
-                            setComposing(null);
-                            change(event.currentTarget);
-                        },
+                    // merged with the caller's (an object or a function of the owner state)
+                    htmlInput: (ownerState: TextFieldOwnerState) => {
+                        const own = typeof htmlInputProps === "function" ? htmlInputProps(ownerState) : htmlInputProps;
+                        return {
+                            ...own,
+                            maxLength: maxLength ?? (own as { maxLength?: number } | undefined)?.maxLength,
+                            onSelect: (event: SyntheticEvent<HTMLInputElement>) => {
+                                own?.onSelect?.(event);
+                                if (!composition.current) {
+                                    rememberSelection();
+                                }
+                            },
+                            onCompositionStart: (event: CompositionEvent<HTMLInputElement>) => {
+                                own?.onCompositionStart?.(event);
+                                startComposition(event.currentTarget);
+                            },
+                            onCompositionEnd: (event: CompositionEvent<HTMLInputElement>) => {
+                                own?.onCompositionEnd?.(event);
+                                commitComposition(event.currentTarget);
+                            },
+                        };
                     },
                 }}
             />
@@ -300,12 +375,13 @@ export function DraftFormActions<Values extends DraftValues, TextField extends s
 // Read by screen readers, not shown
 const visuallyHidden = {
     position: "absolute",
-    width: 1,
-    height: 1,
+    // strings: numbers would be theme values in sx (1 = 100%, -1 = -8px)
+    width: "1px",
+    height: "1px",
     overflow: "hidden",
     clip: "rect(0 0 0 0)",
     whiteSpace: "nowrap",
-    margin: -1,
+    margin: "-1px",
     padding: 0,
     border: 0,
 } as const;

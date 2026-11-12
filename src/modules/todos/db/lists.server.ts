@@ -16,8 +16,9 @@ type ListRepository = {
     create(userId: string, name: string): Promise<List>;
     // The renamed list; undefined if it doesn't exist (or belongs to another user)
     rename(userId: string, id: string, name: string): Promise<List | undefined>;
-    // Deletes the list's todos too (ON DELETE CASCADE). The deleted list; undefined if it doesn't exist (or belongs to another user)
-    delete(userId: string, id: string): Promise<List | undefined>;
+    // Deletes the list with its todos (in one batch). The deleted list and the ids of its deleted todos; undefined if it doesn't exist
+    // (or belongs to another user)
+    delete(userId: string, id: string): Promise<{ list: List; todoIds: string[] } | undefined>;
 };
 
 export function getListRepository(): ListRepository {
@@ -62,11 +63,18 @@ export function getListRepository(): ListRepository {
             return list;
         },
         delete: async (userId, id) => {
-            const [list] = await db
-                .delete(lists)
-                .where(and(eq(lists.id, id), eq(lists.userId, userId)))
-                .returning();
-            return list;
+            // a D1 batch is a transaction: the todos returned are exactly the deleted ones (not ON DELETE CASCADE, which doesn't tell)
+            const [deletedTodos, [list]] = await db.batch([
+                db
+                    .delete(todos)
+                    .where(and(eq(todos.listId, id), eq(todos.userId, userId)))
+                    .returning({ id: todos.id }),
+                db
+                    .delete(lists)
+                    .where(and(eq(lists.id, id), eq(lists.userId, userId)))
+                    .returning(),
+            ]);
+            return list ? { list, todoIds: deletedTodos.map((todo) => todo.id) } : undefined;
         },
     };
     return repository;

@@ -8,11 +8,12 @@ import {
     draftClientMessageSchema,
     type DraftDefinition,
     type DraftDefinitionData,
+    draftFields,
     type DraftPeer,
     type DraftPresence,
     type DraftServerMessage,
     type DraftValues,
-    ensureTextFields,
+    ensureFields,
     fromBase64,
     hasDraft,
     initDraft,
@@ -37,6 +38,13 @@ export const draftUserHeader = "x-draft-user";
 const docKey = "doc";
 const revisionKey = "revision";
 const deletedKey = "deleted";
+// the draft being published (between reading it and the save's notification)
+const publishingKey = "publishing";
+
+// A publish that didn't finish (e.g. the worker failed) is forgotten after this time
+const publishingTimeout = 60_000;
+
+type Publishing = { draft: DraftValues; fields: string[]; at: number };
 
 // The cursor colors of the others (readable on light and dark backgrounds)
 const peerColors = ["#e91e63", "#9c27b0", "#3f51b5", "#0288d1", "#00897b", "#689f38", "#f57c00", "#6d4c41"];
@@ -86,19 +94,40 @@ export class DraftAgent extends Agent<Env> {
             initDraft(typed, this.doc, stored);
             this.ctx.storage.kv.put(revisionKey, revision);
         } else {
-            ensureTextFields(typed, this.doc, stored);
+            ensureFields(typed, this.doc, stored);
             this.#takeOver(typed, stored, revision);
         }
         return true;
     }
 
+    // Takes over a snapshot of the stored entity newer than the last one (rebaseDraft). publishedDraft: the snapshot is the one saved
+    // by publishing this draft (the same revision as a snapshot loaded right after the save: the published fields still follow it).
     #takeOver(definition: DraftDefinition<DraftValues>, stored: DraftValues, revision: number, publishedDraft?: DraftValues) {
         const current = this.ctx.storage.kv.get<number>(revisionKey) ?? -Infinity;
-        // the snapshot after publishing has the same revision as one loaded right after the save: the published fields still follow it
         if (revision > current || (revision === current && publishedDraft)) {
-            rebaseDraft(definition, this.doc, stored, publishedDraft);
+            rebaseDraft(definition, this.doc, stored, publishedDraft ?? this.#publishingBase(definition, stored));
             this.ctx.storage.kv.put(revisionKey, revision);
         }
+        if (publishedDraft) {
+            this.ctx.storage.kv.delete(publishingKey);
+        }
+    }
+
+    // While a publish is under way, a snapshot of its save can arrive before its notification (e.g. a form connecting right after the
+    // save): the fields it published and the save changed are compared with the draft that was published, not with the old published
+    // value (an edit made in the meantime stays a change, also one back to the old value)
+    #publishingBase(definition: DraftDefinition<DraftValues>, stored: DraftValues): DraftValues | undefined {
+        const publishing = this.ctx.storage.kv.get<Publishing>(publishingKey);
+        if (!publishing || Date.now() - publishing.at > publishingTimeout) {
+            return undefined;
+        }
+        const published = readPublished(definition, this.doc);
+        return Object.fromEntries(
+            draftFields(definition).map((field) => [
+                field,
+                publishing.fields.includes(field) && stored[field] !== published[field] ? publishing.draft[field] : published[field],
+            ]),
+        );
     }
 
     // RPC (the worker, before forwarding a form's WebSocket): opens the draft. false: the entity was deleted.
@@ -106,9 +135,23 @@ export class DraftAgent extends Agent<Env> {
         return this.#open(definition, stored, revision);
     }
 
-    // RPC: the draft (e.g. to publish it)
+    // RPC: the draft
     async getDraft(definition: DraftDefinitionData, stored: DraftValues, revision: number): Promise<DraftState<DraftValues>> {
         return this.#open(definition, stored, revision) ? this.#state(definition) : null;
+    }
+
+    // RPC: the draft to publish; the publish ends with entityStored(…, publishedDraft) after the save, or with publishFailed
+    async startPublish(definition: DraftDefinitionData, stored: DraftValues, revision: number): Promise<DraftState<DraftValues>> {
+        const state = this.#open(definition, stored, revision) ? this.#state(definition) : null;
+        if (state && state.changedFields.length > 0) {
+            this.ctx.storage.kv.put(publishingKey, { draft: state.draft, fields: state.changedFields, at: Date.now() } satisfies Publishing);
+        }
+        return state;
+    }
+
+    // RPC: the publish failed (e.g. invalid input): nothing was saved
+    async publishFailed(): Promise<void> {
+        this.ctx.storage.kv.delete(publishingKey);
     }
 
     // RPC (e.g. an AI assistant): changes fields of the draft, the forms show it right away
@@ -126,13 +169,18 @@ export class DraftAgent extends Agent<Env> {
     }
 
     // RPC: the stored entity changed (published: `publishedDraft` is the draft that was published; or changed elsewhere, e.g. in a
-    // grid). Nothing to do if there's no draft yet (it starts from the stored entity).
+    // grid). Without a draft yet, it starts from this snapshot (a snapshot loaded before this save may arrive later: it's older).
     async entityStored(definition: DraftDefinitionData, stored: DraftValues, revision: number, publishedDraft?: DraftValues): Promise<void> {
-        if (this.#deleted || !hasDraft(this.doc)) {
+        if (this.#deleted) {
             return;
         }
         const typed = definition as DraftDefinition<DraftValues>;
-        ensureTextFields(typed, this.doc, stored);
+        if (!hasDraft(this.doc)) {
+            initDraft(typed, this.doc, stored);
+            this.ctx.storage.kv.put(revisionKey, revision);
+            return;
+        }
+        ensureFields(typed, this.doc, stored);
         this.#takeOver(typed, stored, revision, publishedDraft);
     }
 
@@ -142,6 +190,7 @@ export class DraftAgent extends Agent<Env> {
         this.ctx.storage.kv.put(deletedKey, true);
         this.ctx.storage.kv.delete(docKey);
         this.ctx.storage.kv.delete(revisionKey);
+        this.ctx.storage.kv.delete(publishingKey);
         this.#doc?.destroy();
         this.#doc = undefined;
         for (const connection of this.getConnections()) {
@@ -192,6 +241,7 @@ export class DraftAgent extends Agent<Env> {
             return;
         }
         if (this.#deleted) {
+            // (messages sent before the client learned about it)
             closeDeleted(connection);
             return;
         }
@@ -247,7 +297,10 @@ export class DraftAgent extends Agent<Env> {
 // The terminal close of a form's connection when its entity was deleted (4xxx: the client doesn't reconnect)
 export const deletedCloseCode = 4404;
 
-function closeDeleted(connection: { send(message: string): void; close(code?: number, reason?: string): void }) {
+function closeDeleted(connection: Connection) {
+    if (connection.readyState !== WebSocket.OPEN) {
+        return;
+    }
     connection.send(JSON.stringify({ type: "deleted" } satisfies DraftServerMessage));
     connection.close(deletedCloseCode, "Deleted");
 }

@@ -155,19 +155,31 @@ export function serverDraft<Values extends DraftValues, Changes extends z.ZodObj
                     ai: ai.publish,
                     handler: async (ctx, { id }) => {
                         const entity = await load(ctx, id);
-                        const { draft, changedFields } = await getDraft(entity, id);
+                        const draftAgent = await agent(id);
+                        const state = (await draftAgent.startPublish(definition, values(entity), revision(entity))) as DraftState<Values>;
+                        if (!state) {
+                            throw new NotFoundError(`${id} not found`);
+                        }
+                        const { draft, changedFields } = state;
                         if (changedFields.length === 0) {
                             return { published: view(entity), publishedFields: changedFields };
                         }
-                        // the draft's changes, validated like any input
-                        const parsed = changesSchema.safeParse(Object.fromEntries(changedFields.map((field) => [field, draft[field]])));
-                        if (!parsed.success) {
-                            throw inputValidationError(parsed.error.issues);
+                        let saved: Entity;
+                        let changes: z.output<Changes>;
+                        try {
+                            // the draft's changes, validated like any input
+                            const parsed = changesSchema.safeParse(Object.fromEntries(changedFields.map((field) => [field, draft[field]])));
+                            if (!parsed.success) {
+                                throw inputValidationError(parsed.error.issues);
+                            }
+                            changes = parsed.data as z.output<Changes>;
+                            await check?.(ctx, changes);
+                            saved = await save(ctx, id, changes);
+                        } catch (error) {
+                            await notify(id, (failed) => failed.publishFailed());
+                            throw error;
                         }
-                        const changes = parsed.data as z.output<Changes>;
-                        await check?.(ctx, changes);
-                        const saved = await save(ctx, id, changes);
-                        await notify(id, (draftAgent) => draftAgent.entityStored(definition, values(saved), revision(saved), draft));
+                        await notify(id, (published) => published.entityStored(definition, values(saved), revision(saved), draft));
                         return { published: view(saved), publishedFields: changedFields.filter((field) => field in changes) };
                     },
                 }),
