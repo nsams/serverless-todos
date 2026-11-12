@@ -7,7 +7,7 @@ import { chatAgentPath } from "./chat/chat";
 import { handleMcpRequest, mcpPath } from "./mcp/mcp.server";
 
 export { ChatAgent } from "./chat/agent.server";
-export { TodoDraft } from "./modules/todos/draft/draftAgent.server";
+export { DraftAgent } from "./drafts/draftAgent.server";
 
 // Worker entry (Hono). The app itself (index.html, JS, CSS) is served as static assets without the worker (single-page application,
 // see wrangler.jsonc); the worker handles:

@@ -1,9 +1,6 @@
 import { createApi, operationRoute } from "~/api/hono.server";
-import { runOperation } from "~/operations";
 
-import { draftValues } from "./draft/draft";
-import { draftUserHeader, getTodoDraft } from "./draft/draftAgent.server";
-import { todoOperations } from "./operations.server";
+import { todoDrafts, todoOperations } from "./operations.server";
 
 // The module's REST API (lists and todos), mounted at /api/todos (src/api/api.server.ts): every route runs one of the module's operations
 // (operations.server.ts), which validate the input and do the checks. The app calls it with the module's typed client (api.ts).
@@ -22,17 +19,5 @@ export const todosApi = createApi()
     .on(...operationRoute("PATCH", "/todos/:id", todoOperations.saveTodo))
     .on(...operationRoute("POST", "/todos/:id/publish", todoOperations.publishTodo))
     .on(...operationRoute("DELETE", "/todos/:id", todoOperations.deleteTodo))
-    // The WebSocket of the todo's form to the todo's draft (live editing, draft/): forwarded to the draft's Durable Object once the
-    // todo is found to be the user's (404 otherwise), with the user for the others' cursors
-    .get("/todos/:id/draft", async (c) => {
-        if (c.req.header("upgrade")?.toLowerCase() !== "websocket") {
-            return c.text("Expected a WebSocket upgrade", 426);
-        }
-        const todo = await runOperation(todoOperations.getTodo, { userId: c.var.user.id }, { id: c.req.param("id") });
-        const draft = await getTodoDraft(todo.id);
-        // takes over changes of the stored todo the draft may have missed
-        await draft.openDraft(draftValues(todo));
-        const headers = new Headers(c.req.raw.headers);
-        headers.set(draftUserHeader, c.var.user.email);
-        return draft.fetch(new Request(c.req.raw, { headers }));
-    });
+    // The WebSocket of the todo's form to the todo's draft (live editing, todoDraft.ts)
+    .get("/todos/:id/draft", (c) => todoDrafts.connect(c));

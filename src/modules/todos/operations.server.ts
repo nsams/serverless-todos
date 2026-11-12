@@ -1,14 +1,14 @@
 import { z } from "zod";
 
 import { dateStringSchema } from "~/dates";
+import { serverDraft } from "~/drafts/drafts.server";
 import { NotFoundError } from "~/errors";
-import { defineOperation, inputValidationError, type Operations } from "~/operations";
+import { defineOperation, type Operations } from "~/operations";
 
 import { getListRepository, type List } from "./db/lists.server";
 import { getTodoRepository, type Todo } from "./db/todos.server";
-import { draftValues, type TodoDraftValues } from "./draft/draft";
-import { getTodoDraft, type TodoDraftState } from "./draft/draftAgent.server";
 import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "./limits";
+import { todoDraft } from "./todoDraft";
 import { parseTodoSearch, todoSearchSchema } from "./todoSearch";
 
 // The operations of the todos module (src/operations.ts): used by the UI (the routes of the REST API in api.server.ts)
@@ -61,25 +61,50 @@ const todoChangesSchema = z.object({
 
 type TodoChanges = z.output<typeof todoChangesSchema>;
 
-// Saves changes of a todo to the database. Its draft (live editing in the form, draft/) takes them over: the fields the draft doesn't
-// change follow the stored todo. publishedDraft: the draft whose changes are saved (publishTodo).
-async function saveTodoChanges(userId: string, id: string, changes: TodoChanges, publishedDraft?: TodoDraftValues) {
+// A referenced list must exist (and be the user's): tells a missing target list from a missing todo
+async function checkTodoChanges(userId: string, changes: TodoChanges) {
     if (changes.listId !== undefined) {
-        // tells a missing target list from a missing todo
         await getList(userId, changes.listId);
     }
+}
+
+// Saves validated changes of a todo to the database (without notifying its draft)
+async function saveTodoChanges(userId: string, id: string, changes: TodoChanges) {
+    await checkTodoChanges(userId, changes);
     const todo = await getTodoRepository().update(userId, id, changes);
     if (!todo) {
         throw new NotFoundError(`Todo ${id} not found`);
     }
-    await (await getTodoDraft(id)).todoStored(draftValues(todo), publishedDraft);
     return todo;
 }
 
-// What the UI and the model get to see of a todo's draft
-function draftView(id: string, { draft, changedFields }: TodoDraftState) {
-    return { draft: { id, ...draft }, unpublishedChanges: changedFields };
-}
+// The shared draft of a todo (live editing of the todo form, src/drafts/, todoDraft.ts): its WebSocket route (api.server.ts) and its
+// operations (below)
+export const todoDrafts = serverDraft(todoDraft, {
+    load: ({ userId }, id) => getTodo(userId, id),
+    changes: todoChangesSchema,
+    check: ({ userId }, changes) => checkTodoChanges(userId, changes),
+    save: ({ userId }, id, changes) => saveTodoChanges(userId, id, changes),
+    view: todoView,
+});
+
+const todoDraftOperations = todoDrafts.operations({
+    get: {
+        title: "Get todo draft",
+        description:
+            "Gets the draft of a todo: the values that are being edited (in the app's form and with updateTodo) and the fields that differ from the todo as published (unpublishedChanges).",
+    },
+    update: {
+        title: "Update todo draft",
+        description:
+            "Changes the draft of a todo: title, description, due date, done, or the list (moves it). Everyone editing the todo in the app sees the changes live; they are saved to the todo when the draft is published (publishTodo). Omitted fields stay unchanged.",
+    },
+    publish: {
+        title: "Publish todo draft",
+        description:
+            "Publishes the draft of a todo: saves its changes (made with updateTodo or in the app's form, by anyone) to the todo. Returns the saved todo and the published fields.",
+    },
+});
 
 export const todoOperations = {
     listLists: defineOperation({
@@ -184,58 +209,16 @@ export const todoOperations = {
     saveTodo: defineOperation({
         input: todoChangesSchema.extend({ id: z.string() }),
         effect: "write",
-        handler: async ({ userId }, { id, ...changes }) => ({ updated: todoView(await saveTodoChanges(userId, id, changes)) }),
-    }),
-    // The draft of a todo (draft/): edited live by everyone who has the todo's form open and by the AI assistants
-    getTodoDraft: defineOperation({
-        input: z.object({ id: z.string() }),
-        effect: "read",
-        ai: {
-            title: "Get todo draft",
-            description:
-                "Gets the draft of a todo: the values that are being edited (in the app's form and with updateTodo) and the fields that differ from the todo as published (unpublishedChanges).",
-        },
-        handler: async ({ userId }, { id }) => {
-            const todo = await getTodo(userId, id);
-            return draftView(id, await (await getTodoDraft(id)).getDraft(draftValues(todo)));
-        },
-    }),
-    updateTodo: defineOperation({
-        input: todoChangesSchema.extend({ id: z.string() }),
-        effect: "write",
-        ai: {
-            title: "Update todo draft",
-            description:
-                "Changes the draft of a todo: title, description, due date, done, or the list (moves it). Everyone editing the todo in the app sees the changes live; they are saved to the todo when the draft is published (publishTodo). Omitted fields stay unchanged.",
-        },
         handler: async ({ userId }, { id, ...changes }) => {
-            const todo = await getTodo(userId, id);
-            if (changes.listId !== undefined) {
-                await getList(userId, changes.listId);
-            }
-            return draftView(id, await (await getTodoDraft(id)).updateDraft(draftValues(todo), changes));
+            const todo = await saveTodoChanges(userId, id, changes);
+            await todoDrafts.stored(id, todo);
+            return { updated: todoView(todo) };
         },
     }),
-    publishTodo: defineOperation({
-        input: z.object({ id: z.string() }),
-        effect: "write",
-        ai: {
-            title: "Publish todo draft",
-            description:
-                "Publishes the draft of a todo: saves its changes (made with updateTodo or in the app's form, by anyone) to the todo. Returns the saved todo and the published fields.",
-        },
-        handler: async ({ userId }, { id }) => {
-            const todo = await getTodo(userId, id);
-            const { draft, changedFields } = await (await getTodoDraft(id)).getDraft(draftValues(todo));
-            // the draft's changes, validated like any input (e.g. an empty title typed into the form)
-            const parsed = todoChangesSchema.safeParse(Object.fromEntries(changedFields.map((field) => [field, draft[field]])));
-            if (!parsed.success) {
-                throw inputValidationError(parsed.error.issues);
-            }
-            const published = changedFields.length > 0 ? await saveTodoChanges(userId, id, parsed.data, draft) : todo;
-            return { published: todoView(published), publishedFields: changedFields };
-        },
-    }),
+    // The draft of a todo: edited live by everyone who has the todo's form open and by the AI assistants
+    getTodoDraft: todoDraftOperations.get,
+    updateTodo: todoDraftOperations.update,
+    publishTodo: todoDraftOperations.publish,
     deleteTodo: defineOperation({
         input: z.object({ id: z.string() }),
         effect: "delete",
@@ -246,7 +229,7 @@ export const todoOperations = {
                 throw new NotFoundError(`Todo ${id} not found`);
             }
             // the forms editing it say so, its draft is gone
-            await (await getTodoDraft(id)).todoDeleted();
+            await todoDrafts.deleted(id);
             return { deleted: todoView(todo) };
         },
     }),

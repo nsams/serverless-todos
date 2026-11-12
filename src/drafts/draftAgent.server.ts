@@ -1,13 +1,14 @@
-import { Agent, type Connection, type ConnectionContext, getAgentByName, type WSMessage } from "agents";
-import { env } from "cloudflare:workers";
+import { Agent, type Connection, type ConnectionContext, type WSMessage } from "agents";
 import * as Y from "yjs";
 
 import {
     changedFields,
     draftClientMessageSchema,
+    type DraftDefinition,
     type DraftPeer,
     type DraftPresence,
     type DraftServerMessage,
+    type DraftValues,
     fromBase64,
     hasDraft,
     initDraft,
@@ -16,17 +17,16 @@ import {
     rebaseDraft,
     setDraftValues,
     toBase64,
-    type TodoDraftValues,
 } from "./draft";
 
-// The shared draft of a todo (draft.ts): a Durable Object per todo (instance name = todo id), reached only through the worker, which
-// checks that the todo belongs to the user first (the WebSocket route in api.server.ts, the operations). It keeps the draft's Yjs
-// document in its storage, syncs it with the forms (WebSocket, hibernating) and tells each form where the others are (cursors).
-// The operations change it over RPC: the AI assistants' edits, publishing, the stored todo changing elsewhere. It never reads or
-// writes the database itself: the worker passes the stored todo.
+// The shared draft of an entity (draft.ts): a Durable Object per entity (instance name: "<draft name>:<entity id>"), one class for all
+// drafts of the app. Reached only through the worker (drafts.server.ts), which checks that the entity belongs to the user first. It
+// keeps the draft's Yjs document in its storage, syncs it with the forms (WebSocket, hibernating) and tells each form where the others
+// are (cursors). The worker changes it over RPC: the AI assistants' edits, publishing, the stored entity changing elsewhere. It never
+// reads or writes the database: the worker passes the stored entity and the draft's definition (which fields are text fields).
 
 // The authenticated user of a WebSocket connection, set by the worker on the forwarded request (the client can't reach the object directly)
-export const draftUserHeader = "x-todo-draft-user";
+export const draftUserHeader = "x-draft-user";
 
 const storageKey = "doc";
 
@@ -35,10 +35,10 @@ const peerColors = ["#e91e63", "#9c27b0", "#3f51b5", "#0288d1", "#00897b", "#689
 
 type ConnectionState = { name: string; color: string; presence: DraftPresence | null };
 
-// What the operations get to see of the draft
-export type TodoDraftState = { draft: TodoDraftValues; published: TodoDraftValues; changedFields: (keyof TodoDraftValues)[] };
+// What the worker gets to see of the draft
+export type DraftState<Values extends DraftValues> = { draft: Values; published: Values; changedFields: (keyof Values & string)[] };
 
-export class TodoDraft extends Agent<Env> {
+export class DraftAgent extends Agent<Env> {
     #doc: Y.Doc | undefined;
 
     // The draft's document, loaded from the storage on first use (also after hibernation); every change is stored and sent to the
@@ -60,62 +60,66 @@ export class TodoDraft extends Agent<Env> {
         return this.#doc;
     }
 
-    // RPC (the worker, before forwarding a form's WebSocket): starts the draft from the stored todo, or takes over the stored todo's
-    // changes (rebaseDraft)
-    async openDraft(todo: TodoDraftValues): Promise<void> {
+    // RPC (e.g. the worker, before forwarding a form's WebSocket): starts the draft from the stored entity, or takes over the stored
+    // entity's changes the draft may have missed (rebaseDraft)
+    async openDraft<Values extends DraftValues>(definition: DraftDefinition<Values>, stored: Values): Promise<void> {
         if (hasDraft(this.doc)) {
-            rebaseDraft(this.doc, todo);
+            rebaseDraft(definition, this.doc, stored);
         } else {
-            initDraft(this.doc, todo);
+            initDraft(definition, this.doc, stored);
         }
     }
 
     // RPC: the draft (e.g. to publish it)
-    async getDraft(todo: TodoDraftValues): Promise<TodoDraftState> {
-        await this.openDraft(todo);
-        return this.snapshot();
+    async getDraft<Values extends DraftValues>(definition: DraftDefinition<Values>, stored: Values): Promise<DraftState<Values>> {
+        await this.openDraft(definition, stored);
+        return this.#state(definition);
     }
 
-    // RPC (an AI assistant): changes fields of the draft, the forms show it right away
-    async updateDraft(todo: TodoDraftValues, values: Partial<TodoDraftValues>): Promise<TodoDraftState> {
-        await this.openDraft(todo);
-        setDraftValues(this.doc, values);
-        return this.snapshot();
+    // RPC (e.g. an AI assistant): changes fields of the draft, the forms show it right away
+    async updateDraft<Values extends DraftValues>(
+        definition: DraftDefinition<Values>,
+        stored: Values,
+        values: Partial<Values>,
+    ): Promise<DraftState<Values>> {
+        await this.openDraft(definition, stored);
+        setDraftValues(definition, this.doc, values);
+        return this.#state(definition);
     }
 
-    // RPC: the stored todo changed (published: `publishedDraft` is the draft that was published; or changed elsewhere, e.g. in the
-    // list's grid). Nothing to do if there's no draft yet (it starts from the stored todo).
-    async todoStored(todo: TodoDraftValues, publishedDraft?: TodoDraftValues): Promise<void> {
+    // RPC: the stored entity changed (published: `publishedDraft` is the draft that was published; or changed elsewhere, e.g. in a
+    // grid). Nothing to do if there's no draft yet (it starts from the stored entity).
+    async entityStored<Values extends DraftValues>(definition: DraftDefinition<Values>, stored: Values, publishedDraft?: Values): Promise<void> {
         if (hasDraft(this.doc)) {
-            rebaseDraft(this.doc, todo, publishedDraft);
+            rebaseDraft(definition, this.doc, stored, publishedDraft);
         }
     }
 
-    // RPC: the todo was deleted: the forms say so, the draft is gone
-    async todoDeleted(): Promise<void> {
+    // RPC: the entity was deleted: the forms say so, the draft is gone
+    async entityDeleted(): Promise<void> {
         this.broadcast(JSON.stringify({ type: "deleted" } satisfies DraftServerMessage));
         for (const connection of this.getConnections()) {
-            connection.close(1000, "Todo deleted");
+            connection.close(1000, "Deleted");
         }
         this.#doc?.destroy();
         this.#doc = undefined;
         this.ctx.storage.kv.delete(storageKey);
     }
 
-    private snapshot(): TodoDraftState {
-        const draft = readDraft(this.doc);
-        const published = readPublished(this.doc);
-        return { draft, published, changedFields: changedFields(draft, published) };
+    #state<Values extends DraftValues>(definition: DraftDefinition<Values>): DraftState<Values> {
+        const draft = readDraft(definition, this.doc);
+        const published = readPublished(definition, this.doc);
+        return { draft, published, changedFields: changedFields(definition, draft, published) };
     }
 
     override onConnect(connection: Connection<ConnectionState>, { request }: ConnectionContext) {
         const name = request.headers.get(draftUserHeader) ?? "Unknown";
         connection.setState({ name, color: peerColors[hash(connection.id) % peerColors.length], presence: null });
-        this.sendPeers();
+        this.#sendPeers();
     }
 
     override onClose(connection: Connection) {
-        this.sendPeers(connection.id);
+        this.#sendPeers(connection.id);
     }
 
     override onMessage(connection: Connection<ConnectionState>, raw: WSMessage) {
@@ -148,7 +152,7 @@ export class TodoDraft extends Agent<Env> {
                 const state = connection.state;
                 if (state) {
                     connection.setState({ ...state, presence: message.presence });
-                    this.sendPeers(undefined, connection.id);
+                    this.#sendPeers(undefined, connection.id);
                 }
                 break;
             }
@@ -160,7 +164,7 @@ export class TodoDraft extends Agent<Env> {
 
     // Tells every form who else is on the draft and where. closed: the connection that is closing; changed: only the presence of this
     // connection changed (it doesn't need to know)
-    private sendPeers(closed?: string, changed?: string) {
+    #sendPeers(closed?: string, changed?: string) {
         const connections = [...this.getConnections<ConnectionState>()].filter((connection) => connection.id !== closed && connection.state);
         for (const recipient of connections) {
             if (recipient.id === changed) {
@@ -186,9 +190,4 @@ function hash(value: string) {
         result = (result * 31 + char.charCodeAt(0)) >>> 0;
     }
     return result;
-}
-
-// The draft of a todo. Only for a todo the worker has checked belongs to the user.
-export function getTodoDraft(todoId: string) {
-    return getAgentByName(env.TodoDraft, todoId);
 }

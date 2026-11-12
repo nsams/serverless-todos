@@ -1,8 +1,6 @@
 import { ArrowLeft } from "@dextinity/admin-icons";
 import {
-    Alert,
     Box,
-    Button,
     Checkbox,
     CircularProgress,
     Container,
@@ -17,25 +15,24 @@ import {
 } from "@mui/material";
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { type InferResponseType, parseResponse } from "hono/client";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect } from "react";
 import { Link, useNavigate } from "react-router";
 
 import { useChatPage } from "~/chat/useChatPage";
 import { PageError, PageErrorBoundary } from "~/client/errors";
 import { useInvalidateModule, usePageQuery } from "~/client/queries";
 import { useDocumentTitle } from "~/components/useDocumentTitle";
-import { errorMessage, NotFoundError } from "~/errors";
+import { DraftFieldPresence, DraftFormActions, DraftPeers, draftPresenceProps, DraftTextField } from "~/drafts/DraftFields";
+import { useDraftForm } from "~/drafts/useDraftForm";
+import { NotFoundError } from "~/errors";
 
 import { todosClient } from "../api";
 import { todosChatPage } from "../chatPage";
-import { changedFields, type TodoDraftField } from "../draft/draft";
-import { DraftPeers, DraftPeersOutline, DraftTextField } from "../draft/DraftFields";
-import type { DraftSnapshot } from "../draft/draftSession";
-import { useTodoDraft } from "../draft/useTodoDraft";
 import { maxTodoDescriptionLength, maxTodoTitleLength } from "../limits";
 import { todosModuleId } from "../moduleId";
 import { listsQuery, todoQuery, useLists } from "../queries";
 import { listRoute, todoRoute } from "../routes";
+import { todoDraft, todoDraftPath, type TodoDraftValues } from "../todoDraft";
 
 type Todo = InferResponseType<(typeof todosClient.todos)[":id"]["$get"], 200>;
 
@@ -103,10 +100,16 @@ function TodoPageLayout({ children }: { children: ReactNode }) {
 }
 
 // The labels of the fields, for the list of unpublished changes
-const fieldLabels: Record<TodoDraftField, string> = { title: "Title", description: "Description", dueDate: "Due", done: "Done", listId: "List" };
+const fieldLabels: Record<keyof TodoDraftValues, string> = {
+    title: "Title",
+    description: "Description",
+    dueDate: "Due",
+    done: "Done",
+    listId: "List",
+};
 
-// The form: edits the todo's shared draft live (draft/): everyone who has the form open (and the AI assistants) edits the same draft
-// and sees the others' cursors. Publish saves the draft's changes to the todo, Discard drops them (for everyone).
+// The form: edits the todo's shared draft live (todoDraft.ts, src/drafts/): everyone who has the form open (and the AI assistants)
+// edits the same draft and sees the others' cursors. Publish saves the draft's changes to the todo, Discard drops them (for everyone).
 function TodoForm({ todo }: { todo: Todo }) {
     const navigate = useNavigate();
     const { listId } = todoRoute.useParams();
@@ -115,10 +118,17 @@ function TodoForm({ todo }: { todo: Todo }) {
     const invalidate = useInvalidateModule(todosModuleId);
     // the options of the list field: waits for them (usually loaded already for the sidebar)
     const lists = useSuspenseQuery(listsQuery).data;
-    // published by anyone (or changed elsewhere): e.g. the sidebar's open counts, the list's grid, the tab title
-    const { session, snapshot } = useTodoDraft(todo.id, () => void invalidate());
-    const [publishing, setPublishing] = useState(false);
-    const [error, setError] = useState<string>();
+    const form = useDraftForm(todoDraft, todoDraftPath(todo.id), {
+        publish: useCallback(async () => {
+            const { published } = await parseResponse(todosClient.todos[":id"].publish.$post({ param: { id: todo.id } }));
+            queryClient.setQueryData(todoQuery(todo.id).queryKey, published);
+            void invalidate();
+        }, [queryClient, invalidate, todo.id]),
+        // published by anyone (or changed elsewhere): e.g. the sidebar's open counts, the list's grid, the tab title
+        onPublishedChange: useCallback(() => void invalidate(), [invalidate]),
+        publishErrorMessage: "Publishing the todo failed, please try again.",
+    });
+    const { session, snapshot } = form;
 
     const publishedListId = snapshot?.ready ? snapshot.published.listId : undefined;
     useEffect(() => {
@@ -143,30 +153,8 @@ function TodoForm({ todo }: { todo: Todo }) {
         );
     }
 
-    const { values, published } = snapshot;
-    const changes = changedFields(values, published);
+    const { values } = snapshot;
     const titleError = values.title.trim() === "" ? "Title is required" : undefined;
-
-    const publish = async () => {
-        setPublishing(true);
-        setError(undefined);
-        try {
-            const { published: saved } = await parseResponse(todosClient.todos[":id"].publish.$post({ param: { id: todo.id } }));
-            queryClient.setQueryData(todoQuery(todo.id).queryKey, saved);
-            void invalidate();
-        } catch (publishError) {
-            // e.g. a ValidationError's message
-            setError(errorMessage(publishError, "Publishing the todo failed, please try again."));
-        } finally {
-            setPublishing(false);
-        }
-    };
-
-    // where the form is, for the others (fields without a text cursor)
-    const presence = (field: TodoDraftField) => ({
-        onFocus: () => session.setPresence({ field }),
-        onBlur: () => session.setPresence(null),
-    });
 
     return (
         <Paper
@@ -174,7 +162,7 @@ function TodoForm({ todo }: { todo: Todo }) {
             noValidate
             onSubmit={(event) => {
                 event.preventDefault();
-                void publish();
+                void form.publish();
             }}
             aria-label="Todo"
             sx={{ p: 2 }}
@@ -203,24 +191,24 @@ function TodoForm({ todo }: { todo: Todo }) {
                     maxLength={maxTodoDescriptionLength}
                 />
                 <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", alignItems: "center" }}>
-                    <DraftPeersOutline snapshot={snapshot} field="dueDate">
+                    <DraftFieldPresence snapshot={snapshot} field="dueDate">
                         <TextField
                             label="Due"
                             type="date"
                             value={values.dueDate ?? ""}
                             onChange={(event) => session.setValues({ dueDate: event.target.value || null })}
-                            {...presence("dueDate")}
+                            {...draftPresenceProps(session, "dueDate")}
                             sx={{ width: 200 }}
                             slotProps={{ inputLabel: { shrink: true } }}
                         />
-                    </DraftPeersOutline>
-                    <DraftPeersOutline snapshot={snapshot} field="listId">
+                    </DraftFieldPresence>
+                    <DraftFieldPresence snapshot={snapshot} field="listId">
                         <TextField
                             label="List"
                             select
                             value={lists.some((list) => list.id === values.listId) ? values.listId : ""}
                             onChange={(event) => session.setValues({ listId: event.target.value })}
-                            {...presence("listId")}
+                            {...draftPresenceProps(session, "listId")}
                             sx={{ minWidth: 200 }}
                         >
                             {lists.map((list) => (
@@ -229,8 +217,8 @@ function TodoForm({ todo }: { todo: Todo }) {
                                 </MenuItem>
                             ))}
                         </TextField>
-                    </DraftPeersOutline>
-                    <DraftPeersOutline snapshot={snapshot} field="done">
+                    </DraftFieldPresence>
+                    <DraftFieldPresence snapshot={snapshot} field="done">
                         <FormControlLabel
                             label="Done"
                             sx={{ mx: 0 }}
@@ -238,39 +226,14 @@ function TodoForm({ todo }: { todo: Todo }) {
                                 <Checkbox
                                     checked={values.done}
                                     onChange={(event) => session.setValues({ done: event.target.checked })}
-                                    {...presence("done")}
+                                    {...draftPresenceProps(session, "done")}
                                 />
                             }
                         />
-                    </DraftPeersOutline>
+                    </DraftFieldPresence>
                 </Box>
-                {error && <Alert severity="error">{error}</Alert>}
-                <Box sx={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ mr: "auto" }} role="status">
-                        {draftStatus(snapshot, changes)}
-                    </Typography>
-                    <Button onClick={() => session.discard()} disabled={changes.length === 0 || publishing}>
-                        Discard changes
-                    </Button>
-                    <Button type="submit" variant="contained" disabled={changes.length === 0 || !!titleError} loading={publishing}>
-                        Publish
-                    </Button>
-                </Box>
+                <DraftFormActions form={form} snapshot={snapshot} fieldLabels={fieldLabels} canPublish={!titleError} />
             </Stack>
         </Paper>
     );
-}
-
-// The state of the draft below the form: the connection, the unpublished changes
-function draftStatus(snapshot: DraftSnapshot, changes: TodoDraftField[]) {
-    if (!snapshot.connected) {
-        return snapshot.unsynced ? "Offline: your changes will be synced when the connection is back" : "Offline, reconnecting…";
-    }
-    if (snapshot.unsynced) {
-        return "Syncing…";
-    }
-    if (changes.length === 0) {
-        return "No unpublished changes";
-    }
-    return `Unpublished changes: ${changes.map((field) => fieldLabels[field]).join(", ")}`;
 }

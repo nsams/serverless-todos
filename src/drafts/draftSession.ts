@@ -2,11 +2,15 @@ import { AgentClient } from "agents/client";
 import * as Y from "yjs";
 
 import {
+    changedFields,
     discardDraft,
     type DraftClientMessage,
+    type DraftDefinition,
     type DraftPeer,
     type DraftPresence,
     draftText,
+    type DraftTextField,
+    type DraftValues,
     fromBase64,
     hasDraft,
     isDraftServerMessage,
@@ -14,11 +18,9 @@ import {
     readPublished,
     setDraftValues,
     toBase64,
-    type TodoDraftTextField,
-    type TodoDraftValues,
 } from "./draft";
 
-// The form's connection to a todo's draft (draft.ts, the draft's Durable Object: draftAgent.server.ts): a local copy of the draft's
+// A form's connection to a shared draft (draft.ts, the draft's Durable Object: draftAgent.server.ts): a local copy of the draft's
 // Yjs document, synced over a WebSocket (reconnects by itself). The form edits the local copy, the changes are sent right away; what
 // others change arrives as updates. Local changes made while disconnected are synced after reconnecting.
 //
@@ -26,16 +28,18 @@ import {
 // or closing the tab asks for confirmation (the browser's beforeunload dialog), and a session the form doesn't use anymore (the user
 // navigated elsewhere) stays connected until they are synced.
 
-export type DraftSnapshot = {
+export type DraftSnapshot<Values extends DraftValues> = {
     // the first sync is done: the draft is there and can be edited
     ready: boolean;
     connected: boolean;
     // local changes the server doesn't have yet
     unsynced: boolean;
-    // the todo was deleted
+    // the entity was deleted
     deleted: boolean;
-    values: TodoDraftValues;
-    published: TodoDraftValues;
+    values: Values;
+    published: Values;
+    // the fields whose draft value differs from the published one
+    changedFields: (keyof Values & string)[];
     // the others on the draft and where they are
     peers: DraftPeer[];
 };
@@ -43,11 +47,12 @@ export type DraftSnapshot = {
 // The origin of the server's updates applied to the local document (local changes have none)
 const remote = Symbol("remote");
 
-export class DraftSession {
+export class DraftSession<Values extends DraftValues> {
     readonly doc = new Y.Doc();
+    readonly definition: DraftDefinition<Values>;
     readonly #socket: AgentClient;
     #listeners = new Set<() => void>();
-    #snapshot: DraftSnapshot;
+    #snapshot: DraftSnapshot<Values>;
     #synced = false;
     #connected = false;
     #deleted = false;
@@ -56,13 +61,15 @@ export class DraftSession {
     // local changes, counted; acknowledged by the server (ack-request, answered in order after the changes sent before)
     #localVersion = 0;
     #ackedVersion = 0;
-    // called when the published todo changed (published or changed elsewhere, also by others)
+    // called when the published entity changed (published or changed elsewhere, also by others)
     onPublishedChange?: () => void;
 
-    constructor(path: string) {
+    // path: the draft's WebSocket route (serverDraft's connect), e.g. /api/todos/todos/<id>/draft
+    constructor(definition: DraftDefinition<Values>, path: string) {
+        this.definition = definition;
         this.#socket = new AgentClient({
-            agent: "TodoDraft",
-            // the worker picks the draft by the todo in the path, after checking that it is the user's
+            agent: "DraftAgent",
+            // the worker picks the draft by the entity in the path, after checking that it is the user's
             basePath: path.replace(/^\//, ""),
             host: window.location.host,
             protocol: window.location.protocol === "https:" ? "wss" : "ws",
@@ -112,12 +119,12 @@ export class DraftSession {
             case "synced":
             case "update": {
                 const hadDraft = hasDraft(this.doc);
-                const published = JSON.stringify(readPublished(this.doc));
+                const published = JSON.stringify(readPublished(this.definition, this.doc));
                 Y.applyUpdate(this.doc, fromBase64(message.update), remote);
                 if (message.type === "synced") {
                     this.#synced = true;
                 }
-                if (hadDraft && JSON.stringify(readPublished(this.doc)) !== published) {
+                if (hadDraft && JSON.stringify(readPublished(this.definition, this.doc)) !== published) {
                     this.onPublishedChange?.();
                 }
                 break;
@@ -130,7 +137,7 @@ export class DraftSession {
                 break;
             case "deleted":
                 this.#deleted = true;
-                // (the server closes the connection too; not reconnecting: the todo is gone)
+                // (the server closes the connection too; not reconnecting: the entity is gone)
                 this.#socket.close();
                 break;
         }
@@ -148,14 +155,17 @@ export class DraftSession {
         this.#send({ type: "ack-request", id: this.#localVersion });
     }
 
-    #createSnapshot(): DraftSnapshot {
+    #createSnapshot(): DraftSnapshot<Values> {
+        const values = readDraft(this.definition, this.doc);
+        const published = readPublished(this.definition, this.doc);
         return {
             ready: this.#synced && hasDraft(this.doc) && !this.#deleted,
             connected: this.#connected,
             unsynced: this.#localVersion > this.#ackedVersion,
             deleted: this.#deleted,
-            values: readDraft(this.doc),
-            published: readPublished(this.doc),
+            values,
+            published,
+            changedFields: changedFields(this.definition, values, published),
             peers: this.#peers,
         };
     }
@@ -175,16 +185,16 @@ export class DraftSession {
 
     getSnapshot = () => this.#snapshot;
 
-    setValues(values: Partial<TodoDraftValues>) {
-        setDraftValues(this.doc, values);
+    setValues(values: Partial<Values>) {
+        setDraftValues(this.definition, this.doc, values);
     }
 
     // Discards the draft's changes, for everyone
     discard() {
-        discardDraft(this.doc);
+        discardDraft(this.definition, this.doc);
     }
 
-    text(field: TodoDraftTextField) {
+    text(field: DraftTextField<Values>) {
         return draftText(this.doc, field);
     }
 
@@ -203,22 +213,22 @@ export class DraftSession {
     }
 }
 
-// The sessions by todo, shared by the forms of a todo (e.g. React's StrictMode mounts twice); a session is closed when no form uses it
+// The sessions by path, shared by the forms of a draft (e.g. React's StrictMode mounts twice); a session is closed when no form uses it
 // anymore and its changes are synced
-const sessions = new Map<string, { session: DraftSession; users: number }>();
+const sessions = new Map<string, { session: DraftSession<DraftValues>; users: number }>();
 
-export function acquireDraftSession(todoId: string, path: string) {
-    let entry = sessions.get(todoId);
+export function acquireDraftSession<Values extends DraftValues>(definition: DraftDefinition<Values>, path: string): DraftSession<Values> {
+    let entry = sessions.get(path);
     if (!entry) {
-        entry = { session: new DraftSession(path), users: 0 };
-        sessions.set(todoId, entry);
+        entry = { session: new DraftSession(definition, path) as unknown as DraftSession<DraftValues>, users: 0 };
+        sessions.set(path, entry);
     }
     entry.users++;
-    return entry.session;
+    return entry.session as unknown as DraftSession<Values>;
 }
 
-export function releaseDraftSession(todoId: string) {
-    const entry = sessions.get(todoId);
+export function releaseDraftSession(path: string) {
+    const entry = sessions.get(path);
     if (!entry || --entry.users > 0) {
         return;
     }
@@ -226,14 +236,14 @@ export function releaseDraftSession(todoId: string) {
     session.setPresence(null);
     const closeWhenSynced = () => {
         // used again in the meantime
-        if (sessions.get(todoId) !== entry || entry.users > 0) {
+        if (sessions.get(path) !== entry || entry.users > 0) {
             unsubscribe();
             return;
         }
         const { unsynced, deleted } = session.getSnapshot();
         if (!unsynced || deleted) {
             unsubscribe();
-            sessions.delete(todoId);
+            sessions.delete(path);
             session.close();
         }
     };
