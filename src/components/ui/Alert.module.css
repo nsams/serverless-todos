@@ -1,0 +1,18 @@
+.alert {
+    display: flex;
+    gap: var(--dextinity-unit-2);
+    padding: var(--dextinity-unit-3) var(--dextinity-unit-4);
+    border: 1px solid var(--dextinity-color-feedback-danger-border);
+    border-radius: var(--dextinity-brand-radius-forms);
+    background: var(--dextinity-color-feedback-danger-subtle);
+    color: var(--dextinity-color-feedback-danger-foreground);
+}
+
+.banner {
+    border-width: 0 0 1px;
+    border-radius: 0;
+}
+
+.icon {
+    margin-top: 3px;
+}

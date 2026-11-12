@@ -1,0 +1,100 @@
+/* A note's Markdown rendered: the HTML elements of markdown-to-jsx styled with the @dextinity/ui tokens */
+.markdown {
+    overflow-wrap: anywhere;
+    color: var(--dextinity-color-foreground-default);
+    font-size: var(--dextinity-typography-body-md-size);
+    line-height: var(--dextinity-typography-body-md-line-height);
+}
+
+.markdown :is(h1, h2, h3, h4, h5, h6) {
+    margin: 0 0 var(--dextinity-unit-2);
+    font-weight: var(--dextinity-font-weight-semibold);
+}
+
+.markdown h1 {
+    font-size: var(--dextinity-typography-h1-size);
+    line-height: var(--dextinity-typography-h1-line-height);
+}
+
+.markdown h2 {
+    font-size: var(--dextinity-typography-h2-size);
+    line-height: var(--dextinity-typography-h2-line-height);
+}
+
+.markdown h3 {
+    font-size: var(--dextinity-typography-h3-size);
+    line-height: var(--dextinity-typography-h3-line-height);
+}
+
+.markdown :is(h4, h5, h6) {
+    font-size: var(--dextinity-typography-h4-size);
+    line-height: var(--dextinity-typography-h4-line-height);
+}
+
+/* space above headings, except at the top */
+.markdown * + :is(h1, h2) {
+    margin-top: var(--dextinity-unit-6);
+}
+
+.markdown * + :is(h3, h4, h5, h6) {
+    margin-top: var(--dextinity-unit-4);
+}
+
+.markdown :is(p, ul, ol, blockquote, pre, table) {
+    margin: 0 0 var(--dextinity-unit-3);
+}
+
+.markdown :is(ul, ol) {
+    padding-left: var(--dextinity-unit-6);
+}
+
+.markdown a {
+    color: var(--dextinity-color-action-primary-standalone);
+}
+
+.markdown code {
+    padding-inline: var(--dextinity-unit-1);
+    border-radius: var(--dextinity-radius-sm);
+    background: var(--dextinity-color-background-muted);
+    /* the token is ui-monospace, which only Safari knows */
+    font-family: var(--dextinity-brand-font-family-mono), monospace;
+    font-size: 0.875em;
+}
+
+.markdown pre {
+    overflow-x: auto;
+    padding: var(--dextinity-unit-3);
+    border-radius: var(--dextinity-radius-md);
+    background: var(--dextinity-color-background-muted);
+}
+
+.markdown pre code {
+    padding: 0;
+    background: transparent;
+}
+
+.markdown blockquote {
+    margin-inline: 0;
+    padding-left: var(--dextinity-unit-4);
+    border-left: 4px solid var(--dextinity-color-border-default);
+    color: var(--dextinity-color-foreground-muted);
+}
+
+.markdown table {
+    border-collapse: collapse;
+}
+
+.markdown :is(th, td) {
+    padding: var(--dextinity-unit-1) var(--dextinity-unit-2);
+    border: 1px solid var(--dextinity-color-border-default);
+}
+
+.markdown img {
+    max-width: 100%;
+}
+
+.markdown hr {
+    margin-block: var(--dextinity-unit-4);
+    border: 0;
+    border-top: 1px solid var(--dextinity-color-border-default);
+}

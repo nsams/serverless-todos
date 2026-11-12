@@ -1,0 +1,17 @@
+.titleLink {
+    color: inherit;
+    font-weight: var(--dextinity-font-weight-medium);
+    text-decoration: none;
+}
+
+.titleLink:hover {
+    text-decoration: underline;
+}
+
+.excerpt {
+    overflow: hidden;
+    color: var(--dextinity-color-foreground-muted);
+    font-size: var(--dextinity-typography-body-sm-size);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

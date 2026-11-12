@@ -1,0 +1,45 @@
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--dextinity-form-label-gap);
+    min-width: 0;
+}
+
+/* the look of @dextinity/ui's Input, for multiline text */
+.textarea {
+    width: 100%;
+    min-height: var(--dextinity-input-height);
+    padding-block: calc(var(--dextinity-input-padding-vertical) - var(--dextinity-input-border-width));
+    padding-inline: calc(var(--dextinity-input-padding-horizontal) - var(--dextinity-input-border-width));
+    border: var(--dextinity-input-border-width) solid var(--dextinity-input-state-default-border);
+    border-radius: var(--dextinity-input-radius);
+    background: var(--dextinity-input-state-default-background);
+    color: var(--dextinity-input-state-default-foreground);
+    font-family: var(--dextinity-brand-font-family-sans);
+    font-size: var(--dextinity-input-font-size);
+    font-weight: var(--dextinity-input-font-weight);
+    line-height: var(--dextinity-input-font-line-height);
+    letter-spacing: var(--dextinity-font-letter-spacing-normal);
+    resize: vertical;
+}
+
+.textarea::placeholder {
+    color: var(--dextinity-input-state-default-foreground-placeholder);
+    opacity: 1;
+}
+
+.textarea:hover {
+    border-color: var(--dextinity-input-state-hover-border);
+    background: var(--dextinity-input-state-hover-background);
+}
+
+.textarea:focus {
+    border-color: var(--dextinity-input-state-focus-border);
+    background: var(--dextinity-input-state-focus-background);
+    outline: var(--dextinity-focus-ring-width) solid var(--dextinity-color-border-focus);
+    outline-offset: var(--dextinity-focus-ring-offset);
+}
+
+.textarea[data-status="error"] {
+    border-color: var(--dextinity-input-state-error-border);
+}

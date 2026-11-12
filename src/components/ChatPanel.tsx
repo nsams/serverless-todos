@@ -1,6 +1,5 @@
 import { useAgentChat } from "@cloudflare/ai-chat/react";
-import { Close, Delete } from "@dextinity/admin-icons";
-import { Alert, Box, IconButton, Toolbar, Tooltip, Typography } from "@mui/material";
+import { Icon, IconButton, Typography } from "@dextinity/ui";
 import { ChatBox } from "@mui/x-chat";
 import type { ChatAdapter, ChatMessage as MuiChatMessage, ChatMessagePart } from "@mui/x-chat/headless";
 import { useQueryClient } from "@tanstack/react-query";
@@ -15,12 +14,17 @@ import { invalidateModules } from "~/client/queries";
 import { toDateString } from "~/dates";
 import { appModules } from "~/modules/registry";
 
+import styles from "./ChatPanel.module.css";
+import { Alert } from "./ui/Alert";
+import layout from "./ui/layout.module.css";
+import { Tooltip } from "./ui/Tooltip";
+
 const suggestions = appModules.flatMap((module) => module.chat?.suggestions ?? []);
 
 // The chat with the assistant (src/chat/agent.server.ts).
 //
 // useAgentChat (WebSocket to the user's ChatAgent) owns the conversation: history (persisted by the agent), streaming, resuming
-// after reconnects, tool approvals. MUI X Chat only renders it: its messages are controlled by useAgentChat's messages and its adapter
+// after reconnects, tool approvals. MUI X Chat (no replacement in @dextinity/ui) only renders it: its messages are controlled by useAgentChat's messages and its adapter
 // forwards sending, stopping and approvals to useAgentChat.
 export default function ChatPanel({ onClose }: { onClose: () => void }) {
     const queryClient = useQueryClient();
@@ -65,27 +69,27 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
     const chatMessages = useMemo(() => messages.map(toChatMessage), [messages]);
 
     return (
-        <Box sx={{ display: "flex", flexDirection: "column", flexGrow: 1, minHeight: 0 }}>
-            <Toolbar variant="dense" sx={{ gap: 1, borderBottom: 1, borderColor: "divider" }}>
-                <Typography variant="subtitle1" sx={{ flexGrow: 1 }}>
+        <div className={styles.panel}>
+            <div className={styles.header}>
+                <Typography variant="h4" element="h2" className={layout.grow}>
                     Assistant
                 </Typography>
                 <Tooltip title="Clear chat">
-                    <span>
-                        <IconButton aria-label="Clear chat" onClick={() => clearHistory()} disabled={messages.length === 0}>
-                            <Delete />
-                        </IconButton>
-                    </span>
+                    <IconButton
+                        variant="text"
+                        color="secondary"
+                        aria-label="Clear chat"
+                        onClick={() => clearHistory()}
+                        disabled={messages.length === 0}
+                    >
+                        <Icon name="delete" />
+                    </IconButton>
                 </Tooltip>
-                <IconButton edge="end" aria-label="Close assistant" onClick={onClose}>
-                    <Close />
+                <IconButton variant="text" color="secondary" aria-label="Close assistant" onClick={onClose}>
+                    <Icon name="close" />
                 </IconButton>
-            </Toolbar>
-            {error && (
-                <Alert severity="error" sx={{ borderRadius: 0 }}>
-                    {error.message || "The assistant is not available."}
-                </Alert>
-            )}
+            </div>
+            {error && <Alert banner>{error.message || "The assistant is not available."}</Alert>}
             <ChatBox
                 adapter={adapter}
                 messages={chatMessages}
@@ -96,7 +100,7 @@ export default function ChatPanel({ onClose }: { onClose: () => void }) {
                 suggestionsAutoSubmit
                 sx={{ flexGrow: 1, minHeight: 0, border: 0, borderRadius: 0 }}
             />
-        </Box>
+        </div>
     );
 }
 

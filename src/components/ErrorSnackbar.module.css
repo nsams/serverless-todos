@@ -1,0 +1,51 @@
+.viewport {
+    position: fixed;
+    bottom: var(--dextinity-space-layout-md);
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: calc(100vw - 2 * var(--dextinity-space-layout-md));
+}
+
+.toast {
+    display: flex;
+    align-items: center;
+    gap: var(--dextinity-unit-2);
+    padding: var(--dextinity-unit-2) var(--dextinity-unit-2) var(--dextinity-unit-2) var(--dextinity-unit-4);
+    border-radius: var(--dextinity-brand-radius-forms);
+    background: var(--dextinity-color-feedback-danger-strong);
+    color: var(--dextinity-color-feedback-danger-on-strong);
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.16);
+    transition:
+        opacity var(--dextinity-motion-duration-md) var(--dextinity-motion-easing-standard),
+        transform var(--dextinity-motion-duration-md) var(--dextinity-motion-easing-standard);
+}
+
+.toast[data-starting-style],
+.toast[data-ending-style] {
+    opacity: 0;
+    transform: translateY(8px);
+}
+
+.description {
+    margin: 0;
+}
+
+/* on the strong background (an IconButton's colors don't fit) */
+.close {
+    display: flex;
+    padding: var(--dextinity-unit-2);
+    border: 0;
+    border-radius: var(--dextinity-brand-radius-control-small);
+    background: none;
+    color: inherit;
+    cursor: pointer;
+}
+
+.close:hover {
+    background: var(--dextinity-color-feedback-danger-strong-hover);
+}
+
+.close:focus-visible {
+    outline: var(--dextinity-focus-ring-width) solid var(--dextinity-color-feedback-danger-on-strong);
+}

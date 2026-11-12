@@ -1,12 +1,14 @@
-import { Delete, Edit } from "@dextinity/admin-icons";
-import { Box, IconButton, Tooltip, Typography } from "@mui/material";
+import { Icon, IconButton, Typography } from "@dextinity/ui";
 import { useState } from "react";
 
 import { useInvalidateModule } from "~/client/queries";
 import { useLeavePage } from "~/client/routing";
 
+import styles from "./CollectionHeader.module.css";
 import { ConfirmDeleteDialog } from "./ConfirmDeleteDialog";
 import { NameDialog } from "./NameDialog";
+import layout from "./ui/layout.module.css";
+import { Tooltip } from "./ui/Tooltip";
 
 type Props = {
     // the module whose data changes: reloaded after renaming (e.g. the name in the sidebar) and after deleting
@@ -43,18 +45,18 @@ export function CollectionHeader({ moduleId, name, kind, deleteText, maxNameLeng
     };
 
     return (
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-            <Typography variant="h5" component="h1" sx={{ flexGrow: 1, overflowWrap: "anywhere" }}>
+        <div className={layout.row}>
+            <Typography variant="h1" className={styles.title}>
                 {name}
             </Typography>
             <Tooltip title={`Rename ${kind}`}>
-                <IconButton onClick={() => setRenameDialogOpen(true)} aria-label={`Rename ${kind}`}>
-                    <Edit />
+                <IconButton variant="text" color="secondary" onClick={() => setRenameDialogOpen(true)} aria-label={`Rename ${kind}`}>
+                    <Icon name="edit" />
                 </IconButton>
             </Tooltip>
             <Tooltip title={`Delete ${kind}`}>
-                <IconButton onClick={() => setDeleteDialogOpen(true)} aria-label={`Delete ${kind}`}>
-                    <Delete />
+                <IconButton variant="text" color="secondary" onClick={() => setDeleteDialogOpen(true)} aria-label={`Delete ${kind}`}>
+                    <Icon name="delete" />
                 </IconButton>
             </Tooltip>
             <NameDialog
@@ -74,6 +76,6 @@ export function CollectionHeader({ moduleId, name, kind, deleteText, maxNameLeng
                 onClose={() => setDeleteDialogOpen(false)}
                 onDelete={handleDelete}
             />
-        </Box>
+        </div>
     );
 }

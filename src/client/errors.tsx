@@ -1,8 +1,10 @@
-import { Box, CircularProgress, Container, Typography } from "@mui/material";
+import { Spinner, Typography } from "@dextinity/ui";
 import { useQueryClient } from "@tanstack/react-query";
+import { clsx } from "clsx";
 import { Component, type ComponentType, type ReactNode } from "react";
 import { useLocation } from "react-router";
 
+import layout from "~/components/ui/layout.module.css";
 import { useDocumentTitle } from "~/components/useDocumentTitle";
 import { NotFoundError } from "~/errors";
 
@@ -72,18 +74,18 @@ export function NotFoundPage() {
 function ErrorMessage({ message, details }: { message: string; details: string }) {
     useDocumentTitle();
     return (
-        <Container sx={{ py: 4 }}>
-            <Typography variant="h4">{message}</Typography>
+        <div className={clsx(layout.container, layout.stackDense)}>
+            <Typography variant="h1">{message}</Typography>
             <Typography>{details}</Typography>
-        </Container>
+        </div>
     );
 }
 
 // While a page's code or data is loading for the first time (afterwards the page shows the previous data while loading, see usePageQuery)
 export function PageLoading() {
     return (
-        <Box sx={{ display: "flex", justifyContent: "center", p: 8 }}>
-            <CircularProgress />
-        </Box>
+        <div className={layout.loading}>
+            <Spinner size="lg" aria-label="Loading" />
+        </div>
     );
 }

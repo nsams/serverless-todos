@@ -1,4 +1,6 @@
-import { Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle } from "@mui/material";
+import { Button } from "@dextinity/ui";
+
+import { Dialog, DialogActions, DialogContent, DialogText } from "./ui/Dialog";
 
 type Props = {
     open: boolean;
@@ -15,19 +17,18 @@ type Props = {
 // Asked when leaving a form with unsaved changes (see useUnsavedChangesPrompt)
 export function UnsavedChangesDialog({ open, saving, onSave, onDiscard, onCancel }: Props) {
     return (
-        <Dialog open={open} onClose={() => !saving && onCancel()} aria-labelledby="unsaved-changes-title">
-            <DialogTitle id="unsaved-changes-title">Save changes?</DialogTitle>
+        <Dialog open={open} onClose={() => !saving && onCancel()} title="Save changes?">
             <DialogContent>
-                <DialogContentText>You have unsaved changes. Do you want to save them before leaving the page?</DialogContentText>
+                <DialogText>You have unsaved changes. Do you want to save them before leaving the page?</DialogText>
             </DialogContent>
             <DialogActions>
-                <Button onClick={onCancel} disabled={saving}>
+                <Button variant="text" color="secondary" onClick={onCancel} disabled={saving}>
                     Cancel
                 </Button>
-                <Button color="error" onClick={onDiscard} disabled={saving}>
+                <Button variant="outlined" color="error" onClick={onDiscard} disabled={saving}>
                     Discard
                 </Button>
-                <Button variant="contained" onClick={onSave} loading={saving}>
+                <Button onClick={onSave} loading={saving}>
                     Save
                 </Button>
             </DialogActions>

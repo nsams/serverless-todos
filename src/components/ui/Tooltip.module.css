@@ -1,0 +1,14 @@
+.popup {
+    padding: var(--dextinity-unit-1) var(--dextinity-unit-2);
+    border-radius: var(--dextinity-brand-radius-tooltip);
+    background: var(--dextinity-color-background-inverse);
+    color: var(--dextinity-color-foreground-inverse);
+    font-size: var(--dextinity-typography-body-xs-size);
+    line-height: var(--dextinity-typography-body-xs-line-height);
+    transition: opacity var(--dextinity-motion-duration-sm) var(--dextinity-motion-easing-standard);
+}
+
+.popup[data-starting-style],
+.popup[data-ending-style] {
+    opacity: 0;
+}

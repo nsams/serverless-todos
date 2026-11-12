@@ -1,11 +1,11 @@
-import { Add } from "@dextinity/admin-icons";
-import { Divider, List, ListItemButton, ListItemIcon, ListItemText, Typography } from "@mui/material";
+import { Icon, MainNavigationItem } from "@dextinity/ui";
 import { useState } from "react";
 import { NavLink, useMatch, useNavigate } from "react-router";
 
 import { useInvalidateModule } from "~/client/queries";
 
 import { NameDialog } from "./NameDialog";
+import styles from "./NavigationList.module.css";
 
 export type NavigationItem = {
     id: string;
@@ -51,20 +51,22 @@ export function NavigationList({ moduleId, items, createLabel, maxNameLength, on
 
     return (
         <>
-            <List>
+            <ul className={styles.list}>
                 {items.map((item) => (
-                    <NavigationListItem key={item.id} item={item} onNavigate={onNavigate} />
+                    <li key={item.id}>
+                        <NavigationListItem item={item} onNavigate={onNavigate} />
+                    </li>
                 ))}
-            </List>
-            <Divider />
-            <List>
-                <ListItemButton onClick={() => setCreateDialogOpen(true)}>
-                    <ListItemIcon>
-                        <Add />
-                    </ListItemIcon>
-                    <ListItemText primary={createLabel} />
-                </ListItemButton>
-            </List>
+                <li>
+                    <MainNavigationItem
+                        render={<button type="button" className={styles.button} />}
+                        icon={<Icon name="add" />}
+                        onClick={() => setCreateDialogOpen(true)}
+                    >
+                        {createLabel}
+                    </MainNavigationItem>
+                </li>
+            </ul>
             <NameDialog
                 open={createDialogOpen}
                 title={createLabel}
@@ -81,20 +83,21 @@ function NavigationListItem({ item, onNavigate }: { item: NavigationItem; onNavi
     // also active on the item's sub pages (e.g. a note of a notebook), like NavLink (which sets aria-current)
     const active = useMatch({ path: item.link, end: false }) !== null;
     return (
-        <ListItemButton
-            component={NavLink}
-            to={item.link}
-            selected={active}
+        <MainNavigationItem
+            render={<NavLink to={item.link} />}
+            active={active}
             onClick={onNavigate}
             onMouseEnter={item.prefetch}
             onFocus={item.prefetch}
         >
-            <ListItemText primary={item.name} slotProps={{ primary: { noWrap: true } }} />
-            {item.count !== undefined && item.count > 0 && (
-                <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }} aria-label={item.countLabel}>
-                    {item.count}
-                </Typography>
-            )}
-        </ListItemButton>
+            <span className={styles.label}>
+                <span className={styles.name}>{item.name}</span>
+                {item.count !== undefined && item.count > 0 && (
+                    <span className={styles.count} aria-label={item.countLabel}>
+                        {item.count}
+                    </span>
+                )}
+            </span>
+        </MainNavigationItem>
     );
 }

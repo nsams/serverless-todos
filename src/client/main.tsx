@@ -1,6 +1,6 @@
-import "@fontsource-variable/roboto-flex";
+import "@fontsource-variable/inter";
+import "./global.css";
 
-import { CssBaseline } from "@mui/material";
 import { ThemeProvider } from "@mui/material/styles";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
@@ -26,8 +26,8 @@ const router = createBrowserRouter([{ path: "*", Component: AppRoutes }]);
 // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- in index.html
 createRoot(document.getElementById("root")!).render(
     <StrictMode>
+        {/* only for the MUI X components (grids, chat); the app's own components are @dextinity/ui, its color scheme is set in index.html */}
         <ThemeProvider theme={theme}>
-            <CssBaseline />
             <ErrorSnackbarProvider>
                 <QueryClientProvider client={queryClient}>
                     {/* Navigations aren't transitions: a page shows the new URL right away (e.g. the grid's search field while typing) and

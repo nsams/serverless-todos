@@ -1,7 +1,6 @@
-import { Add, Delete, Edit, Move, Warning } from "@dextinity/admin-icons";
-import { Box, Button, Checkbox, Container, Paper, Stack, TextField } from "@mui/material";
-import { alpha } from "@mui/material/styles";
+import { Button, Icon } from "@dextinity/ui";
 import { DataGridPro, getGridBooleanOperators, getGridDateOperators, getGridStringOperators, GridActionsCellItem } from "@mui/x-data-grid-pro";
+import { clsx } from "clsx";
 import { type InferRequestType, type InferResponseType, parseResponse } from "hono/client";
 import { type FormEvent, useState } from "react";
 import { useNavigate } from "react-router";
@@ -10,6 +9,9 @@ import { useChatPage } from "~/chat/useChatPage";
 import { useInvalidateModule, usePageQuery } from "~/client/queries";
 import { CollectionHeader } from "~/components/CollectionHeader";
 import { useShowError } from "~/components/ErrorSnackbar";
+import { Checkbox } from "~/components/ui/Checkbox";
+import layout from "~/components/ui/layout.module.css";
+import { TextField } from "~/components/ui/TextField";
 import { useDocumentTitle } from "~/components/useDocumentTitle";
 import { useMutate } from "~/components/useMutate";
 import { useServerGrid } from "~/components/useServerGrid";
@@ -25,6 +27,7 @@ import { isOverdue } from "../overdue";
 import { todosQuery, useLists } from "../queries";
 import { listRoute, listsRoute, todoRoute } from "../routes";
 import { todoFields } from "../todoSearch";
+import styles from "./ListPage.module.css";
 
 type Todo = InferResponseType<(typeof todosClient.lists)[":listId"]["todos"]["$get"], 200>["todos"][number];
 
@@ -68,8 +71,8 @@ export default function ListPage() {
             renderCell: ({ row }) => (
                 <Checkbox
                     checked={row.done}
-                    onChange={(event) => void mutate(updateTodo(row.id, { done: event.target.checked }))}
-                    slotProps={{ input: { "aria-label": `Mark “${row.title}” as ${row.done ? "open" : "done"}` } }}
+                    onCheckedChange={(done) => void mutate(updateTodo(row.id, { done }))}
+                    aria-label={`Mark “${row.title}” as ${row.done ? "open" : "done"}`}
                 />
             ),
         },
@@ -102,11 +105,11 @@ export default function ListPage() {
             valueSetter: (value: Date | null, row) => ({ ...row, dueDate: value && !Number.isNaN(value.getTime()) ? toDateString(value) : null }),
             renderCell: ({ row, formattedValue }) =>
                 isOverdue(row, today) ? (
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, color: "error.main", fontWeight: "bold" }}>
-                        {/* titleAccess: accessible name and native tooltip */}
-                        <Warning fontSize="small" titleAccess="Overdue" />
+                    <span className={styles.overdueDate}>
+                        {/* accessible name and native tooltip */}
+                        <Icon name="warning" aria-label="Overdue" title="Overdue" />
                         {formattedValue}
-                    </Box>
+                    </span>
                 ) : (
                     formattedValue
                 ),
@@ -126,14 +129,14 @@ export default function ListPage() {
             getActions: ({ row }) => [
                 <GridActionsCellItem
                     key="edit"
-                    icon={<Edit />}
+                    icon={<Icon name="edit" />}
                     label="Edit"
                     // the detail page keeps the grid's state for its back link
                     onClick={() => void navigate(todoRoute.href({ listId: list.id, todoId: row.id }, search))}
                 />,
                 <GridActionsCellItem
                     key="delete"
-                    icon={<Delete />}
+                    icon={<Icon name="delete" />}
                     label="Delete"
                     onClick={() => void mutate(parseResponse(todosClient.todos[":id"].$delete({ param: { id: row.id } })))}
                 />,
@@ -142,7 +145,7 @@ export default function ListPage() {
                     .map((otherList) => (
                         <GridActionsCellItem
                             key={`move-${otherList.id}`}
-                            icon={<Move />}
+                            icon={<Icon name="move" />}
                             label={`Move to “${otherList.name}”`}
                             showInMenu
                             onClick={() => void mutate(updateTodo(row.id, { listId: otherList.id }))}
@@ -153,27 +156,28 @@ export default function ListPage() {
     ];
 
     return (
-        <Container sx={{ py: 4 }}>
-            <Stack spacing={2}>
+        <div className={layout.container}>
+            <div className={layout.stack}>
                 <ListHeader list={list} />
                 <CreateTodoForm key={list.id} listId={list.id} onCreated={() => void invalidate()} />
-                <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+                <div className={layout.end}>
                     <Button
-                        startIcon={<Warning />}
+                        variant="text"
                         color="error"
+                        startIcon={<Icon name="warning" />}
                         onClick={() => updateSearch({ filter: [`dueDate:before:${today}`, "done:is:false"], filterLogic: undefined })}
                     >
                         Show overdue
                     </Button>
-                </Box>
-                <Paper>
+                </div>
+                <div className={layout.paper}>
                     <DataGridPro
                         columns={columns}
                         autoHeight
                         disableRowSelectionOnClick
                         {...gridProps}
                         getRowClassName={({ row }) => (isOverdue(row, today) ? "overdue" : "")}
-                        sx={{ "& .overdue": { bgcolor: (theme) => alpha(theme.palette.error.main, 0.06) } }}
+                        sx={{ border: 0, "& .overdue": { bgcolor: "var(--dextinity-color-feedback-danger-subtle)" } }}
                         // the grid keeps the old row if saving fails (onProcessRowUpdateError)
                         processRowUpdate={async (newRow, oldRow) => {
                             const title = newRow.title.trim();
@@ -195,9 +199,9 @@ export default function ListPage() {
                         }}
                         onProcessRowUpdateError={(error) => showError(errorMessage(error))}
                     />
-                </Paper>
-            </Stack>
-        </Container>
+                </div>
+            </div>
+        </div>
     );
 }
 
@@ -250,40 +254,15 @@ function CreateTodoForm({ listId, onCreated }: { listId: string; onCreated: () =
     };
 
     return (
-        <Paper component="form" onSubmit={(event: FormEvent<HTMLFormElement>) => void handleSubmit(event)} sx={{ p: 2 }}>
-            <Stack spacing={2}>
-                <Box sx={{ display: "flex", gap: 1, flexWrap: { xs: "wrap", sm: "nowrap" } }}>
-                    <TextField
-                        name="title"
-                        label="New todo"
-                        size="small"
-                        fullWidth
-                        error={!!error}
-                        helperText={error}
-                        slotProps={{ htmlInput: { maxLength: maxTodoTitleLength } }}
-                    />
-                    <TextField
-                        name="dueDate"
-                        label="Due"
-                        type="date"
-                        size="small"
-                        sx={{ width: 180, flexShrink: 0 }}
-                        slotProps={{ inputLabel: { shrink: true } }}
-                    />
-                    <Button type="submit" variant="contained" startIcon={<Add />} disabled={pending} sx={{ flexShrink: 0, alignSelf: "flex-start" }}>
-                        Add
-                    </Button>
-                </Box>
-                <TextField
-                    name="description"
-                    label="Description (optional)"
-                    size="small"
-                    multiline
-                    minRows={1}
-                    fullWidth
-                    slotProps={{ htmlInput: { maxLength: maxTodoDescriptionLength } }}
-                />
-            </Stack>
-        </Paper>
+        <form onSubmit={(event) => void handleSubmit(event)} className={clsx(layout.paper, layout.padded, layout.stack)}>
+            <div className={layout.wrapRow}>
+                <TextField name="title" label="New todo" className={layout.grow} error={error} maxLength={maxTodoTitleLength} />
+                <TextField name="dueDate" label="Due" type="date" className={styles.dueDate} />
+                <Button type="submit" startIcon={<Icon name="add" />} loading={pending} className={styles.addButton}>
+                    Add
+                </Button>
+            </div>
+            <TextField name="description" label="Description (optional)" multiline rows={1} maxLength={maxTodoDescriptionLength} />
+        </form>
     );
 }

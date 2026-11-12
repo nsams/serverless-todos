@@ -1,0 +1,18 @@
+.overdueDate {
+    display: flex;
+    align-items: center;
+    gap: var(--dextinity-unit-1);
+    color: var(--dextinity-color-feedback-danger-foreground);
+    font-weight: var(--dextinity-font-weight-semibold);
+}
+
+.dueDate {
+    flex-shrink: 0;
+    width: 180px;
+}
+
+/* aligned with the inputs (below their labels) */
+.addButton {
+    flex-shrink: 0;
+    margin-top: calc(var(--dextinity-form-label-font-line-height) + var(--dextinity-form-label-gap));
+}

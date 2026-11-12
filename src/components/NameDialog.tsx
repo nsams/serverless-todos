@@ -1,7 +1,10 @@
-import { Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField } from "@mui/material";
+import { Button } from "@dextinity/ui";
 import { type FormEvent, useState } from "react";
 
 import { errorMessage } from "~/errors";
+
+import { Dialog, DialogActions, DialogContent } from "./ui/Dialog";
+import { TextField } from "./ui/TextField";
 
 type Props = {
     open: boolean;
@@ -35,27 +38,17 @@ export function NameDialog({ open, title, submitLabel, label = "Name", initialNa
     };
 
     return (
-        <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs" slotProps={{ transition: { onExited: () => setError(null) } }}>
+        <Dialog open={open} onClose={onClose} title={title} onClosed={() => setError(null)}>
             <form onSubmit={(event) => void handleSubmit(event)}>
-                <DialogTitle>{title}</DialogTitle>
                 <DialogContent>
                     {/* key: reset the uncontrolled field whenever the dialog is opened */}
-                    <TextField
-                        key={String(open)}
-                        name="name"
-                        label={label}
-                        defaultValue={initialName}
-                        autoFocus
-                        fullWidth
-                        margin="dense"
-                        error={!!error}
-                        helperText={error}
-                        slotProps={{ htmlInput: { maxLength } }}
-                    />
+                    <TextField key={String(open)} name="name" label={label} defaultValue={initialName} error={error} maxLength={maxLength} />
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={onClose}>Cancel</Button>
-                    <Button type="submit" variant="contained" disabled={pending}>
+                    <Button variant="text" color="secondary" onClick={onClose}>
+                        Cancel
+                    </Button>
+                    <Button type="submit" loading={pending}>
                         {submitLabel}
                     </Button>
                 </DialogActions>

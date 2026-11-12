@@ -1,6 +1,6 @@
-import { ArrowLeft, Delete, Move } from "@dextinity/admin-icons";
-import { Box, Container, IconButton, Menu, MenuItem, Paper, Stack, Tab, Tabs, TextField, Tooltip, Typography } from "@mui/material";
+import { FormHelperText, Icon, IconButton, Typography } from "@dextinity/ui";
 import { useQueryClient } from "@tanstack/react-query";
+import { clsx } from "clsx";
 import { type InferResponseType, parseResponse } from "hono/client";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, Navigate } from "react-router";
@@ -11,6 +11,11 @@ import { useInvalidateModule, usePageQuery } from "~/client/queries";
 import { useLeavePage } from "~/client/routing";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { useShowError } from "~/components/ErrorSnackbar";
+import { IconButtonLink } from "~/components/ui/IconButtonLink";
+import layout from "~/components/ui/layout.module.css";
+import { Menu, MenuItem } from "~/components/ui/Menu";
+import { Tabs } from "~/components/ui/Tabs";
+import { Tooltip } from "~/components/ui/Tooltip";
 import { useDocumentTitle } from "~/components/useDocumentTitle";
 import { NotFoundError } from "~/errors";
 
@@ -21,6 +26,7 @@ import { maxNoteBodyLength, maxNoteTitleLength } from "../limits";
 import { notesModuleId } from "../moduleId";
 import { noteQuery, notesListsKey, useNotebooks } from "../queries";
 import { notebookRoute, noteRoute } from "../routes";
+import styles from "./NotePage.module.css";
 
 type Note = InferResponseType<(typeof notesClient.notes)[":id"]["$get"], 200>;
 
@@ -59,9 +65,9 @@ function NotePageError({ error }: { error: unknown }) {
     }
     return (
         <NotePageLayout>
-            <Paper sx={{ p: 4, textAlign: "center" }}>
-                <Typography color="text.secondary">This note doesn't exist (anymore).</Typography>
-            </Paper>
+            <div className={clsx(layout.paper, layout.emptyState)}>
+                <Typography className={layout.muted}>This note doesn't exist (anymore).</Typography>
+            </div>
         </NotePageLayout>
     );
 }
@@ -77,21 +83,19 @@ function NotePageLayout({ children }: { children: ReactNode }) {
     const notebookLink = useNotebookLink(notebookId);
     const notebook = useNotebooks().find((item) => item.id === notebookId);
     return (
-        <Container sx={{ py: 4 }}>
-            <Stack spacing={2}>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <div className={layout.container}>
+            <div className={layout.stack}>
+                <div className={layout.row}>
                     <Tooltip title="Back to the notebook">
-                        <IconButton component={Link} to={notebookLink} edge="start" aria-label="Back to the notebook">
-                            <ArrowLeft />
-                        </IconButton>
+                        <IconButtonLink variant="text" color="secondary" aria-label="Back to the notebook" render={<Link to={notebookLink} />}>
+                            <Icon name="arrow-left" />
+                        </IconButtonLink>
                     </Tooltip>
-                    <Typography color="text.secondary" noWrap>
-                        {notebook?.name}
-                    </Typography>
-                </Box>
+                    <Typography className={clsx(layout.muted, layout.noWrap)}>{notebook?.name}</Typography>
+                </div>
                 {children}
-            </Stack>
-        </Container>
+            </div>
+        </div>
     );
 }
 
@@ -235,87 +239,78 @@ function NoteEditor({ note }: { note: Note }) {
     };
 
     return (
-        <Paper component="article" aria-label={draft.title || "Note"} sx={{ p: 2 }}>
-            <Stack spacing={1}>
-                <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1 }}>
-                    <TextField
+        <article aria-label={draft.title || "Note"} className={clsx(layout.paper, layout.padded, layout.stackDense)}>
+            <div className={styles.titleRow}>
+                <div className={styles.titleField}>
+                    <input
                         value={draft.title}
                         onChange={(event) => setDraft((values) => ({ ...values, title: event.target.value }))}
-                        variant="standard"
-                        fullWidth
                         placeholder="Title"
-                        error={!draft.title.trim()}
-                        helperText={!draft.title.trim() && "Title is required"}
-                        slotProps={{
-                            htmlInput: { maxLength: maxNoteTitleLength, "aria-label": "Title" },
-                            input: { disableUnderline: true, sx: { typography: "h5" } },
-                        }}
+                        aria-label="Title"
+                        aria-invalid={!draft.title.trim() || undefined}
+                        maxLength={maxNoteTitleLength}
+                        className={styles.titleInput}
                     />
-                    <MoveNoteButton currentNotebookId={note.notebookId} onMove={(notebookId) => void handleMove(notebookId)} />
-                    <DeleteNoteButton title={draft.title.trim() || saved.title} onDelete={handleDelete} />
-                </Box>
-                <Box sx={{ display: "flex", alignItems: "center", borderBottom: 1, borderColor: "divider" }}>
-                    <Tabs value={mode} onChange={(_event, value: typeof mode) => setMode(value)} sx={{ flexGrow: 1, minHeight: 0 }}>
-                        <Tab value="write" label="Write" sx={{ minHeight: 0 }} />
-                        <Tab value="preview" label="Preview" sx={{ minHeight: 0 }} />
-                    </Tabs>
-                    <Typography variant="caption" color={status === "error" ? "error" : "text.secondary"} role="status">
-                        {status === "error" ? "Not saved" : status === "saving" || dirty ? "Saving…" : "Saved"}
-                    </Typography>
-                </Box>
-                {mode === "write" ? (
-                    <TextField
-                        value={draft.body}
-                        onChange={(event) => setDraft((values) => ({ ...values, body: event.target.value }))}
-                        multiline
-                        minRows={16}
-                        fullWidth
-                        placeholder="Write in Markdown: # Heading, **bold**, - list, [link](https://…)"
-                        slotProps={{
-                            htmlInput: { maxLength: maxNoteBodyLength, "aria-label": "Note" },
-                            input: { sx: { fontFamily: "monospace", fontSize: "0.875rem" } },
-                        }}
+                    {!draft.title.trim() && <FormHelperText error>Title is required</FormHelperText>}
+                </div>
+                <MoveNoteButton currentNotebookId={note.notebookId} onMove={(notebookId) => void handleMove(notebookId)} />
+                <DeleteNoteButton title={draft.title.trim() || saved.title} onDelete={handleDelete} />
+            </div>
+            <div className={styles.tabsRow}>
+                <div className={layout.grow}>
+                    <Tabs
+                        value={mode}
+                        onChange={setMode}
+                        tabs={[
+                            { value: "write", label: "Write" },
+                            { value: "preview", label: "Preview" },
+                        ]}
                     />
-                ) : draft.body.trim() ? (
-                    <MarkdownPreview markdown={draft.body} />
-                ) : (
-                    <Typography color="text.secondary" sx={{ py: 2 }}>
-                        Nothing to preview.
-                    </Typography>
-                )}
-            </Stack>
-        </Paper>
+                </div>
+                <Typography variant="caption" role="status" className={status === "error" ? styles.statusError : layout.muted}>
+                    {status === "error" ? "Not saved" : status === "saving" || dirty ? "Saving…" : "Saved"}
+                </Typography>
+            </div>
+            {mode === "write" ? (
+                <textarea
+                    value={draft.body}
+                    onChange={(event) => setDraft((values) => ({ ...values, body: event.target.value }))}
+                    rows={16}
+                    placeholder="Write in Markdown: # Heading, **bold**, - list, [link](https://…)"
+                    aria-label="Note"
+                    maxLength={maxNoteBodyLength}
+                    className={styles.body}
+                />
+            ) : draft.body.trim() ? (
+                <MarkdownPreview markdown={draft.body} />
+            ) : (
+                <Typography className={clsx(layout.muted, styles.empty)}>Nothing to preview.</Typography>
+            )}
+        </article>
     );
 }
 
 function MoveNoteButton({ currentNotebookId, onMove }: { currentNotebookId: string; onMove: (notebookId: string) => void }) {
     const notebooks = useNotebooks().filter((notebook) => notebook.id !== currentNotebookId);
-    const [anchor, setAnchor] = useState<HTMLElement | null>(null);
 
     if (notebooks.length === 0) {
         return null;
     }
     return (
-        <>
-            <Tooltip title="Move to notebook">
-                <IconButton onClick={(event) => setAnchor(event.currentTarget)} aria-label="Move to notebook" aria-haspopup="menu">
-                    <Move />
+        <Menu
+            tooltip="Move to notebook"
+            trigger={
+                <IconButton variant="text" color="secondary" aria-label="Move to notebook">
+                    <Icon name="move" />
                 </IconButton>
-            </Tooltip>
-            <Menu anchorEl={anchor} open={anchor !== null} onClose={() => setAnchor(null)}>
-                {notebooks.map((notebook) => (
-                    <MenuItem
-                        key={notebook.id}
-                        onClick={() => {
-                            setAnchor(null);
-                            onMove(notebook.id);
-                        }}
-                    >
-                        {notebook.name}
-                    </MenuItem>
-                ))}
-            </Menu>
-        </>
+            }
+        >
+            {notebooks.map((notebook) => (
+                <MenuItem key={notebook.id} onClick={() => onMove(notebook.id)}>
+                    {notebook.name}
+                </MenuItem>
+            ))}
+        </Menu>
     );
 }
 
@@ -325,8 +320,8 @@ function DeleteNoteButton({ title, onDelete }: { title: string; onDelete: () => 
     return (
         <>
             <Tooltip title="Delete note">
-                <IconButton onClick={() => setDialogOpen(true)} aria-label="Delete note">
-                    <Delete />
+                <IconButton variant="text" color="secondary" onClick={() => setDialogOpen(true)} aria-label="Delete note">
+                    <Icon name="delete" />
                 </IconButton>
             </Tooltip>
             <ConfirmDeleteDialog

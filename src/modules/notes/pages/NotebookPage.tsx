@@ -1,5 +1,4 @@
-import { Add, Delete, Move, Search } from "@dextinity/admin-icons";
-import { Box, Button, Container, InputAdornment, Link as MuiLink, Paper, Stack, TextField, Typography } from "@mui/material";
+import { Button, Icon } from "@dextinity/ui";
 import { DataGridPro, getGridDateOperators, getGridStringOperators, GridActionsCellItem } from "@mui/x-data-grid-pro";
 import { useQueryClient } from "@tanstack/react-query";
 import { type InferResponseType, parseResponse } from "hono/client";
@@ -11,6 +10,8 @@ import { useInvalidateModule, usePageQuery } from "~/client/queries";
 import { CollectionHeader } from "~/components/CollectionHeader";
 import { ConfirmDeleteDialog } from "~/components/ConfirmDeleteDialog";
 import { NameDialog } from "~/components/NameDialog";
+import layout from "~/components/ui/layout.module.css";
+import { TextField } from "~/components/ui/TextField";
 import { useDocumentTitle } from "~/components/useDocumentTitle";
 import { useMutate } from "~/components/useMutate";
 import { useServerGrid } from "~/components/useServerGrid";
@@ -24,6 +25,7 @@ import { notesModuleId } from "../moduleId";
 import { noteFields } from "../noteSearch";
 import { noteQuery, notesQuery, useNotebooks } from "../queries";
 import { notebookRoute, notebooksRoute, noteRoute } from "../routes";
+import styles from "./NotebookPage.module.css";
 
 type NoteSummary = InferResponseType<(typeof notesClient.notebooks)[":notebookId"]["notes"]["$get"], 200>["notes"][number];
 
@@ -60,9 +62,9 @@ export default function NotebookPage() {
             filterOperators: supportedOperators(getGridStringOperators(), noteFields.title.operators),
             // a real link: keyboard, open in a new tab
             renderCell: ({ row }) => (
-                <MuiLink component={Link} to={noteLink(row.id)} underline="hover" color="inherit" sx={{ fontWeight: 500 }}>
+                <Link to={noteLink(row.id)} className={styles.titleLink}>
                     {row.title}
-                </MuiLink>
+                </Link>
             ),
         },
         {
@@ -74,11 +76,7 @@ export default function NotebookPage() {
             sortable: false,
             filterOperators: supportedOperators(getGridStringOperators(), noteFields.body.operators),
             valueGetter: (_value, row) => plainExcerpt(row.excerpt),
-            renderCell: ({ value }) => (
-                <Typography component="span" variant="body2" color="text.secondary" noWrap>
-                    {value}
-                </Typography>
-            ),
+            renderCell: ({ value }) => <span className={styles.excerpt}>{value}</span>,
         },
         {
             field: "updatedAt",
@@ -101,13 +99,13 @@ export default function NotebookPage() {
             field: "actions",
             type: "actions",
             getActions: ({ row }) => [
-                <GridActionsCellItem key="delete" icon={<Delete />} label="Delete" onClick={() => setNoteToDelete(row)} />,
+                <GridActionsCellItem key="delete" icon={<Icon name="delete" />} label="Delete" onClick={() => setNoteToDelete(row)} />,
                 ...notebooks
                     .filter((otherNotebook) => otherNotebook.id !== notebook.id)
                     .map((otherNotebook) => (
                         <GridActionsCellItem
                             key={`move-${otherNotebook.id}`}
-                            icon={<Move />}
+                            icon={<Icon name="move" />}
                             label={`Move to “${otherNotebook.name}”`}
                             showInMenu
                             onClick={() =>
@@ -124,32 +122,23 @@ export default function NotebookPage() {
     ];
 
     return (
-        <Container sx={{ py: 4 }}>
-            <Stack spacing={2}>
+        <div className={layout.container}>
+            <div className={layout.stack}>
                 <NotebookHeader notebook={notebook} />
-                <Box sx={{ display: "flex", gap: 1, flexWrap: { xs: "wrap", sm: "nowrap" } }}>
+                <div className={layout.wrapRow}>
                     <TextField
                         type="search"
-                        size="small"
-                        fullWidth
+                        className={layout.grow}
                         placeholder="Search in title and text"
+                        aria-label="Search notes"
                         value={search.q ?? ""}
                         // no history entry per keystroke
                         onChange={(event) => updateSearch({ q: event.target.value || undefined }, { replace: true })}
-                        slotProps={{
-                            htmlInput: { "aria-label": "Search notes" },
-                            input: {
-                                startAdornment: (
-                                    <InputAdornment position="start">
-                                        <Search />
-                                    </InputAdornment>
-                                ),
-                            },
-                        }}
+                        startAdornment={<Icon name="search" />}
                     />
                     <NewNoteButton notebookId={notebook.id} />
-                </Box>
-                <Paper>
+                </div>
+                <div className={layout.paper}>
                     <DataGridPro
                         columns={columns}
                         autoHeight
@@ -163,7 +152,7 @@ export default function NotebookPage() {
                             }
                         }}
                         localeText={{ noRowsLabel: search.q || hasFilter ? "No notes found." : "No notes yet." }}
-                        sx={{ "& .MuiDataGrid-row": { cursor: "pointer" } }}
+                        sx={{ border: 0, "& .MuiDataGrid-row": { cursor: "pointer" } }}
                         // the note is loaded ahead while the pointer is over its row, so the editor shows it right away when it is opened
                         slotProps={{
                             row: {
@@ -176,8 +165,8 @@ export default function NotebookPage() {
                             },
                         }}
                     />
-                </Paper>
-            </Stack>
+                </div>
+            </div>
             <ConfirmDeleteDialog
                 open={noteToDelete !== null}
                 title="Delete note?"
@@ -192,7 +181,7 @@ export default function NotebookPage() {
                     }
                 }}
             />
-        </Container>
+        </div>
     );
 }
 
@@ -211,7 +200,7 @@ function NewNoteButton({ notebookId }: { notebookId: string }) {
 
     return (
         <>
-            <Button variant="contained" startIcon={<Add />} onClick={() => setDialogOpen(true)} sx={{ flexShrink: 0 }}>
+            <Button startIcon={<Icon name="add" />} onClick={() => setDialogOpen(true)} className={layout.noShrink}>
                 New note
             </Button>
             <NameDialog

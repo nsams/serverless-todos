@@ -1,0 +1,138 @@
+/* the app bar on top, the sidebar on the left (wide screens), the chat panel on the right (when open) */
+
+.root {
+    --app-bar-height: 56px;
+    --sidebar-width: 260px;
+    --chat-width: 420px;
+}
+
+.appBar {
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: var(--dextinity-unit-2);
+    height: var(--app-bar-height);
+    padding-inline: var(--dextinity-unit-4) var(--dextinity-unit-2);
+    border-bottom: 1px solid var(--dextinity-color-border-default);
+    background: var(--dextinity-color-background-default);
+}
+
+.user {
+    margin-right: var(--dextinity-unit-2);
+    color: var(--dextinity-color-foreground-muted);
+}
+
+.sidebar {
+    position: fixed;
+    top: var(--app-bar-height);
+    bottom: 0;
+    left: 0;
+    display: none;
+    width: var(--sidebar-width);
+    overflow-y: auto;
+    border-right: 1px solid var(--dextinity-color-border-default);
+    background: var(--dextinity-color-background-default);
+}
+
+.navigationSection {
+    padding-block: var(--dextinity-unit-2);
+}
+
+.navigationSection h2 {
+    margin: 0;
+}
+
+.navigationSection + .navigationSection {
+    border-top: 1px solid var(--dextinity-color-border-subtle);
+}
+
+.drawerBackdrop {
+    position: fixed;
+    inset: 0;
+    background: var(--dextinity-color-background-overlay);
+    transition: opacity var(--dextinity-motion-duration-md) var(--dextinity-motion-easing-standard);
+}
+
+.drawerBackdrop[data-starting-style],
+.drawerBackdrop[data-ending-style] {
+    opacity: 0;
+}
+
+.drawer {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: var(--sidebar-width);
+    max-width: 85vw;
+    overflow-y: auto;
+    background: var(--dextinity-color-background-default);
+    transition: transform var(--dextinity-motion-duration-md) var(--dextinity-motion-easing-standard);
+}
+
+.drawer[data-starting-style],
+.drawer[data-ending-style] {
+    transform: translateX(-100%);
+}
+
+.main {
+    min-width: 0;
+    padding-top: var(--app-bar-height);
+}
+
+.chat {
+    position: fixed;
+    top: var(--app-bar-height);
+    right: 0;
+    bottom: 0;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    border-left: 1px solid var(--dextinity-color-border-default);
+    background: var(--dextinity-color-background-default);
+    transform: translateX(100%);
+    visibility: hidden;
+    transition:
+        transform var(--dextinity-motion-duration-md) var(--dextinity-motion-easing-standard),
+        visibility var(--dextinity-motion-duration-md);
+}
+
+.chat[data-open] {
+    transform: none;
+    visibility: visible;
+}
+
+@media (min-width: 600px) {
+    .chat {
+        width: var(--chat-width);
+    }
+}
+
+@media (min-width: 900px) {
+    .menuButton {
+        display: none;
+    }
+
+    .sidebar {
+        display: block;
+    }
+
+    .main {
+        margin-left: var(--sidebar-width);
+    }
+}
+
+@media (min-width: 1200px) {
+    .main[data-chat-open] {
+        margin-right: var(--chat-width);
+    }
+}
+
+@media (max-width: 599px) {
+    .user {
+        display: none;
+    }
+}

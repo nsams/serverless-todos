@@ -1,0 +1,38 @@
+.list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0 var(--dextinity-unit-2);
+    list-style: none;
+}
+
+/* the create item: a button that looks like the links */
+.button {
+    width: 100%;
+    border: 0;
+    background: none;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+}
+
+.label {
+    display: flex;
+    align-items: center;
+    gap: var(--dextinity-unit-2);
+    min-width: 0;
+}
+
+.name {
+    flex-grow: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.count {
+    flex-shrink: 0;
+    color: var(--dextinity-color-foreground-muted);
+    font-size: var(--dextinity-typography-body-sm-size);
+}

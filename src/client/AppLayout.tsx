@@ -1,14 +1,17 @@
-import { Chatbot, Hamburger, Logout } from "@dextinity/admin-icons";
-import { AppBar, Box, CircularProgress, Divider, Drawer, IconButton, ListSubheader, Toolbar, Typography } from "@mui/material";
+import { Dialog } from "@base-ui/react/dialog";
+import { Icon, IconButton, MenuSectionHeader, Spinner, Typography } from "@dextinity/ui";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { parseResponse } from "hono/client";
-import { Fragment, lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Outlet } from "react-router";
 
 import { userClient } from "~/api/client";
 import { appName } from "~/app";
+import { IconButtonLink } from "~/components/ui/IconButtonLink";
+import layout from "~/components/ui/layout.module.css";
 import { appModules } from "~/modules/registry";
 
+import styles from "./AppLayout.module.css";
 import { PageErrorBoundary, PageLoading } from "./errors";
 
 // Layout of the app pages: app bar and the navigation of the modules in a sidebar. The layout stays mounted while navigating
@@ -21,9 +24,6 @@ const userQuery = queryOptions({
     // doesn't change while the app is open
     staleTime: Infinity,
 });
-
-const drawerWidth = 260;
-const chatWidth = 420;
 
 // loaded on first open: the chat (MUI X Chat, Agents SDK client) is a large part of the app's code
 const ChatPanel = lazy(() => import("~/components/ChatPanel"));
@@ -41,67 +41,57 @@ export function AppLayout() {
         setChatOpen((open) => !open);
     };
 
-    const drawerContent = (
-        <>
-            {/* space for the app bar */}
-            <Toolbar />
-            {appModules.map(
-                ({ id, navigation }, index) =>
-                    navigation && (
-                        <Fragment key={id}>
-                            {index > 0 && <Divider />}
-                            <ListSubheader component="h2" disableSticky sx={{ pt: 1, lineHeight: 2.5 }}>
-                                {navigation.title}
-                            </ListSubheader>
-                            <navigation.Component onNavigate={() => setMobileDrawerOpen(false)} />
-                        </Fragment>
-                    ),
-            )}
-        </>
+    const navigation = appModules.map(
+        ({ id, navigation }) =>
+            navigation && (
+                <section key={id} className={styles.navigationSection}>
+                    <MenuSectionHeader slots={{ label: "h2" }}>{navigation.title}</MenuSectionHeader>
+                    <navigation.Component onNavigate={() => setMobileDrawerOpen(false)} />
+                </section>
+            ),
     );
 
     return (
-        <Box sx={{ display: "flex" }}>
-            <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}>
-                <Toolbar>
-                    <IconButton
-                        color="inherit"
-                        edge="start"
-                        aria-label="Open navigation"
-                        onClick={() => setMobileDrawerOpen(true)}
-                        sx={{ mr: 1, display: { md: "none" } }}
-                    >
-                        <Hamburger />
-                    </IconButton>
-                    <Typography variant="h6" sx={{ flexGrow: 1 }}>
-                        {appName}
-                    </Typography>
-                    <Typography sx={{ mr: 1, display: { xs: "none", sm: "block" } }}>{user?.email}</Typography>
-                    <IconButton color="inherit" aria-label="Assistant" aria-pressed={chatOpen} onClick={toggleChat}>
-                        <Chatbot />
-                    </IconButton>
-                    {/* handled by Cloudflare Access, so a full page load */}
-                    <IconButton href="/cdn-cgi/access/logout" color="inherit" aria-label="Logout">
-                        <Logout />
-                    </IconButton>
-                </Toolbar>
-            </AppBar>
-            <Box component="nav" sx={{ width: { md: drawerWidth }, flexShrink: { md: 0 } }} aria-label="Navigation">
-                <Drawer
-                    variant="temporary"
-                    open={mobileDrawerOpen}
-                    onClose={() => setMobileDrawerOpen(false)}
-                    sx={{ display: { xs: "block", md: "none" }, "& .MuiDrawer-paper": { width: drawerWidth } }}
+        <div className={styles.root}>
+            <header className={styles.appBar}>
+                <IconButton
+                    variant="text"
+                    color="secondary"
+                    aria-label="Open navigation"
+                    onClick={() => setMobileDrawerOpen(true)}
+                    className={styles.menuButton}
                 >
-                    {drawerContent}
-                </Drawer>
-                <Drawer variant="permanent" open sx={{ display: { xs: "none", md: "block" }, "& .MuiDrawer-paper": { width: drawerWidth } }}>
-                    {drawerContent}
-                </Drawer>
-            </Box>
+                    <Icon name="hamburger" />
+                </IconButton>
+                <Typography variant="h3" element="span" className={layout.grow}>
+                    {appName}
+                </Typography>
+                <Typography variant="bodyS" element="span" className={styles.user}>
+                    {user?.email}
+                </Typography>
+                <IconButton variant="text" color="secondary" aria-label="Assistant" aria-pressed={chatOpen} onClick={toggleChat}>
+                    <Icon name="chatbot" />
+                </IconButton>
+                {/* handled by Cloudflare Access, so a full page load */}
+                <IconButtonLink variant="text" color="secondary" aria-label="Logout" render={<a href="/cdn-cgi/access/logout" />}>
+                    <Icon name="logout" />
+                </IconButtonLink>
+            </header>
+            {/* wide screens: always shown */}
+            <nav className={styles.sidebar} aria-label="Navigation">
+                {navigation}
+            </nav>
+            {/* small screens: a drawer opened by the menu button */}
+            <Dialog.Root open={mobileDrawerOpen} onOpenChange={setMobileDrawerOpen}>
+                <Dialog.Portal>
+                    <Dialog.Backdrop className={styles.drawerBackdrop} />
+                    <Dialog.Popup className={styles.drawer}>
+                        <nav aria-label="Navigation">{navigation}</nav>
+                    </Dialog.Popup>
+                </Dialog.Portal>
+            </Dialog.Root>
             {/* on wide screens the open chat takes space from the page instead of covering it */}
-            <Box component="main" sx={{ flexGrow: 1, minWidth: 0, mr: { lg: chatOpen ? `${chatWidth}px` : 0 } }}>
-                <Toolbar />
+            <main className={styles.main} data-chat-open={chatOpen || undefined}>
                 {/* errors of the pages (e.g. a list that doesn't exist (anymore)) are shown in the layout */}
                 <PageErrorBoundary>
                     {/* while a page's code or data is loading for the first time (see usePageQuery) */}
@@ -109,22 +99,20 @@ export function AppLayout() {
                         <Outlet />
                     </Suspense>
                 </PageErrorBoundary>
-            </Box>
-            <Drawer anchor="right" variant="persistent" open={chatOpen} sx={{ "& .MuiDrawer-paper": { width: { xs: "100%", sm: chatWidth } } }}>
-                {/* space for the app bar */}
-                <Toolbar />
+            </main>
+            <aside className={styles.chat} data-open={chatOpen || undefined} aria-label="Assistant">
                 {chatMounted && (
                     <Suspense
                         fallback={
-                            <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
-                                <CircularProgress />
-                            </Box>
+                            <div className={layout.loading}>
+                                <Spinner size="lg" aria-label="Loading" />
+                            </div>
                         }
                     >
                         <ChatPanel onClose={() => setChatOpen(false)} />
                     </Suspense>
                 )}
-            </Drawer>
-        </Box>
+            </aside>
+        </div>
     );
 }

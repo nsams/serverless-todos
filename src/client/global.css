@@ -1,0 +1,26 @@
+/* the styles of the @dextinity/ui components and its icons, before the app's own styles */
+@import "@dextinity/ui/css";
+@import "@dextinity/ui/css/icons";
+
+/* Base styles of the page (the components bring their own); the design tokens (--dextinity-*) are set for the whole document by the
+   data-dextinity-color-scheme attribute on <html> (index.html), so they also apply in popups rendered into a portal outside #root */
+
+body {
+    margin: 0;
+    background: var(--dextinity-color-background-subtle);
+    color: var(--dextinity-color-foreground-default);
+    font-family: var(--dextinity-brand-font-family-sans);
+    font-size: var(--dextinity-typography-body-md-size);
+    line-height: var(--dextinity-typography-body-md-line-height);
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+/* Base UI: the popups (portals) stack above the app */
+#root {
+    isolation: isolate;
+}

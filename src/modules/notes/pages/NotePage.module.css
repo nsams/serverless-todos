@@ -1,0 +1,79 @@
+.titleRow {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--dextinity-unit-1);
+}
+
+.titleField {
+    display: flex;
+    flex-grow: 1;
+    flex-direction: column;
+    min-width: 0;
+}
+
+/* the title as a heading (like Typography h1), without a field's border */
+.titleInput {
+    width: 100%;
+    padding: var(--dextinity-unit-1) 0;
+    border: 0;
+    background: transparent;
+    color: var(--dextinity-color-foreground-default);
+    font-family: var(--dextinity-brand-font-family-sans);
+    font-size: var(--dextinity-typography-h1-size);
+    font-weight: var(--dextinity-font-weight-regular);
+    line-height: var(--dextinity-typography-h1-line-height);
+    outline: none;
+}
+
+.titleInput::placeholder {
+    color: var(--dextinity-color-foreground-placeholder);
+}
+
+.titleInput:focus-visible {
+    border-radius: var(--dextinity-radius-sm);
+    box-shadow: 0 0 0 var(--dextinity-focus-ring-width) var(--dextinity-color-border-focus);
+}
+
+.tabsRow {
+    display: flex;
+    align-items: center;
+    gap: var(--dextinity-unit-2);
+    border-bottom: 1px solid var(--dextinity-color-border-default);
+}
+
+.statusError {
+    color: var(--dextinity-color-feedback-danger-foreground);
+}
+
+/* the Markdown source */
+.body {
+    width: 100%;
+    padding: var(--dextinity-unit-3);
+    border: var(--dextinity-input-border-width) solid var(--dextinity-input-state-default-border);
+    border-radius: var(--dextinity-input-radius);
+    background: var(--dextinity-input-state-default-background);
+    color: var(--dextinity-input-state-default-foreground);
+    /* the token is ui-monospace, which only Safari knows */
+    font-family: var(--dextinity-brand-font-family-mono), monospace;
+    font-size: var(--dextinity-typography-body-sm-size);
+    line-height: var(--dextinity-typography-body-md-line-height);
+    resize: vertical;
+}
+
+.body::placeholder {
+    color: var(--dextinity-input-state-default-foreground-placeholder);
+}
+
+.body:hover {
+    border-color: var(--dextinity-input-state-hover-border);
+}
+
+.body:focus {
+    border-color: var(--dextinity-input-state-focus-border);
+    outline: var(--dextinity-focus-ring-width) solid var(--dextinity-color-border-focus);
+    outline-offset: var(--dextinity-focus-ring-offset);
+}
+
+.empty {
+    padding-block: var(--dextinity-unit-4);
+}

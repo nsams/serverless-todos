@@ -1,0 +1,92 @@
+/* Layout classes of the pages (in place of MUI's Container, Stack, Paper and Box) */
+
+/* the content of a page: centered, with a maximum width */
+.container {
+    width: 100%;
+    max-width: 1200px;
+    margin-inline: auto;
+    padding: var(--dextinity-space-layout-xl) var(--dextinity-space-layout-md);
+}
+
+/* children below each other */
+.stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--dextinity-space-layout-md);
+}
+
+.stackDense {
+    display: flex;
+    flex-direction: column;
+    gap: var(--dextinity-space-layout-xs);
+}
+
+/* children next to each other, vertically centered */
+.row {
+    display: flex;
+    align-items: center;
+    gap: var(--dextinity-space-layout-xs);
+}
+
+/* next to each other on wider screens, wrapped on small ones */
+.wrapRow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--dextinity-space-layout-xs);
+}
+
+@media (min-width: 600px) {
+    .wrapRow {
+        flex-wrap: nowrap;
+    }
+}
+
+.end {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--dextinity-space-layout-xs);
+}
+
+.grow {
+    flex-grow: 1;
+    min-width: 0;
+}
+
+.noShrink {
+    flex-shrink: 0;
+}
+
+/* a surface on the page's background, e.g. a form or a grid */
+.paper {
+    border: 1px solid var(--dextinity-color-border-default);
+    border-radius: var(--dextinity-brand-radius-surface);
+    background: var(--dextinity-color-background-default);
+}
+
+.padded {
+    padding: var(--dextinity-space-layout-md);
+}
+
+/* e.g. "doesn't exist (anymore)" */
+.emptyState {
+    padding: var(--dextinity-space-layout-xl);
+    text-align: center;
+}
+
+.muted {
+    color: var(--dextinity-color-foreground-muted);
+}
+
+.noWrap {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* centers a spinner, e.g. while a page is loading */
+.loading {
+    display: flex;
+    justify-content: center;
+    padding: var(--dextinity-space-layout-2xl);
+}

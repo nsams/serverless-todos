@@ -1,0 +1,38 @@
+.popup {
+    min-width: 180px;
+    max-height: var(--available-height);
+    overflow-y: auto;
+    padding: var(--dextinity-select-menu-padding);
+    border: 1px solid var(--dextinity-select-menu-border);
+    border-radius: var(--dextinity-select-menu-radius);
+    background: var(--dextinity-select-menu-background);
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.12);
+    outline: none;
+    transition: opacity var(--dextinity-motion-duration-sm) var(--dextinity-motion-easing-standard);
+}
+
+.popup[data-starting-style],
+.popup[data-ending-style] {
+    opacity: 0;
+}
+
+.item {
+    display: flex;
+    align-items: center;
+    gap: var(--dextinity-select-option-gap);
+    min-height: var(--dextinity-select-option-height);
+    padding-inline: var(--dextinity-select-option-padding-horizontal);
+    border-radius: var(--dextinity-select-option-radius);
+    background: var(--dextinity-select-option-state-default-background);
+    color: var(--dextinity-select-option-state-default-foreground);
+    font-size: var(--dextinity-select-font-size);
+    line-height: var(--dextinity-select-font-line-height);
+    cursor: default;
+    user-select: none;
+    outline: none;
+}
+
+.item[data-highlighted] {
+    background: var(--dextinity-select-option-state-hover-background);
+    color: var(--dextinity-select-option-state-hover-foreground);
+}

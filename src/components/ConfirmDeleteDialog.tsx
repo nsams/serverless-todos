@@ -1,7 +1,8 @@
-import { Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle } from "@mui/material";
+import { Button } from "@dextinity/ui";
 import { useState } from "react";
 
 import { useShowError } from "./ErrorSnackbar";
+import { Dialog, DialogActions, DialogContent, DialogText } from "./ui/Dialog";
 
 type Props = {
     open: boolean;
@@ -40,14 +41,15 @@ export function ConfirmDeleteDialog({ open, title, text, errorMessage, onClose, 
     };
 
     return (
-        <Dialog open={open} onClose={onClose}>
-            <DialogTitle>{title}</DialogTitle>
+        <Dialog open={open} onClose={onClose} title={title}>
             <DialogContent>
-                <DialogContentText>{shownText}</DialogContentText>
+                <DialogText>{shownText}</DialogText>
             </DialogContent>
             <DialogActions>
-                <Button onClick={onClose}>Cancel</Button>
-                <Button color="error" variant="contained" disabled={deleting} onClick={() => void handleDelete()}>
+                <Button variant="text" color="secondary" onClick={onClose}>
+                    Cancel
+                </Button>
+                <Button color="error" loading={deleting} onClick={() => void handleDelete()}>
                     Delete
                 </Button>
             </DialogActions>

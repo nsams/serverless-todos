@@ -1,0 +1,19 @@
+/* due date, list and done next to each other, aligned at the bottom (the checkbox has no label above it) */
+.fields {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--dextinity-space-layout-md);
+}
+
+.fields > :last-child {
+    min-height: var(--dextinity-input-height);
+}
+
+.dueDate {
+    width: 200px;
+}
+
+.list {
+    min-width: 200px;
+}
