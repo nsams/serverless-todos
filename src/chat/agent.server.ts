@@ -1,6 +1,7 @@
 import { AIChatAgent, type OnChatMessageOptions } from "@cloudflare/ai-chat";
 import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, isStepCount, pruneMessages, streamText } from "ai";
 
+import { denySubAgent } from "~/agents.server";
 import { appName } from "~/app";
 import { getChatContext, toolsInstructions } from "~/modules/registry.server";
 
@@ -14,6 +15,11 @@ export class ChatAgent extends AIChatAgent<Env> {
     // the instance name (the user's email) is sent to the user's own clients only
     static options = { sendIdentityOnConnect: true };
     maxPersistedMessages = 200;
+
+    // no sub-agents (they could be named as another user)
+    override async onBeforeSubAgent() {
+        return denySubAgent();
+    }
 
     async onChatMessage(_onFinish: unknown, options?: OnChatMessageOptions) {
         const userId = this.name;

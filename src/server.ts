@@ -1,12 +1,14 @@
 import { getAgentByName } from "agents";
 import { Hono } from "hono";
 
+import { forwardToAgent } from "./agents.server";
 import { api } from "./api/api.server";
 import { getUser, type User } from "./auth.server";
 import { chatAgentPath } from "./chat/chat";
 import { handleMcpRequest, mcpPath } from "./mcp/mcp.server";
 
 export { ChatAgent } from "./chat/agent.server";
+export { DraftAgent } from "./drafts/draftAgent.server";
 
 // Worker entry (Hono). The app itself (index.html, JS, CSS) is served as static assets without the worker (single-page application,
 // see wrangler.jsonc); the worker handles:
@@ -39,7 +41,7 @@ app.route("/api", api);
 app.all(mcpPath, (c) => handleMcpRequest(c.req.raw, c.var.user.id));
 
 // one agent per user: the instance is chosen by the authenticated user, never by the client
-const handleChatRequest = async (request: Request, env: Env, user: User) => (await getAgentByName(env.ChatAgent, user.id)).fetch(request);
+const handleChatRequest = async (request: Request, env: Env, user: User) => forwardToAgent(await getAgentByName(env.ChatAgent, user.id), request);
 app.all(`/${chatAgentPath}`, (c) => handleChatRequest(c.req.raw, c.env, c.var.user));
 app.all(`/${chatAgentPath}/*`, (c) => handleChatRequest(c.req.raw, c.env, c.var.user));
 

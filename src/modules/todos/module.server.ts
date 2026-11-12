@@ -20,7 +20,7 @@ export const serverModule: ServerModule = {
         return [
             ...(currentTodo
                 ? [
-                      `The user is currently editing the todo "${currentTodo.title}" (id ${currentTodo.id}) in a form. "This todo" refers to it. Changes you make to it are taken over by the form, unless the user has changed the same field there.`,
+                      `The user is currently editing the todo "${currentTodo.title}" (id ${currentTodo.id}) in a form. "This todo" refers to it. The form shows its draft: your changes to it appear there right away. Publish them only when the user asks to (they may want to review them first); the draft may also hold the user's own unpublished changes (getTodoDraft).`,
                   ]
                 : []),
             currentList

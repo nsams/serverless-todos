@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, gte, isNull, lt, lte, or, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, isNull, lt, lte, or, type SQL, sql } from "drizzle-orm";
 
 import { getDb } from "~/db/db.server";
 import { dateTimeCondition, filterModelCondition, sortOrder, textCondition } from "~/db/filters.server";
@@ -101,7 +101,7 @@ export function getTodoRepository(): TodoRepository {
             }
             const [todo] = await db
                 .update(todos)
-                .set(values)
+                .set({ ...values, revision: sql`${todos.revision} + 1` })
                 .where(and(eq(todos.id, id), eq(todos.userId, userId)))
                 .returning();
             return todo;

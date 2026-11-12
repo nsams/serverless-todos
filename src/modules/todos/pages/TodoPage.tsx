@@ -1,9 +1,8 @@
 import { ArrowLeft } from "@dextinity/admin-icons";
 import {
-    Alert,
     Box,
-    Button,
     Checkbox,
+    CircularProgress,
     Container,
     FormControlLabel,
     IconButton,
@@ -15,17 +14,17 @@ import {
     Typography,
 } from "@mui/material";
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
-import { type InferRequestType, type InferResponseType, parseResponse } from "hono/client";
-import type { ReactNode } from "react";
-import { Controller, useForm } from "react-hook-form";
-import { Link, matchPath, useNavigate } from "react-router";
+import { type InferResponseType, parseResponse } from "hono/client";
+import { type ReactNode, useCallback, useEffect } from "react";
+import { Link, useNavigate } from "react-router";
 
 import { useChatPage } from "~/chat/useChatPage";
 import { PageError, PageErrorBoundary } from "~/client/errors";
 import { useInvalidateModule, usePageQuery } from "~/client/queries";
 import { useDocumentTitle } from "~/components/useDocumentTitle";
-import { useUnsavedChangesPrompt } from "~/components/useUnsavedChangesPrompt";
-import { errorMessage, NotFoundError } from "~/errors";
+import { DraftFieldPresence, DraftFormActions, DraftPeers, draftPresenceProps, DraftTextField } from "~/drafts/DraftFields";
+import { useDraftForm } from "~/drafts/useDraftForm";
+import { NotFoundError } from "~/errors";
 
 import { todosClient } from "../api";
 import { todosChatPage } from "../chatPage";
@@ -33,11 +32,11 @@ import { maxTodoDescriptionLength, maxTodoTitleLength } from "../limits";
 import { todosModuleId } from "../moduleId";
 import { listsQuery, todoQuery, useLists } from "../queries";
 import { listRoute, todoRoute } from "../routes";
+import { todoDraft, todoDraftPath, type TodoDraftValues } from "../todoDraft";
 
 type Todo = InferResponseType<(typeof todosClient.todos)[":id"]["$get"], 200>;
-type TodoChanges = InferRequestType<(typeof todosClient.todos)[":id"]["$patch"]>["json"];
 
-// A todo's detail page: a form, saved with its Save button (see todoRoute). The search params are the state of the list's grid
+// A todo's detail page: a form on the todo's shared draft, edited live by everyone who has it open (see todoRoute). The search params are the state of the list's grid
 // (ListPage.tsx), kept for the back link.
 export default function TodoPage() {
     return (
@@ -53,8 +52,6 @@ function TodoLoader() {
     useDocumentTitle(todo.title);
     // what the assistant gets to know about the page
     useChatPage(todosChatPage, { listId: todo.listId, todoId: todo.id });
-    // Deliberately no redirect when the todo was moved elsewhere (unlike the note page): it would race with "save and leave" in the
-    // unsaved changes dialog (the reloaded todo would redirect to its new URL instead of the page the user wanted to go to)
     return (
         <TodoPageLayout>
             {/* a fresh form per todo */}
@@ -102,174 +99,141 @@ function TodoPageLayout({ children }: { children: ReactNode }) {
     );
 }
 
-// The form's values: the todo's fields as the inputs hold them ("" for no due date)
-type TodoFormValues = { title: string; description: string; dueDate: string; done: boolean; listId: string };
+// The labels of the fields, for the list of unpublished changes
+const fieldLabels: Record<keyof TodoDraftValues, string> = {
+    title: "Title",
+    description: "Description",
+    dueDate: "Due",
+    done: "Done",
+    listId: "List",
+};
 
-function formValues(todo: Todo): TodoFormValues {
-    return { title: todo.title, description: todo.description, dueDate: todo.dueDate ?? "", done: todo.done, listId: todo.listId };
-}
-
+// The form: edits the todo's shared draft live (todoDraft.ts, src/drafts/): everyone who has the form open (and the AI assistants)
+// edits the same draft and sees the others' cursors. Publish saves the draft's changes to the todo, Discard drops them (for everyone).
 function TodoForm({ todo }: { todo: Todo }) {
     const navigate = useNavigate();
+    const { listId } = todoRoute.useParams();
     const search = todoRoute.useSearch();
     const queryClient = useQueryClient();
     const invalidate = useInvalidateModule(todosModuleId);
     // the options of the list field: waits for them (usually loaded already for the sidebar)
     const lists = useSuspenseQuery(listsQuery).data;
-
-    const {
-        control,
-        handleSubmit,
-        reset,
-        setError,
-        formState: { isDirty, isSubmitting, errors },
-    } = useForm<TodoFormValues>({
-        // Changed elsewhere (e.g. by the assistant, the module's data is reloaded after its changes): the form takes over the
-        // changes, except for the fields the user has changed (they are saved over them)
-        values: formValues(todo),
-        resetOptions: { keepDirtyValues: true },
-    });
-    // resetOptions apply to every reset(): a reset by the form itself (saved, discarded) drops the changes
-    const resetForm = (values?: TodoFormValues) => reset(values, { keepDirtyValues: false });
-
-    // Saves the changed fields: the saved todo, undefined if saving failed
-    const save = async (values: TodoFormValues) => {
-        const title = values.title.trim();
-        const dueDate = values.dueDate || null;
-        // the changed fields, undefined: unchanged (a typed object literal: a renamed field of the API breaks the build)
-        const changes: TodoChanges = {
-            title: title !== todo.title ? title : undefined,
-            description: values.description !== todo.description ? values.description : undefined,
-            dueDate: dueDate !== todo.dueDate ? dueDate : undefined,
-            done: values.done !== todo.done ? values.done : undefined,
-            listId: values.listId !== todo.listId ? values.listId : undefined,
-        };
-        try {
-            const { updated } = await parseResponse(todosClient.todos[":id"].$patch({ param: { id: todo.id }, json: changes }));
-            // the saved state is the form's new initial state (not dirty anymore)
-            resetForm(formValues(updated));
-            queryClient.setQueryData(todoQuery(todo.id).queryKey, updated);
-            // e.g. the sidebar's open counts, the list's grid
+    const form = useDraftForm(todoDraft, todoDraftPath(todo.id), {
+        publish: useCallback(async () => {
+            const { published } = await parseResponse(todosClient.todos[":id"].publish.$post({ param: { id: todo.id } }));
+            queryClient.setQueryData(todoQuery(todo.id).queryKey, published);
             void invalidate();
-            return updated;
-        } catch (error) {
-            // e.g. a ValidationError's message
-            setError("root.server", { message: errorMessage(error, "Saving the todo failed, please try again.") });
-            return undefined;
-        }
-    };
-
-    // the Save button
-    const onSubmit = handleSubmit(async (values) => {
-        const updated = await save(values);
-        if (updated && updated.listId !== todo.listId) {
-            // moved to another list: the URL follows the todo
-            await navigate(todoRoute.href({ listId: updated.listId, todoId: todo.id }, search), { replace: true });
-        }
+        }, [queryClient, invalidate, todo.id]),
+        // published by anyone (or changed elsewhere): e.g. the sidebar's open counts, the list's grid, the tab title
+        onPublishedChange: useCallback(() => void invalidate(), [invalidate]),
+        publishErrorMessage: "Publishing the todo failed, please try again.",
     });
+    const { session, snapshot } = form;
 
-    // Leaving the page with unsaved changes: asks whether to save them first
-    const unsavedChangesPrompt = useUnsavedChangesPrompt({
-        dirty: isDirty,
-        save: async () => {
-            let saved = false;
-            await handleSubmit(async (values) => {
-                saved = (await save(values)) !== undefined;
-            })();
-            return saved;
-        },
-        // the URL following the todo to another list (after saving) doesn't leave the form
-        stays: ({ nextLocation }) => matchPath(todoRoute.path, nextLocation.pathname)?.params.todoId === todo.id,
-    });
+    const publishedListId = snapshot?.ready ? snapshot.published.listId : undefined;
+    useEffect(() => {
+        // moved to another list (published here or elsewhere): the URL follows the todo
+        if (publishedListId && publishedListId !== listId) {
+            void navigate(todoRoute.href({ listId: publishedListId, todoId: todo.id }, search), { replace: true });
+        }
+    }, [publishedListId, listId, navigate, todo.id, search]);
+
+    useEffect(() => {
+        // e.g. deleted by the assistant while open: the page shows that it doesn't exist anymore
+        if (snapshot?.deleted) {
+            void invalidate();
+        }
+    }, [snapshot?.deleted, invalidate]);
+
+    if (!session || !snapshot?.ready) {
+        return (
+            <Paper sx={{ p: 4, display: "flex", justifyContent: "center" }}>
+                <CircularProgress aria-label="Connecting to the draft" />
+            </Paper>
+        );
+    }
+
+    const { values } = snapshot;
+    const titleError = values.title.trim() === "" ? "Title is required" : undefined;
 
     return (
-        <Paper component="form" noValidate onSubmit={(event) => void onSubmit(event)} aria-label="Todo" sx={{ p: 2 }}>
-            <Stack spacing={2}>
-                <Controller
-                    name="title"
-                    control={control}
-                    rules={{
-                        validate: (value) => value.trim() !== "" || "Title is required",
-                        maxLength: { value: maxTodoTitleLength, message: `At most ${maxTodoTitleLength} characters` },
-                    }}
-                    render={({ field: { ref, ...field }, fieldState: { error } }) => (
-                        <TextField
-                            {...field}
-                            inputRef={ref}
-                            label="Title"
-                            required
-                            fullWidth
-                            error={!!error}
-                            helperText={error?.message}
-                            slotProps={{ htmlInput: { maxLength: maxTodoTitleLength } }}
-                        />
-                    )}
+        <Paper
+            component="form"
+            noValidate
+            onSubmit={(event) => {
+                event.preventDefault();
+                void form.publish();
+            }}
+            aria-label="Todo"
+            sx={{ p: 2 }}
+        >
+            <Stack spacing={3}>
+                <DraftPeers snapshot={snapshot} />
+                <DraftTextField
+                    session={session}
+                    snapshot={snapshot}
+                    field="title"
+                    label="Title"
+                    required
+                    fullWidth
+                    error={!!titleError}
+                    helperText={titleError}
+                    maxLength={maxTodoTitleLength}
                 />
-                <Controller
-                    name="description"
-                    control={control}
-                    render={({ field: { ref, ...field } }) => (
-                        <TextField
-                            {...field}
-                            inputRef={ref}
-                            label="Description"
-                            multiline
-                            minRows={4}
-                            fullWidth
-                            slotProps={{ htmlInput: { maxLength: maxTodoDescriptionLength } }}
-                        />
-                    )}
+                <DraftTextField
+                    session={session}
+                    snapshot={snapshot}
+                    field="description"
+                    label="Description"
+                    multiline
+                    minRows={4}
+                    fullWidth
+                    maxLength={maxTodoDescriptionLength}
                 />
                 <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", alignItems: "center" }}>
-                    <Controller
-                        name="dueDate"
-                        control={control}
-                        render={({ field: { ref, ...field } }) => (
-                            <TextField
-                                {...field}
-                                inputRef={ref}
-                                label="Due"
-                                type="date"
-                                sx={{ width: 200 }}
-                                slotProps={{ inputLabel: { shrink: true } }}
-                            />
-                        )}
-                    />
-                    <Controller
-                        name="listId"
-                        control={control}
-                        render={({ field: { ref, ...field } }) => (
-                            <TextField {...field} inputRef={ref} label="List" select sx={{ minWidth: 200 }}>
-                                {lists.map((list) => (
-                                    <MenuItem key={list.id} value={list.id}>
-                                        {list.name}
-                                    </MenuItem>
-                                ))}
-                            </TextField>
-                        )}
-                    />
-                    <Controller
-                        name="done"
-                        control={control}
-                        render={({ field: { ref, value, onChange, ...field } }) => (
-                            <FormControlLabel
-                                label="Done"
-                                control={<Checkbox {...field} inputRef={ref} checked={value} onChange={(event) => onChange(event.target.checked)} />}
-                            />
-                        )}
-                    />
+                    <DraftFieldPresence snapshot={snapshot} field="dueDate">
+                        <TextField
+                            label="Due"
+                            type="date"
+                            value={values.dueDate ?? ""}
+                            onChange={(event) => session.setValues({ dueDate: event.target.value || null })}
+                            {...draftPresenceProps(session, "dueDate")}
+                            sx={{ width: 200 }}
+                            slotProps={{ inputLabel: { shrink: true } }}
+                        />
+                    </DraftFieldPresence>
+                    <DraftFieldPresence snapshot={snapshot} field="listId">
+                        <TextField
+                            label="List"
+                            select
+                            value={lists.some((list) => list.id === values.listId) ? values.listId : ""}
+                            onChange={(event) => session.setValues({ listId: event.target.value })}
+                            {...draftPresenceProps(session, "listId")}
+                            sx={{ minWidth: 200 }}
+                        >
+                            {lists.map((list) => (
+                                <MenuItem key={list.id} value={list.id}>
+                                    {list.name}
+                                </MenuItem>
+                            ))}
+                        </TextField>
+                    </DraftFieldPresence>
+                    <DraftFieldPresence snapshot={snapshot} field="done">
+                        <FormControlLabel
+                            label="Done"
+                            sx={{ mx: 0 }}
+                            control={
+                                <Checkbox
+                                    checked={values.done}
+                                    onChange={(event) => session.setValues({ done: event.target.checked })}
+                                    {...draftPresenceProps(session, "done")}
+                                />
+                            }
+                        />
+                    </DraftFieldPresence>
                 </Box>
-                {errors.root?.server && <Alert severity="error">{errors.root.server.message}</Alert>}
-                <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}>
-                    <Button onClick={() => resetForm()} disabled={!isDirty || isSubmitting}>
-                        Discard changes
-                    </Button>
-                    <Button type="submit" variant="contained" disabled={!isDirty} loading={isSubmitting}>
-                        Save
-                    </Button>
-                </Box>
+                <DraftFormActions form={form} snapshot={snapshot} fieldLabels={fieldLabels} canPublish={!titleError} />
             </Stack>
-            {unsavedChangesPrompt}
         </Paper>
     );
 }

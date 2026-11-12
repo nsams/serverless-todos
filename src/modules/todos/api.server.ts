@@ -1,6 +1,6 @@
 import { createApi, operationRoute } from "~/api/hono.server";
 
-import { todoOperations } from "./operations.server";
+import { todoDrafts, todoOperations } from "./operations.server";
 
 // The module's REST API (lists and todos), mounted at /api/todos (src/api/api.server.ts): every route runs one of the module's operations
 // (operations.server.ts), which validate the input and do the checks. The app calls it with the module's typed client (api.ts).
@@ -16,5 +16,8 @@ export const todosApi = createApi()
     .on(...operationRoute("GET", "/lists/:listId/todos", todoOperations.listTodos))
     .on(...operationRoute("POST", "/lists/:listId/todos", todoOperations.createTodo))
     .on(...operationRoute("GET", "/todos/:id", todoOperations.getTodo))
-    .on(...operationRoute("PATCH", "/todos/:id", todoOperations.updateTodo))
-    .on(...operationRoute("DELETE", "/todos/:id", todoOperations.deleteTodo));
+    .on(...operationRoute("PATCH", "/todos/:id", todoOperations.saveTodo))
+    .on(...operationRoute("POST", "/todos/:id/publish", todoOperations.publishTodo))
+    .on(...operationRoute("DELETE", "/todos/:id", todoOperations.deleteTodo))
+    // The WebSocket of the todo's form to the todo's draft (live editing, todoDraft.ts)
+    .get("/todos/:id/draft", (c) => todoDrafts.connect(c));
