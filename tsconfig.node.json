@@ -10,5 +10,5 @@
     },
     "exclude": ["worker-configuration.d.ts"],
     "extends": "./tsconfig.json",
-    "include": ["*.ts", "*.mts", "scripts/**/*.ts", "src/modules/*/db/schema.ts"]
+    "include": ["*.ts", "*.mts", "scripts/**/*.ts", "src/modules/*/db/schema.ts", "src/history/schema.ts"]
 }

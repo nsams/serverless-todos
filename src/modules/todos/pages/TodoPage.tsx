@@ -65,8 +65,9 @@ function TodoLoader() {
     );
 }
 
-// e.g. deleted by the assistant while open
+// e.g. deleted by the assistant while open: shows the deleted todo's history (nothing if it never existed)
 function TodoPageError({ error }: { error: unknown }) {
+    const { todoId } = todoRoute.useParams();
     useDocumentTitle();
     if (!(error instanceof NotFoundError)) {
         return <PageError error={error} />;
@@ -76,6 +77,7 @@ function TodoPageError({ error }: { error: unknown }) {
             <Paper sx={{ p: 4, textAlign: "center" }}>
                 <Typography color="text.secondary">This todo doesn't exist (anymore).</Typography>
             </Paper>
+            <TodoHistory todoId={todoId} />
         </TodoPageLayout>
     );
 }

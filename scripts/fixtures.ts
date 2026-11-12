@@ -1,7 +1,8 @@
 import { drizzle } from "drizzle-orm/sqlite-proxy";
 
+import { history } from "../src/history/schema.ts";
 import { notebooks, notes } from "../src/modules/notes/db/schema.ts";
-import { lists, todoHistory, todos } from "../src/modules/todos/db/schema.ts";
+import { lists, todoEntityType, todos } from "../src/modules/todos/db/schema.ts";
 
 // Test data for Worker Previews and local development (`npm run db:seed`): lists with todos and notebooks with notes for each given user.
 // Due dates are relative to today, so there are always overdue, due and upcoming todos.
@@ -113,7 +114,7 @@ export function createFixtures(userId: string, now = new Date()) {
     const result = {
         lists: [] as Array<typeof lists.$inferInsert>,
         todos: [] as Array<typeof todos.$inferInsert>,
-        todoHistory: [] as Array<typeof todoHistory.$inferInsert>,
+        history: [] as Array<typeof history.$inferInsert>,
         notebooks: [] as Array<typeof notebooks.$inferInsert>,
         notes: [] as Array<typeof notes.$inferInsert>,
     };
@@ -133,9 +134,10 @@ export function createFixtures(userId: string, now = new Date()) {
             const todoCreatedAt = new Date(createdAt++);
             result.todos.push({ id: todoId, userId, listId, ...values, createdAt: todoCreatedAt });
             // created in the app (done todos as if created done, the history has no separate change for it)
-            result.todoHistory.push({
+            result.history.push({
                 userId,
-                todoId,
+                entityType: todoEntityType,
+                entityId: todoId,
                 action: "created",
                 source: "app",
                 changes: {
@@ -203,7 +205,7 @@ export function createFixturesSql(emails: string[]) {
         const fixtures = createFixtures(email.trim().toLowerCase());
         statements.push(toPlainSql(db.insert(lists).values(fixtures.lists).toSQL()));
         statements.push(toPlainSql(db.insert(todos).values(fixtures.todos).toSQL()));
-        statements.push(toPlainSql(db.insert(todoHistory).values(fixtures.todoHistory).toSQL()));
+        statements.push(toPlainSql(db.insert(history).values(fixtures.history).toSQL()));
         statements.push(toPlainSql(db.insert(notebooks).values(fixtures.notebooks).toSQL()));
         statements.push(toPlainSql(db.insert(notes).values(fixtures.notes).toSQL()));
     }

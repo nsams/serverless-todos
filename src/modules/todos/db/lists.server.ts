@@ -1,8 +1,10 @@
 import { and, asc, eq, sql } from "drizzle-orm";
 
 import { getDb } from "~/db/db.server";
+import type { OperationContext } from "~/operations";
 
 import { lists, todos } from "./schema";
+import { todoHistory } from "./todoHistory.server";
 
 export type List = typeof lists.$inferSelect;
 
@@ -16,8 +18,9 @@ type ListRepository = {
     create(userId: string, name: string): Promise<List>;
     // The renamed list; undefined if it doesn't exist (or belongs to another user)
     rename(userId: string, id: string, name: string): Promise<List | undefined>;
-    // Deletes the list's todos too (ON DELETE CASCADE). The deleted list; undefined if it doesn't exist (or belongs to another user)
-    delete(userId: string, id: string): Promise<List | undefined>;
+    // Deletes the list's todos too (ON DELETE CASCADE), recorded in their history (ctx: the user and where the list is deleted).
+    // The deleted list; undefined if it doesn't exist (or belongs to another user)
+    delete(ctx: OperationContext, id: string): Promise<List | undefined>;
 };
 
 export function getListRepository(): ListRepository {
@@ -61,11 +64,20 @@ export function getListRepository(): ListRepository {
                 .returning();
             return list;
         },
-        delete: async (userId, id) => {
-            const [list] = await db
+        delete: async (ctx, id) => {
+            const deleteList = db
                 .delete(lists)
-                .where(and(eq(lists.id, id), eq(lists.userId, userId)))
+                .where(and(eq(lists.id, id), eq(lists.userId, ctx.userId)))
                 .returning();
+            // the todos deleted with the list, with their last values for the history (a todo added in between isn't recorded as deleted:
+            // D1 has no transactions across requests)
+            const listTodos = await db
+                .select()
+                .from(todos)
+                .where(and(eq(todos.listId, id), eq(todos.userId, ctx.userId)));
+            const entries = todoHistory.deletedAll(ctx, listTodos);
+            // a batch is atomic: the todos aren't deleted without their history entries
+            const [[list]] = entries ? await db.batch([deleteList, entries]) : [await deleteList];
             return list;
         },
     };
