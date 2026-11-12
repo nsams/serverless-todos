@@ -12,6 +12,10 @@ export const listTodos = createServerFn()
     .validator(operationInput<typeof todoOperations.listTodos>)
     .handler(operationHandler(todoOperations.listTodos));
 
+export const getTodo = createServerFn()
+    .validator(operationInput<typeof todoOperations.getTodo>)
+    .handler(operationHandler(todoOperations.getTodo));
+
 export const createTodo = createServerFn({ method: "POST" })
     .validator(operationInput<typeof todoOperations.createTodo>)
     .handler(operationHandler(todoOperations.createTodo));

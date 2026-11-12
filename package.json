@@ -52,6 +52,7 @@
         "markdown-to-jsx": "^9.10.6",
         "react": "^19.3.1",
         "react-dom": "^19.3.1",
+        "react-hook-form": "^7.91.0",
         "zod": "^4.6.7"
     },
     "devDependencies": {

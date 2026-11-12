@@ -5,7 +5,7 @@ import type { OperationInput } from "~/operations";
 import { listLists } from "./lists.functions";
 import { todosModuleId } from "./moduleId";
 import type { todoOperations } from "./operations.server";
-import { listTodos } from "./todos.functions";
+import { getTodo, listTodos } from "./todos.functions";
 
 // The module's data in the query cache (loaded with the server functions). Every key starts with the module's id, so a change reloads
 // all of it (useInvalidateModule, src/moduleQueries.ts).
@@ -21,4 +21,9 @@ export function useLists() {
 // A page of a list's todos for its grid (sorted and filtered as in the URL)
 export function todosQuery(input: OperationInput<typeof todoOperations.listTodos>) {
     return queryOptions({ queryKey: [todosModuleId, "todos", input], queryFn: () => listTodos({ data: input }) });
+}
+
+// A todo (detail page)
+export function todoQuery(id: string) {
+    return queryOptions({ queryKey: [todosModuleId, "todo", id], queryFn: () => getTodo({ data: { id } }) });
 }

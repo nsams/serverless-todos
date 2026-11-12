@@ -1,4 +1,4 @@
-import { Add, Delete, Move, Warning } from "@dextinity/admin-icons";
+import { Add, Delete, Edit, Move, Warning } from "@dextinity/admin-icons";
 import { Box, Button, Checkbox, Container, Paper, Stack, TextField } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import { DataGridPro, getGridBooleanOperators, getGridDateOperators, getGridStringOperators, GridActionsCellItem } from "@mui/x-data-grid-pro";
@@ -27,7 +27,7 @@ import { todosQuery, useLists } from "../queries";
 import { createTodo, deleteTodo, updateTodo } from "../todos.functions";
 import { todoFields } from "../todoSearch";
 
-export const Route = createFileRoute("/_app/lists/$listId")({
+export const Route = createFileRoute("/_app/lists/$listId/")({
     validateSearch: validateGridSearch,
     loaderDeps: ({ search }) => search,
     loader: async ({ context: { queryClient }, params: { listId }, deps }) => {
@@ -123,6 +123,15 @@ function Todos() {
             field: "actions",
             type: "actions",
             getActions: ({ row }) => [
+                <GridActionsCellItem
+                    key="edit"
+                    icon={<Edit />}
+                    label="Edit"
+                    // the detail page keeps the grid's state for its back link
+                    onClick={() =>
+                        void navigate({ to: "/lists/$listId/$todoId", params: { listId: list.id, todoId: row.id }, search: (search) => search })
+                    }
+                />,
                 <GridActionsCellItem
                     key="delete"
                     icon={<Delete />}
