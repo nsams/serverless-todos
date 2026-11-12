@@ -1,14 +1,18 @@
 import { Agent, type Connection, type ConnectionContext, type WSMessage } from "agents";
 import * as Y from "yjs";
 
+import { denySubAgent } from "~/agents.server";
+
 import {
     changedFields,
     draftClientMessageSchema,
     type DraftDefinition,
+    type DraftDefinitionData,
     type DraftPeer,
     type DraftPresence,
     type DraftServerMessage,
     type DraftValues,
+    ensureTextFields,
     fromBase64,
     hasDraft,
     initDraft,
@@ -23,20 +27,24 @@ import {
 // drafts of the app. Reached only through the worker (drafts.server.ts), which checks that the entity belongs to the user first. It
 // keeps the draft's Yjs document in its storage, syncs it with the forms (WebSocket, hibernating) and tells each form where the others
 // are (cursors). The worker changes it over RPC: the AI assistants' edits, publishing, the stored entity changing elsewhere. It never
-// reads or writes the database: the worker passes the stored entity and the draft's definition (which fields are text fields).
+// reads or writes the database: the worker passes the stored entity with its revision (snapshots loaded earlier can arrive later:
+// older ones are ignored) and the draft's definition (which fields are text fields).
 
 // The authenticated user of a WebSocket connection, set by the worker on the forwarded request (the client can't reach the object directly)
 export const draftUserHeader = "x-draft-user";
 
-const storageKey = "doc";
+// storage (synchronous KV): the document, the revision of the stored entity it last took over, the deletion of the entity
+const docKey = "doc";
+const revisionKey = "revision";
+const deletedKey = "deleted";
 
 // The cursor colors of the others (readable on light and dark backgrounds)
 const peerColors = ["#e91e63", "#9c27b0", "#3f51b5", "#0288d1", "#00897b", "#689f38", "#f57c00", "#6d4c41"];
 
 type ConnectionState = { name: string; color: string; presence: DraftPresence | null };
 
-// What the worker gets to see of the draft
-export type DraftState<Values extends DraftValues> = { draft: Values; published: Values; changedFields: (keyof Values & string)[] };
+// What the worker gets to see of the draft; null: the entity was deleted
+export type DraftState<Values extends DraftValues> = { draft: Values; published: Values; changedFields: (keyof Values & string)[] } | null;
 
 export class DraftAgent extends Agent<Env> {
     #doc: Y.Doc | undefined;
@@ -46,12 +54,15 @@ export class DraftAgent extends Agent<Env> {
     get doc(): Y.Doc {
         if (!this.#doc) {
             const doc = new Y.Doc();
-            const stored = this.ctx.storage.kv.get<Uint8Array>(storageKey);
+            const stored = this.ctx.storage.kv.get<Uint8Array>(docKey);
             if (stored) {
                 Y.applyUpdate(doc, stored);
             }
             doc.on("update", (update: Uint8Array, origin: unknown) => {
-                this.ctx.storage.kv.put(storageKey, Y.encodeStateAsUpdate(doc));
+                if (this.#deleted) {
+                    return;
+                }
+                this.ctx.storage.kv.put(docKey, Y.encodeStateAsUpdate(doc));
                 const message = JSON.stringify({ type: "update", update: toBase64(update) } satisfies DraftServerMessage);
                 this.broadcast(message, typeof origin === "string" ? [origin] : undefined);
             });
@@ -60,66 +71,109 @@ export class DraftAgent extends Agent<Env> {
         return this.#doc;
     }
 
-    // RPC (e.g. the worker, before forwarding a form's WebSocket): starts the draft from the stored entity, or takes over the stored
-    // entity's changes the draft may have missed (rebaseDraft)
-    async openDraft<Values extends DraftValues>(definition: DraftDefinition<Values>, stored: Values): Promise<void> {
-        if (hasDraft(this.doc)) {
-            rebaseDraft(definition, this.doc, stored);
+    get #deleted() {
+        return this.ctx.storage.kv.get<boolean>(deletedKey) === true;
+    }
+
+    // Starts the draft from the stored entity, or takes over the stored entity's changes the draft may have missed (rebaseDraft), unless
+    // the snapshot is older than one taken over before. false: the entity was deleted.
+    #open(definition: DraftDefinitionData, stored: DraftValues, revision: number) {
+        if (this.#deleted) {
+            return false;
+        }
+        const typed = definition as DraftDefinition<DraftValues>;
+        if (!hasDraft(this.doc)) {
+            initDraft(typed, this.doc, stored);
+            this.ctx.storage.kv.put(revisionKey, revision);
         } else {
-            initDraft(definition, this.doc, stored);
+            ensureTextFields(typed, this.doc, stored);
+            this.#takeOver(typed, stored, revision);
+        }
+        return true;
+    }
+
+    #takeOver(definition: DraftDefinition<DraftValues>, stored: DraftValues, revision: number, publishedDraft?: DraftValues) {
+        const current = this.ctx.storage.kv.get<number>(revisionKey) ?? -Infinity;
+        // the snapshot after publishing has the same revision as one loaded right after the save: the published fields still follow it
+        if (revision > current || (revision === current && publishedDraft)) {
+            rebaseDraft(definition, this.doc, stored, publishedDraft);
+            this.ctx.storage.kv.put(revisionKey, revision);
         }
     }
 
+    // RPC (the worker, before forwarding a form's WebSocket): opens the draft. false: the entity was deleted.
+    async openDraft(definition: DraftDefinitionData, stored: DraftValues, revision: number): Promise<boolean> {
+        return this.#open(definition, stored, revision);
+    }
+
     // RPC: the draft (e.g. to publish it)
-    async getDraft<Values extends DraftValues>(definition: DraftDefinition<Values>, stored: Values): Promise<DraftState<Values>> {
-        await this.openDraft(definition, stored);
-        return this.#state(definition);
+    async getDraft(definition: DraftDefinitionData, stored: DraftValues, revision: number): Promise<DraftState<DraftValues>> {
+        return this.#open(definition, stored, revision) ? this.#state(definition) : null;
     }
 
     // RPC (e.g. an AI assistant): changes fields of the draft, the forms show it right away
-    async updateDraft<Values extends DraftValues>(
-        definition: DraftDefinition<Values>,
-        stored: Values,
-        values: Partial<Values>,
-    ): Promise<DraftState<Values>> {
-        await this.openDraft(definition, stored);
-        setDraftValues(definition, this.doc, values);
+    async updateDraft(
+        definition: DraftDefinitionData,
+        stored: DraftValues,
+        revision: number,
+        values: Partial<DraftValues>,
+    ): Promise<DraftState<DraftValues>> {
+        if (!this.#open(definition, stored, revision)) {
+            return null;
+        }
+        setDraftValues(definition as DraftDefinition<DraftValues>, this.doc, values);
         return this.#state(definition);
     }
 
     // RPC: the stored entity changed (published: `publishedDraft` is the draft that was published; or changed elsewhere, e.g. in a
     // grid). Nothing to do if there's no draft yet (it starts from the stored entity).
-    async entityStored<Values extends DraftValues>(definition: DraftDefinition<Values>, stored: Values, publishedDraft?: Values): Promise<void> {
-        if (hasDraft(this.doc)) {
-            rebaseDraft(definition, this.doc, stored, publishedDraft);
+    async entityStored(definition: DraftDefinitionData, stored: DraftValues, revision: number, publishedDraft?: DraftValues): Promise<void> {
+        if (this.#deleted || !hasDraft(this.doc)) {
+            return;
         }
+        const typed = definition as DraftDefinition<DraftValues>;
+        ensureTextFields(typed, this.doc, stored);
+        this.#takeOver(typed, stored, revision, publishedDraft);
     }
 
-    // RPC: the entity was deleted: the forms say so, the draft is gone
+    // RPC: the entity was deleted: the forms say so, the draft is gone. The deletion is kept (a snapshot loaded before it, e.g. of a
+    // form connecting at the same time, mustn't start the draft again).
     async entityDeleted(): Promise<void> {
-        this.broadcast(JSON.stringify({ type: "deleted" } satisfies DraftServerMessage));
-        for (const connection of this.getConnections()) {
-            connection.close(1000, "Deleted");
-        }
+        this.ctx.storage.kv.put(deletedKey, true);
+        this.ctx.storage.kv.delete(docKey);
+        this.ctx.storage.kv.delete(revisionKey);
         this.#doc?.destroy();
         this.#doc = undefined;
-        this.ctx.storage.kv.delete(storageKey);
+        for (const connection of this.getConnections()) {
+            closeDeleted(connection);
+        }
     }
 
-    #state<Values extends DraftValues>(definition: DraftDefinition<Values>): DraftState<Values> {
-        const draft = readDraft(definition, this.doc);
-        const published = readPublished(definition, this.doc);
-        return { draft, published, changedFields: changedFields(definition, draft, published) };
+    #state(definition: DraftDefinitionData): DraftState<DraftValues> {
+        const typed = definition as DraftDefinition<DraftValues>;
+        const draft = readDraft(typed, this.doc);
+        const published = readPublished(typed, this.doc);
+        return { draft, published, changedFields: changedFields(typed, draft, published) };
+    }
+
+    // no sub-agents
+    override async onBeforeSubAgent() {
+        return denySubAgent();
     }
 
     override onConnect(connection: Connection<ConnectionState>, { request }: ConnectionContext) {
+        // deleted after the worker opened the draft
+        if (this.#deleted) {
+            closeDeleted(connection);
+            return;
+        }
         const name = request.headers.get(draftUserHeader) ?? "Unknown";
         connection.setState({ name, color: peerColors[hash(connection.id) % peerColors.length], presence: null });
         this.#sendPeers();
     }
 
-    override onClose(connection: Connection) {
-        this.#sendPeers(connection.id);
+    override onClose() {
+        this.#sendPeers();
     }
 
     override onMessage(connection: Connection<ConnectionState>, raw: WSMessage) {
@@ -137,6 +191,10 @@ export class DraftAgent extends Agent<Env> {
         if (!parsed.success) {
             return;
         }
+        if (this.#deleted) {
+            closeDeleted(connection);
+            return;
+        }
         const message = parsed.data;
         const send = (reply: DraftServerMessage) => connection.send(JSON.stringify(reply));
         switch (message.type) {
@@ -152,7 +210,7 @@ export class DraftAgent extends Agent<Env> {
                 const state = connection.state;
                 if (state) {
                     connection.setState({ ...state, presence: message.presence });
-                    this.#sendPeers(undefined, connection.id);
+                    this.#sendPeers(connection.id);
                 }
                 break;
             }
@@ -162,10 +220,12 @@ export class DraftAgent extends Agent<Env> {
         }
     }
 
-    // Tells every form who else is on the draft and where. closed: the connection that is closing; changed: only the presence of this
-    // connection changed (it doesn't need to know)
-    #sendPeers(closed?: string, changed?: string) {
-        const connections = [...this.getConnections<ConnectionState>()].filter((connection) => connection.id !== closed && connection.state);
+    // Tells every form who else is on the draft and where. changed: only the presence of this connection changed (it doesn't need to
+    // know). Only open connections (not one that is closing: a reconnecting client can have a new connection with the same id).
+    #sendPeers(changed?: string) {
+        const connections = [...this.getConnections<ConnectionState>()].filter(
+            (connection) => connection.readyState === WebSocket.OPEN && connection.state,
+        );
         for (const recipient of connections) {
             if (recipient.id === changed) {
                 continue;
@@ -182,6 +242,14 @@ export class DraftAgent extends Agent<Env> {
             recipient.send(JSON.stringify({ type: "peers", peers } satisfies DraftServerMessage));
         }
     }
+}
+
+// The terminal close of a form's connection when its entity was deleted (4xxx: the client doesn't reconnect)
+export const deletedCloseCode = 4404;
+
+function closeDeleted(connection: { send(message: string): void; close(code?: number, reason?: string): void }) {
+    connection.send(JSON.stringify({ type: "deleted" } satisfies DraftServerMessage));
+    connection.close(deletedCloseCode, "Deleted");
 }
 
 function hash(value: string) {

@@ -31,6 +31,8 @@ export const todos = sqliteTable(
         // calendar date (YYYY-MM-DD) without time zone: whether a todo is overdue depends on the user's local date
         dueDate: text(),
         done: integer({ mode: "boolean" }).notNull().default(false),
+        // increased by every update: orders the snapshots of the todo its draft gets (src/drafts/)
+        revision: integer().notNull().default(0),
         createdAt: integer({ mode: "timestamp_ms" })
             .notNull()
             .$defaultFn(() => new Date()),

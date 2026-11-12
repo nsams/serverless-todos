@@ -14,9 +14,9 @@ type Options = {
     publishErrorMessage?: string;
 };
 
-export type DraftForm<Values extends DraftValues> = {
+export type DraftForm<Values extends DraftValues, TextField extends string = string> = {
     // null until connected
-    session: DraftSession<Values> | null;
+    session: DraftSession<Values, TextField> | null;
     snapshot: DraftSnapshot<Values> | null;
     publish: () => Promise<void>;
     publishing: boolean;
@@ -30,9 +30,13 @@ const noSubscription = () => () => {};
 
 // A form on a shared draft (draft.ts): connects to the draft (path: its WebSocket route, serverDraft's connect), its state is updated
 // when anyone changes the draft. The form renders the draft's values (snapshot.values) and changes them with session.setValues, text
-// fields with DraftTextField (DraftFields.tsx).
-export function useDraftForm<Values extends DraftValues>(definition: DraftDefinition<Values>, path: string, options: Options): DraftForm<Values> {
-    const [session, setSession] = useState<DraftSession<Values> | null>(null);
+// fields with DraftTextField (DraftFields.tsx). Publishing waits until the form's changes are synced (the server publishes its draft).
+export function useDraftForm<Values extends DraftValues, TextField extends string>(
+    definition: DraftDefinition<Values, TextField>,
+    path: string,
+    options: Options,
+): DraftForm<Values, TextField> {
+    const [session, setSession] = useState<DraftSession<Values, TextField> | null>(null);
     const [publishing, setPublishing] = useState(false);
     const [error, setError] = useState<string>();
 
@@ -46,15 +50,7 @@ export function useDraftForm<Values extends DraftValues>(definition: DraftDefini
     }, [definition, path]);
 
     const { onPublishedChange, publish, publishErrorMessage } = options;
-    useEffect(() => {
-        if (!session) {
-            return;
-        }
-        session.onPublishedChange = onPublishedChange;
-        return () => {
-            session.onPublishedChange = undefined;
-        };
-    }, [session, onPublishedChange]);
+    useEffect(() => (session && onPublishedChange ? session.onPublishedChange(onPublishedChange) : undefined), [session, onPublishedChange]);
 
     const snapshot = useSyncExternalStore(session?.subscribe ?? noSubscription, () => session?.getSnapshot() ?? null);
 
@@ -62,6 +58,7 @@ export function useDraftForm<Values extends DraftValues>(definition: DraftDefini
         setPublishing(true);
         setError(undefined);
         try {
+            await session?.whenSynced();
             await publish();
         } catch (publishError) {
             // e.g. a ValidationError's message
@@ -69,7 +66,7 @@ export function useDraftForm<Values extends DraftValues>(definition: DraftDefini
         } finally {
             setPublishing(false);
         }
-    }, [publish, publishErrorMessage]);
+    }, [session, publish, publishErrorMessage]);
 
     const discard = useCallback(() => session?.discard(), [session]);
 

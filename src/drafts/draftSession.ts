@@ -1,7 +1,10 @@
 import { AgentClient } from "agents/client";
 import * as Y from "yjs";
 
+import { ValidationError } from "~/errors";
+
 import {
+    applyTextChange,
     changedFields,
     discardDraft,
     type DraftClientMessage,
@@ -9,7 +12,6 @@ import {
     type DraftPeer,
     type DraftPresence,
     draftText,
-    type DraftTextField,
     type DraftValues,
     fromBase64,
     hasDraft,
@@ -17,8 +19,12 @@ import {
     readDraft,
     readPublished,
     setDraftValues,
+    type TextChangeHint,
     toBase64,
 } from "./draft";
+
+// Publishing while the form's changes can't be synced (shown in the form like a validation error)
+export class DraftNotSyncedError extends ValidationError {}
 
 // A form's connection to a shared draft (draft.ts, the draft's Durable Object: draftAgent.server.ts): a local copy of the draft's
 // Yjs document, synced over a WebSocket (reconnects by itself). The form edits the local copy, the changes are sent right away; what
@@ -47,9 +53,13 @@ export type DraftSnapshot<Values extends DraftValues> = {
 // The origin of the server's updates applied to the local document (local changes have none)
 const remote = Symbol("remote");
 
-export class DraftSession<Values extends DraftValues> {
+// How long publishing waits for the form's changes to be synced
+const syncTimeout = 10_000;
+
+// TextField: the draft's text fields (DraftDefinition)
+export class DraftSession<Values extends DraftValues, TextField extends string = string> {
     readonly doc = new Y.Doc();
-    readonly definition: DraftDefinition<Values>;
+    readonly definition: DraftDefinition<Values, TextField>;
     readonly #socket: AgentClient;
     #listeners = new Set<() => void>();
     #snapshot: DraftSnapshot<Values>;
@@ -62,10 +72,10 @@ export class DraftSession<Values extends DraftValues> {
     #localVersion = 0;
     #ackedVersion = 0;
     // called when the published entity changed (published or changed elsewhere, also by others)
-    onPublishedChange?: () => void;
+    #publishedListeners = new Set<() => void>();
 
     // path: the draft's WebSocket route (serverDraft's connect), e.g. /api/todos/todos/<id>/draft
-    constructor(definition: DraftDefinition<Values>, path: string) {
+    constructor(definition: DraftDefinition<Values, TextField>, path: string) {
         this.definition = definition;
         this.#socket = new AgentClient({
             agent: "DraftAgent",
@@ -125,7 +135,9 @@ export class DraftSession<Values extends DraftValues> {
                     this.#synced = true;
                 }
                 if (hadDraft && JSON.stringify(readPublished(this.definition, this.doc)) !== published) {
-                    this.onPublishedChange?.();
+                    for (const listener of this.#publishedListeners) {
+                        listener();
+                    }
                 }
                 break;
             }
@@ -137,7 +149,7 @@ export class DraftSession<Values extends DraftValues> {
                 break;
             case "deleted":
                 this.#deleted = true;
-                // (the server closes the connection too; not reconnecting: the entity is gone)
+                // (the server closes the connection too, for good)
                 this.#socket.close();
                 break;
         }
@@ -185,8 +197,53 @@ export class DraftSession<Values extends DraftValues> {
 
     getSnapshot = () => this.#snapshot;
 
+    // Calls the listener when the published entity changed (published by anyone, or changed elsewhere); returns the unsubscribe
+    onPublishedChange(listener: () => void) {
+        this.#publishedListeners.add(listener);
+        return () => {
+            this.#publishedListeners.delete(listener);
+        };
+    }
+
+    // Resolves when the server has all local changes (e.g. before publishing, which publishes the server's draft); rejects if they
+    // can't be synced in time (offline) or the entity was deleted
+    whenSynced(timeout = syncTimeout): Promise<void> {
+        return new Promise((resolve, reject) => {
+            const check = () => {
+                const { connected, unsynced, deleted } = this.#snapshot;
+                if (deleted) {
+                    done();
+                    reject(new ValidationError("This doesn't exist anymore."));
+                } else if (connected && !unsynced) {
+                    done();
+                    resolve();
+                }
+            };
+            const timer = setTimeout(() => {
+                done();
+                reject(new DraftNotSyncedError("Your changes aren't synced yet (no connection), please try again."));
+            }, timeout);
+            const unsubscribe = this.subscribe(check);
+            const done = () => {
+                clearTimeout(timer);
+                unsubscribe();
+            };
+            check();
+        });
+    }
+
     setValues(values: Partial<Values>) {
         setDraftValues(this.definition, this.doc, values);
+    }
+
+    // Changes a text field to a new value; hint: where the input's cursor says the change is (see TextChangeHint)
+    setText(field: TextField, value: string, hint?: TextChangeHint) {
+        const text = draftText(this.doc, field);
+        if (text) {
+            this.doc.transact(() => applyTextChange(text, value, hint));
+        } else {
+            this.setValues({ [field]: value } as Partial<Values>);
+        }
     }
 
     // Discards the draft's changes, for everyone
@@ -194,7 +251,7 @@ export class DraftSession<Values extends DraftValues> {
         discardDraft(this.definition, this.doc);
     }
 
-    text(field: DraftTextField<Values>) {
+    text(field: TextField) {
         return draftText(this.doc, field);
     }
 
@@ -217,14 +274,17 @@ export class DraftSession<Values extends DraftValues> {
 // anymore and its changes are synced
 const sessions = new Map<string, { session: DraftSession<DraftValues>; users: number }>();
 
-export function acquireDraftSession<Values extends DraftValues>(definition: DraftDefinition<Values>, path: string): DraftSession<Values> {
+export function acquireDraftSession<Values extends DraftValues, TextField extends string>(
+    definition: DraftDefinition<Values, TextField>,
+    path: string,
+): DraftSession<Values, TextField> {
     let entry = sessions.get(path);
     if (!entry) {
         entry = { session: new DraftSession(definition, path) as unknown as DraftSession<DraftValues>, users: 0 };
         sessions.set(path, entry);
     }
     entry.users++;
-    return entry.session as unknown as DraftSession<Values>;
+    return entry.session as unknown as DraftSession<Values, TextField>;
 }
 
 export function releaseDraftSession(path: string) {

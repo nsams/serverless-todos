@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, gte, isNull, lt, lte, or, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, isNull, lt, lte, or, type SQL, sql } from "drizzle-orm";
 
 import { getDb } from "~/db/db.server";
 import { dateTimeCondition, filterModelCondition, sortOrder, textCondition } from "~/db/filters.server";
@@ -21,6 +21,8 @@ type TodoRepository = {
     // open todos first, then by due date (todos without due date last), newest first
     search(userId: string, options: SearchOptions): Promise<Todo[]>;
     get(userId: string, id: string): Promise<Todo | undefined>;
+    // The ids of a list's todos (e.g. to notify their drafts when the list is deleted with them)
+    idsOfList(userId: string, listId: string): Promise<string[]>;
     // undefined if the list doesn't exist (or belongs to another user)
     create(userId: string, listId: string, values: TodoValues): Promise<Todo | undefined>;
     // The updated todo; undefined if the todo or the target list doesn't exist (or belongs to another user)
@@ -81,6 +83,13 @@ export function getTodoRepository(): TodoRepository {
                 .where(and(eq(todos.id, id), eq(todos.userId, userId)))
                 .get();
         },
+        idsOfList: async (userId, listId) => {
+            const rows = await db
+                .select({ id: todos.id })
+                .from(todos)
+                .where(and(eq(todos.userId, userId), eq(todos.listId, listId)));
+            return rows.map(({ id }) => id);
+        },
         create: async (userId, listId, values) => {
             if (!(await listExists(userId, listId))) {
                 return undefined;
@@ -101,7 +110,7 @@ export function getTodoRepository(): TodoRepository {
             }
             const [todo] = await db
                 .update(todos)
-                .set(values)
+                .set({ ...values, revision: sql`${todos.revision} + 1` })
                 .where(and(eq(todos.id, id), eq(todos.userId, userId)))
                 .returning();
             return todo;

@@ -20,42 +20,61 @@ export type DraftValue = string | number | boolean | null;
 // The fields of a form: an object type of DraftValues (a type alias, not an interface)
 export type DraftValues = Record<string, DraftValue>;
 
-// text: typed character by character into a Y.Text (concurrent typing merges, cursors are shown), only for string fields;
-// value: replaced as a whole (e.g. a date, a select, a checkbox)
+// text: typed character by character into a Y.Text (concurrent typing merges, cursors are shown), only for fields of type string
+// (not for string literal unions or nullable strings: merged concurrent edits could be any string); value: replaced as a whole (e.g.
+// a date, a select, a checkbox)
 export type DraftFieldKind = "text" | "value";
 
+// The fields that can be text fields: of type string
+type TextFieldCandidate<Values extends DraftValues> = {
+    [Field in keyof Values]-?: [Values[Field]] extends [string] ? (string extends Values[Field] ? Field : never) : never;
+}[keyof Values] &
+    string;
+
 export type DraftFieldKinds<Values extends DraftValues> = {
-    [Field in keyof Values]-?: [Values[Field]] extends [string]
+    [Field in keyof Values]-?: Field extends TextFieldCandidate<Values>
         ? DraftFieldKind
-        : // any field (DraftValues itself, e.g. the Durable Object, which serves all drafts)
+        : // any field (DraftValues itself)
           DraftValue extends Values[Field]
           ? DraftFieldKind
           : "value";
 };
 
-// The fields of a draft that are text fields
-export type DraftTextField<Values extends DraftValues> = {
-    [Field in keyof Values]-?: Values[Field] extends string ? Field : never;
-}[keyof Values] &
-    string;
-
-// A kind of draft (e.g. the todo form's): plain data, also passed to the draft's Durable Object
-export type DraftDefinition<Values extends DraftValues> = {
-    // unique among the app's drafts (part of the Durable Object's name)
-    name: string;
+// A kind of draft (e.g. the todo form's), created with defineDraft. TextField: the fields declared as text fields (only these can be
+// edited with DraftTextField).
+export type DraftDefinition<Values extends DraftValues, TextField extends string = string> = DraftDefinitionData & {
     fields: DraftFieldKinds<Values>;
+    // type only
+    readonly __textFields?: TextField;
 };
 
-// e.g. defineDraft<TodoDraftValues>({ name: "todo", fields: { title: "text", done: "value", ... } })
-export function defineDraft<Values extends DraftValues>(definition: DraftDefinition<Values>): DraftDefinition<Values> {
-    return definition;
+// A draft definition as plain data (also passed to the draft's Durable Object, which serves all drafts)
+export type DraftDefinitionData = {
+    // unique among the app's drafts (part of the Durable Object's name)
+    name: string;
+    fields: Record<string, DraftFieldKind>;
+};
+
+// The text fields of a draft definition
+export type DraftTextFieldOf<Definition> = Definition extends DraftDefinition<DraftValues, infer TextField> ? TextField : never;
+
+// A draft: its name and fields, the kind of each field (all fields of Values, no others), e.g.
+//
+//     defineDraft<TodoDraftValues>()({ name: "todo", fields: { title: "text", description: "text", dueDate: "value", ... } })
+//
+// (curried: Values is given, the kinds are inferred, so the text fields are known to the types)
+export function defineDraft<Values extends DraftValues>() {
+    return <const Kinds extends DraftFieldKinds<Values>>(definition: {
+        name: string;
+        fields: Kinds & Record<Exclude<keyof Kinds, keyof Values>, never>;
+    }) => definition as DraftDefinition<Values, { [Field in keyof Kinds]: Kinds[Field] extends "text" ? Field : never }[keyof Kinds] & string>;
 }
 
 export function draftFields<Values extends DraftValues>(definition: DraftDefinition<Values>) {
     return Object.keys(definition.fields) as (keyof Values & string)[];
 }
 
-function isTextField<Values extends DraftValues>(definition: DraftDefinition<Values>, field: keyof Values) {
+function isTextField<Values extends DraftValues>(definition: DraftDefinition<Values>, field: keyof Values & string) {
     return definition.fields[field] === "text";
 }
 
@@ -119,6 +138,22 @@ export function initDraft<Values extends DraftValues>(definition: DraftDefinitio
     });
 }
 
+// The definition changed since the draft was started (a field was added, or a value field became a text field): the text fields
+// become Y.Text, with their current value. Only on the server (before any form syncs), so no two forms create competing Y.Texts.
+export function ensureTextFields<Values extends DraftValues>(definition: DraftDefinition<Values>, doc: Y.Doc, stored: Values) {
+    const draft = draftMap(doc);
+    const missing = draftFields(definition).filter((field) => isTextField(definition, field) && !(draft.get(field) instanceof Y.Text));
+    if (missing.length === 0) {
+        return;
+    }
+    doc.transact(() => {
+        for (const field of missing) {
+            const current = draft.get(field);
+            draft.set(field, new Y.Text(String(current ?? stored[field] ?? "")));
+        }
+    });
+}
+
 function setPublished<Values extends DraftValues>(definition: DraftDefinition<Values>, doc: Y.Doc, stored: Values) {
     const published = publishedMap(doc);
     for (const field of draftFields(definition)) {
@@ -143,9 +178,14 @@ export function setDraftValues<Values extends DraftValues>(
             if (value === undefined) {
                 continue;
             }
-            const text = isTextField(definition, field) ? draftText(doc, field) : undefined;
-            if (text) {
-                applyTextChange(text, String(value ?? ""));
+            if (isTextField(definition, field)) {
+                const text = draftText(doc, field);
+                if (text) {
+                    applyTextChange(text, String(value ?? ""));
+                } else {
+                    // (only before ensureTextFields ran, i.e. never: the server ensures them before anyone edits)
+                    draft.set(field, new Y.Text(String(value ?? "")));
+                }
             } else if (draft.get(field) !== value) {
                 draft.set(field, value);
             }
@@ -153,20 +193,38 @@ export function setDraftValues<Values extends DraftValues>(
     }, origin);
 }
 
+// Where a text changed, as the input's cursor tells it: the changed part starts at or before `start` (the selection's start before
+// the change, or the cursor after it, whichever is smaller) and ends `endFromEnd` characters before the end of the new value (the
+// characters after the cursor). Without it, the change is the part in between the common prefix and suffix, which is ambiguous
+// among repeated characters (e.g. typing "a" in front of "aab").
+export type TextChangeHint = { start: number; endFromEnd: number };
+
+const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff;
+const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
+
 // Changes a text to a new value by deleting and inserting only the part in between the common prefix and suffix (e.g. a typed
-// character is one insertion at the cursor)
-export function applyTextChange(text: Y.Text, value: string) {
+// character is one insertion at the cursor). The boundaries are whole characters: a surrogate pair (e.g. an emoji) is never split
+// (Yjs would replace its halves with U+FFFD).
+export function applyTextChange(text: Y.Text, value: string, hint?: TextChangeHint) {
     const current = text.toString();
     if (current === value) {
         return;
     }
+    const maxStart = Math.min(current.length, value.length, hint?.start ?? Infinity);
     let start = 0;
-    while (start < current.length && start < value.length && current[start] === value[start]) {
+    while (start < maxStart && current[start] === value[start]) {
         start++;
     }
+    if (start > 0 && isHighSurrogate(current.charCodeAt(start - 1))) {
+        start--;
+    }
+    const maxEnd = Math.min(current.length - start, value.length - start, hint?.endFromEnd ?? Infinity);
     let end = 0;
-    while (end < current.length - start && end < value.length - start && current[current.length - 1 - end] === value[value.length - 1 - end]) {
+    while (end < maxEnd && current[current.length - 1 - end] === value[value.length - 1 - end]) {
         end++;
+    }
+    if (end > 0 && isLowSurrogate(current.charCodeAt(current.length - end))) {
+        end--;
     }
     const deleteCount = current.length - start - end;
     if (deleteCount > 0) {
@@ -178,16 +236,15 @@ export function applyTextChange(text: Y.Text, value: string) {
     }
 }
 
-// The stored entity changed (published, or changed elsewhere, e.g. in a grid): the fields the draft doesn't change follow it, the
-// draft's changes are kept. Fields whose draft value was just published (`publishedDraft`, before the save normalized it, e.g.
-// trimmed a title) follow it too.
+// The stored entity changed (changed elsewhere, e.g. in a grid): the fields the draft doesn't change follow it, the draft's changes
+// are kept. After publishing (`publishedDraft`: the draft that was published), the fields that weren't changed since publishing read
+// the draft follow the saved entity (e.g. a trimmed title); a field changed in the meantime stays a change, also one changed back to
+// the old value.
 export function rebaseDraft<Values extends DraftValues>(definition: DraftDefinition<Values>, doc: Y.Doc, stored: Values, publishedDraft?: Values) {
     doc.transact(() => {
         const draft = readDraft(definition, doc);
-        const published = readPublished(definition, doc);
-        const follow = draftFields(definition).filter(
-            (field) => draft[field] === published[field] || (publishedDraft !== undefined && draft[field] === publishedDraft[field]),
-        );
+        const base = publishedDraft ?? readPublished(definition, doc);
+        const follow = draftFields(definition).filter((field) => draft[field] === base[field]);
         setDraftValues(definition, doc, Object.fromEntries(follow.map((field) => [field, stored[field]])) as Partial<Values>);
         setPublished(definition, doc, stored);
     });

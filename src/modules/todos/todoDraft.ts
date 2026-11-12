@@ -15,7 +15,7 @@ export type TodoDraftValues = {
     listId: string;
 };
 
-export const todoDraft = defineDraft<TodoDraftValues>({
+export const todoDraft = defineDraft<TodoDraftValues>()({
     name: "todo",
     fields: { title: "text", description: "text", dueDate: "value", done: "value", listId: "value" },
 });

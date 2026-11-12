@@ -82,6 +82,7 @@ async function saveTodoChanges(userId: string, id: string, changes: TodoChanges)
 // operations (below)
 export const todoDrafts = serverDraft(todoDraft, {
     load: ({ userId }, id) => getTodo(userId, id),
+    revision: (todo) => todo.revision,
     changes: todoChangesSchema,
     check: ({ userId }, changes) => checkTodoChanges(userId, changes),
     save: ({ userId }, id, changes) => saveTodoChanges(userId, id, changes),
@@ -143,10 +144,13 @@ export const todoOperations = {
         effect: "delete",
         ai: { title: "Delete todo list", description: "Deletes a todo list including all its todos. The user is asked to confirm." },
         handler: async ({ userId }, { listId }) => {
+            // its todos are deleted with it (cascade): their drafts are notified
+            const todoIds = await getTodoRepository().idsOfList(userId, listId);
             const list = await getListRepository().delete(userId, listId);
             if (!list) {
                 throw new NotFoundError(`List ${listId} not found`);
             }
+            await todoDrafts.deletedMany(todoIds);
             return { deleted: listView(list) };
         },
     }),

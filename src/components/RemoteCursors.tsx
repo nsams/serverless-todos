@@ -20,7 +20,8 @@ type Props = {
 
 type Rect = { left: number; top: number; width: number; height: number };
 
-type Measured = { id: string; name: string; color: string; caret: Rect; selection: Rect[] };
+// caret: undefined if scrolled out of view (the visible part of the selection is still shown)
+type Measured = { id: string; name: string; color: string; caret: Rect | undefined; selection: Rect[] };
 
 // Shows the cursors of others in a text input (<input> or <textarea>): a caret with the user's name, and the selected text highlighted.
 // Rendered next to the input inside a positioned container (the overlay is positioned relative to it). Text inputs have no DOM for
@@ -57,17 +58,33 @@ export function RemoteCursors({ input, cursors, value }: Props) {
         const dy = offset.top - containerOffset.top;
         const length = element.value.length;
         const clamp = (index: number) => Math.max(0, Math.min(index, length));
-        const visible = (rect: Rect) => rect.left >= 0 && rect.left <= element.clientWidth && rect.top >= 0 && rect.top < element.clientHeight;
-        const next = cursors.flatMap(({ id, name, color, anchor, head }) => {
-            const caret = measureRange(element, clamp(head), clamp(head))[0];
-            if (!caret || !visible(caret)) {
-                return [];
-            }
+        // the input's visible text area (its padding box, in the coordinates of measureRange)
+        const area = {
+            left: element.clientLeft,
+            top: element.clientTop,
+            right: element.clientLeft + element.clientWidth,
+            bottom: element.clientTop + element.clientHeight,
+        };
+        const caretVisible = (rect: Rect) => rect.left >= area.left && rect.left <= area.right && rect.top >= area.top && rect.top < area.bottom;
+        // a selection's rectangle cut to the visible area; undefined if nothing of it is visible
+        const clip = (rect: Rect): Rect | undefined => {
+            const left = Math.max(rect.left, area.left);
+            const top = Math.max(rect.top, area.top);
+            const right = Math.min(rect.left + rect.width, area.right);
+            const bottom = Math.min(rect.top + rect.height, area.bottom);
+            return right > left && bottom > top ? { left, top, width: right - left, height: bottom - top } : undefined;
+        };
+        const move = (rect: Rect) => ({ ...rect, left: rect.left + dx, top: rect.top + dy });
+        const next = cursors.flatMap(({ id, name, color, anchor, head }): Measured[] => {
+            const measuredCaret = measureRange(element, clamp(head), clamp(head))[0];
+            const caret = measuredCaret && caretVisible(measuredCaret) ? move(measuredCaret) : undefined;
             const start = clamp(Math.min(anchor, head));
             const end = clamp(Math.max(anchor, head));
-            const selection = start === end ? [] : measureRange(element, start, end);
-            const move = (rect: Rect) => ({ ...rect, left: rect.left + dx, top: rect.top + dy });
-            return [{ id, name, color, caret: move(caret), selection: selection.map(move) }];
+            const selection = (start === end ? [] : measureRange(element, start, end)).flatMap((rect) => {
+                const clipped = clip(rect);
+                return clipped ? [move(clipped)] : [];
+            });
+            return caret || selection.length > 0 ? [{ id, name, color, caret, selection }] : [];
         });
         // only when something moved (no render loop)
         setMeasured((previous) => (JSON.stringify(previous) === JSON.stringify(next) ? previous : next));
@@ -80,25 +97,31 @@ export function RemoteCursors({ input, cursors, value }: Props) {
                     {selection.map((rect, index) => (
                         <Box key={index} sx={{ position: "absolute", ...rect, bgcolor: color, opacity: 0.2 }} />
                     ))}
-                    <Box sx={{ position: "absolute", left: caret.left - 1, top: caret.top, width: 2, height: caret.height, bgcolor: color }} />
-                    <Box
-                        sx={{
-                            position: "absolute",
-                            left: caret.left - 1,
-                            top: caret.top,
-                            transform: "translateY(-100%)",
-                            px: 0.5,
-                            borderRadius: "3px 3px 3px 0",
-                            bgcolor: color,
-                            color: "#fff",
-                            fontSize: 11,
-                            lineHeight: "16px",
-                            whiteSpace: "nowrap",
-                            zIndex: 1,
-                        }}
-                    >
-                        {name}
-                    </Box>
+                    {caret && (
+                        <>
+                            <Box
+                                sx={{ position: "absolute", left: caret.left - 1, top: caret.top, width: 2, height: caret.height, bgcolor: color }}
+                            />
+                            <Box
+                                sx={{
+                                    position: "absolute",
+                                    left: caret.left - 1,
+                                    top: caret.top,
+                                    transform: "translateY(-100%)",
+                                    px: 0.5,
+                                    borderRadius: "3px 3px 3px 0",
+                                    bgcolor: color,
+                                    color: "#fff",
+                                    fontSize: 11,
+                                    lineHeight: "16px",
+                                    whiteSpace: "nowrap",
+                                    zIndex: 1,
+                                }}
+                            >
+                                {name}
+                            </Box>
+                        </>
+                    )}
                 </Box>
             ))}
         </>

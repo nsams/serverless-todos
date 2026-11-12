@@ -1,10 +1,10 @@
 import { Alert, Box, Button, Chip, Stack, TextField, type TextFieldProps, Typography } from "@mui/material";
-import { type ReactNode, useLayoutEffect, useRef } from "react";
+import { type CompositionEvent, type ReactNode, type SyntheticEvent, useLayoutEffect, useRef, useState } from "react";
 import * as Y from "yjs";
 
 import { type RemoteCursor, RemoteCursors } from "~/components/RemoteCursors";
 
-import type { DraftPeer, DraftTextField as DraftTextFieldName, DraftValues } from "./draft";
+import type { DraftPeer, DraftValues } from "./draft";
 import type { DraftSession, DraftSnapshot } from "./draftSession";
 import type { DraftForm } from "./useDraftForm";
 
@@ -16,23 +16,38 @@ export function peerName(peer: DraftPeer) {
     return peer.self ? "You (other window)" : peer.name;
 }
 
-type DraftTextFieldProps<Values extends DraftValues> = Omit<
+type DraftTextFieldProps<Values extends DraftValues, TextField extends string> = Omit<
     TextFieldProps,
-    "value" | "onChange" | "inputRef" | "onFocus" | "onBlur" | "slotProps"
+    "value" | "onChange" | "inputRef" | "inputProps" | "InputProps" | "InputLabelProps"
 > & {
-    session: DraftSession<Values>;
+    session: DraftSession<Values, TextField>;
     snapshot: DraftSnapshot<Values>;
-    // a text field of the draft's definition
-    field: DraftTextFieldName<Values>;
+    // a text field of the draft's definition (not inferred from it: only the session tells which fields are text fields)
+    field: NoInfer<TextField>;
     maxLength?: number;
 };
 
+type Selection = { anchor: Y.RelativePosition; head: Y.RelativePosition };
+
 // A text field of the draft (MUI TextField, also multiline). The local cursor is kept as Yjs relative position, so it stays at its
-// place when others change the text (the input's value is replaced, which moves the browser's cursor to the end).
-export function DraftTextField<Values extends DraftValues>({ session, snapshot, field, maxLength, ...props }: DraftTextFieldProps<Values>) {
+// place when others change the text (the input's value is replaced, which moves the browser's cursor to the end). While an input
+// method composes (e.g. Japanese), the input keeps its own value: the composed text goes into the draft when it is committed.
+export function DraftTextField<Values extends DraftValues, TextField extends string>({
+    session,
+    snapshot,
+    field,
+    maxLength,
+    slotProps,
+    onFocus,
+    onBlur,
+    ...props
+}: DraftTextFieldProps<Values, TextField>) {
     const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
-    const selection = useRef<{ anchor: Y.RelativePosition; head: Y.RelativePosition } | null>(null);
-    const value = String(snapshot.values[field] ?? "");
+    const selection = useRef<Selection | null>(null);
+    // the input's value while an input method composes
+    const [composing, setComposing] = useState<string | null>(null);
+    const draftValue = String(snapshot.values[field] ?? "");
+    const value = composing ?? draftValue;
 
     // the local selection, after every change and cursor move: kept and shown to the others
     const rememberSelection = () => {
@@ -50,11 +65,29 @@ export function DraftTextField<Values extends DraftValues>({ session, snapshot, 
         session.setPresence({ field, anchor: Y.relativePositionToJSON(anchor), head: Y.relativePositionToJSON(head) });
     };
 
+    // The input's new value into the draft, where its cursor says the change is (the previous selection's start, the cursor after it)
+    const change = (input: HTMLInputElement | HTMLTextAreaElement) => {
+        const previous = selection.current;
+        const previousStart = previous
+            ? Math.min(
+                  Y.createAbsolutePositionFromRelativePosition(previous.anchor, session.doc)?.index ?? Infinity,
+                  Y.createAbsolutePositionFromRelativePosition(previous.head, session.doc)?.index ?? Infinity,
+              )
+            : Infinity;
+        const cursor = input.selectionEnd;
+        session.setText(
+            field,
+            input.value,
+            cursor === null ? undefined : { start: Math.min(previousStart, cursor), endFromEnd: input.value.length - cursor },
+        );
+        rememberSelection();
+    };
+
     // the text changed (also by others): the local selection back at its place
     useLayoutEffect(() => {
         const input = inputRef.current;
         const current = selection.current;
-        if (!input || !current || document.activeElement !== input) {
+        if (!input || !current || composing !== null || document.activeElement !== input) {
             return;
         }
         const anchor = Y.createAbsolutePositionFromRelativePosition(current.anchor, session.doc)?.index;
@@ -67,7 +100,7 @@ export function DraftTextField<Values extends DraftValues>({ session, snapshot, 
         if (input.selectionStart !== start || input.selectionEnd !== end) {
             input.setSelectionRange(start, end, head < anchor ? "backward" : "forward");
         }
-    }, [value, session]);
+    }, [value, composing, session]);
 
     const cursors = snapshot.peers.flatMap((peer): RemoteCursor[] => {
         const presence = peer.presence;
@@ -82,6 +115,7 @@ export function DraftTextField<Values extends DraftValues>({ session, snapshot, 
         return [{ id: peer.id, name: peerName(peer), color: peer.color, anchor, head }];
     });
 
+    const htmlInput = typeof slotProps?.htmlInput === "object" ? slotProps.htmlInput : undefined;
     return (
         <Box data-remote-cursors-container sx={{ position: "relative" }}>
             <TextField
@@ -89,15 +123,43 @@ export function DraftTextField<Values extends DraftValues>({ session, snapshot, 
                 value={value}
                 inputRef={inputRef}
                 onChange={(event) => {
-                    session.setValues({ [field]: event.target.value } as Partial<Values>);
+                    if (composing !== null) {
+                        setComposing(event.target.value);
+                        return;
+                    }
+                    change(event.target);
+                }}
+                onFocus={(event) => {
+                    onFocus?.(event);
                     rememberSelection();
                 }}
-                onFocus={rememberSelection}
-                onBlur={() => {
+                onBlur={(event) => {
+                    onBlur?.(event);
                     selection.current = null;
                     session.setPresence(null);
                 }}
-                slotProps={{ htmlInput: { maxLength, onSelect: rememberSelection } }}
+                slotProps={{
+                    ...slotProps,
+                    htmlInput: {
+                        ...htmlInput,
+                        maxLength,
+                        onSelect: (event: SyntheticEvent<HTMLInputElement>) => {
+                            htmlInput?.onSelect?.(event);
+                            if (composing === null) {
+                                rememberSelection();
+                            }
+                        },
+                        onCompositionStart: (event: CompositionEvent<HTMLInputElement>) => {
+                            htmlInput?.onCompositionStart?.(event);
+                            setComposing(event.currentTarget.value);
+                        },
+                        onCompositionEnd: (event: CompositionEvent<HTMLInputElement>) => {
+                            htmlInput?.onCompositionEnd?.(event);
+                            setComposing(null);
+                            change(event.currentTarget);
+                        },
+                    },
+                }}
             />
             <RemoteCursors input={inputRef} cursors={cursors} value={value} />
         </Box>
@@ -117,7 +179,10 @@ function absoluteIndex(doc: Y.Doc, json: unknown) {
 }
 
 // The focus handlers of a field that isn't a text field (e.g. a date, a select, a checkbox): tell the others which field the form is on
-export function draftPresenceProps<Values extends DraftValues>(session: DraftSession<Values>, field: keyof Values & string) {
+export function draftPresenceProps<Values extends DraftValues, TextField extends string>(
+    session: DraftSession<Values, TextField>,
+    field: keyof Values & string,
+) {
     return {
         onFocus: () => session.setPresence({ field }),
         onBlur: () => session.setPresence(null),
@@ -187,8 +252,8 @@ export function DraftPeers<Values extends DraftValues>({ snapshot }: { snapshot:
     );
 }
 
-type DraftFormActionsProps<Values extends DraftValues> = {
-    form: DraftForm<Values>;
+type DraftFormActionsProps<Values extends DraftValues, TextField extends string> = {
+    form: DraftForm<Values, TextField>;
     snapshot: DraftSnapshot<Values>;
     // the fields' labels, for the list of unpublished changes
     fieldLabels: Record<keyof Values & string, string>;
@@ -197,23 +262,34 @@ type DraftFormActionsProps<Values extends DraftValues> = {
 };
 
 // Below the form: why publishing failed, the draft's state (connection, unpublished changes), Discard changes (for everyone) and
-// Publish (a submit button: the form's onSubmit calls form.publish)
-export function DraftFormActions<Values extends DraftValues>({ form, snapshot, fieldLabels, canPublish = true }: DraftFormActionsProps<Values>) {
-    const changes = snapshot.changedFields;
+// Publish (a submit button: the form's onSubmit calls form.publish; disabled while offline, it waits for the form's changes to be synced)
+export function DraftFormActions<Values extends DraftValues, TextField extends string>({
+    form,
+    snapshot,
+    fieldLabels,
+    canPublish = true,
+}: DraftFormActionsProps<Values, TextField>) {
+    const changes = snapshot.changedFields.map((field) => fieldLabels[field]);
     return (
         <>
             {form.error && <Alert severity="error">{form.error}</Alert>}
             <Box sx={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-                <Typography variant="body2" color="text.secondary" sx={{ mr: "auto" }} role="status">
-                    {draftStatus(
-                        snapshot,
-                        changes.map((field) => fieldLabels[field]),
-                    )}
+                {/* the visible state includes "Syncing…" while typing; screen readers only get the lasting state */}
+                <Typography variant="body2" color="text.secondary" sx={{ mr: "auto" }} aria-hidden>
+                    {draftStatus(snapshot, changes)}
                 </Typography>
+                <Box role="status" sx={visuallyHidden}>
+                    {draftStatus({ ...snapshot, unsynced: snapshot.unsynced && !snapshot.connected }, changes)}
+                </Box>
                 <Button onClick={form.discard} disabled={changes.length === 0 || form.publishing}>
                     Discard changes
                 </Button>
-                <Button type="submit" variant="contained" disabled={changes.length === 0 || !canPublish} loading={form.publishing}>
+                <Button
+                    type="submit"
+                    variant="contained"
+                    disabled={changes.length === 0 || !canPublish || !snapshot.connected}
+                    loading={form.publishing}
+                >
                     Publish
                 </Button>
             </Box>
@@ -221,8 +297,21 @@ export function DraftFormActions<Values extends DraftValues>({ form, snapshot, f
     );
 }
 
+// Read by screen readers, not shown
+const visuallyHidden = {
+    position: "absolute",
+    width: 1,
+    height: 1,
+    overflow: "hidden",
+    clip: "rect(0 0 0 0)",
+    whiteSpace: "nowrap",
+    margin: -1,
+    padding: 0,
+    border: 0,
+} as const;
+
 // The state of the draft: the connection, the unpublished changes
-function draftStatus<Values extends DraftValues>(snapshot: DraftSnapshot<Values>, changes: string[]) {
+function draftStatus(snapshot: Pick<DraftSnapshot<DraftValues>, "connected" | "unsynced">, changes: string[]) {
     if (!snapshot.connected) {
         return snapshot.unsynced ? "Offline: your changes will be synced when the connection is back" : "Offline, reconnecting…";
     }
