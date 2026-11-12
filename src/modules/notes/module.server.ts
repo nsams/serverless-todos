@@ -1,16 +1,18 @@
 import { defineChatContext } from "~/chat/chatPage";
 import type { ServerModule } from "~/modules/types";
 
+import { notesApi } from "./api.server";
 import { notesChatPage } from "./chatPage";
 import { getNotebookRepository } from "./db/notebooks.server";
 import { getNoteRepository } from "./db/notes.server";
 import { notesModuleId } from "./moduleId";
 import { noteInstructions, noteOperations } from "./operations.server";
 
-// The notes module (notebooks and Markdown notes), server part. App shell part: module.ts.
+// The notes module (notebooks and Markdown notes), server part (found by src/modules/registry.server.ts). App shell part: module.ts.
 export const serverModule: ServerModule = {
     id: notesModuleId,
     operations: noteOperations,
+    api: notesApi,
     instructions: noteInstructions,
     chatContext: defineChatContext(notesChatPage, async (userId, page) => {
         if (page?.noteId) {

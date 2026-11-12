@@ -1,37 +1,43 @@
 import { type DataGridProProps, type GridFilterModel, GridLogicOperator, type GridSortModel, type GridValidRowModel } from "@mui/x-data-grid-pro";
-import { useRouterState } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useNavigate } from "react-router";
 
 import { type GridFields, type GridSearch, lastPageWithRows, pageSizeOptions, parseGridSearch, serializeFilterValue } from "~/gridSearch";
+import { stringifySearch } from "~/searchParams";
+
+import { useStableValue } from "./useStableValue";
 
 type Options<Row extends GridValidRowModel, Search extends GridSearch, Fields extends GridFields> = {
-    // the route's validateSearch
-    validateSearch: (search: unknown) => Search;
+    // the page's search params (its route's useSearch): the current ones, also while the rows for them are loading
+    search: Search;
     // the sortable and filterable fields
     fields: Fields;
-    // changes the route's search params, e.g. with the route's useNavigate
-    navigate: (search: Search, options: { replace: boolean }) => void;
     // the rows of the page and the number of rows on the server (with the filters applied)
     rows: Row[];
     rowCount: number;
+    // the rows for the search params are loading (the grid shows the previous ones meanwhile, see usePageQuery)
+    loading: boolean;
     // fields with calendar date filters (YYYY-MM-DD), e.g. a due date
     dateOnlyFields?: (keyof Fields & string)[];
 };
 
 // A DataGrid with server-side pagination, sorting and filtering whose state lives in the URL (see src/gridSearch.ts):
-// gridProps connect the grid to the URL, the route's loader loads the rows for it (parseGridSearch on the server).
+// gridProps connect the grid to the URL, the page's query loads the rows for it from the API (parseGridSearch on the server).
+// The grid's state is the URL's right away, also while its rows are loading (e.g. a filter value while typing).
 export function useServerGrid<Row extends GridValidRowModel, Search extends GridSearch, Fields extends GridFields>({
-    validateSearch,
+    search,
     fields,
-    navigate,
     rows,
     rowCount,
+    loading,
     dateOnlyFields = [],
 }: Options<Row, Search, Fields>) {
-    // Use the pending location while loading, otherwise the grid would show the old state until the loader is done (e.g. reset a filter value while typing)
-    const search = validateSearch(useRouterState({ select: (state) => state.location.search }));
-    const loading = useRouterState({ select: (state) => state.status === "pending" && state.location.href !== state.resolvedLocation?.href });
+    const navigate = useNavigate();
     const { page, pageSize, sort, filter, filterItems } = parseGridSearch(search, fields);
+
+    // Changes the page's search params; keeps the scroll position
+    const navigateToSearch = (newSearch: Search, { replace }: { replace: boolean }) =>
+        void navigate({ search: stringifySearch(newSearch) }, { replace, preventScrollReset: true });
 
     // Stable references: the grid treats a new sort model object as a changed sort and goes back to the first page
     // (e.g. a grid opened on ?page=1 ended up on the first page)
@@ -46,14 +52,15 @@ export function useServerGrid<Row extends GridValidRowModel, Search extends Grid
     const lastPage = loading ? undefined : lastPageWithRows({ page, pageSize }, rows.length, rowCount);
     useEffect(() => {
         if (lastPage !== undefined) {
-            navigate({ ...search, page: lastPage || undefined }, { replace: true });
+            navigateToSearch({ ...search, page: lastPage || undefined }, { replace: true });
         }
-        // once per empty page (navigate and search are new on every render)
+        // once per empty page (navigateToSearch and search are new on every render)
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [lastPage]);
 
     // Changes search params, e.g. a search field next to the grid (also goes back to the first page)
-    const updateSearch = (values: Partial<Search>, { replace = false } = {}) => navigate({ ...search, page: undefined, ...values }, { replace });
+    const updateSearch = (values: Partial<Search>, { replace = false } = {}) =>
+        navigateToSearch({ ...search, page: undefined, ...values }, { replace });
 
     const gridProps = {
         pagination: true,
@@ -65,13 +72,13 @@ export function useServerGrid<Row extends GridValidRowModel, Search extends Grid
         loading,
         pageSizeOptions,
         paginationModel,
-        onPaginationModelChange: (model) => navigate({ ...search, page: model.page, pageSize: model.pageSize }, { replace: false }),
+        onPaginationModelChange: (model) => navigateToSearch({ ...search, page: model.page, pageSize: model.pageSize }, { replace: false }),
         sortModel,
         onSortModelChange: (model) =>
-            navigate({ ...search, page: undefined, sort: model.map((item) => `${item.field}:${item.sort}`) }, { replace: false }),
+            navigateToSearch({ ...search, page: undefined, sort: model.map((item) => `${item.field}:${item.sort}`) }, { replace: false }),
         filterModel,
         onFilterModelChange: (model) =>
-            navigate(
+            navigateToSearch(
                 {
                     ...search,
                     page: undefined,
@@ -86,16 +93,6 @@ export function useServerGrid<Row extends GridValidRowModel, Search extends Grid
             ),
     } satisfies Partial<DataGridProProps>;
 
-    // search: the current search params; hasFilter: whether the filters filter (e.g. for the text of an empty grid)
-    return { search, hasFilter: filter.items.length > 0, updateSearch, gridProps };
-}
-
-// The previous value as long as it is equal (as JSON) to the new one
-function useStableValue<T>(value: T): T {
-    const [stable, setStable] = useState(value);
-    if (JSON.stringify(value) === JSON.stringify(stable)) {
-        return stable;
-    }
-    setStable(value);
-    return value;
+    // hasFilter: whether the filters filter (e.g. for the text of an empty grid)
+    return { hasFilter: filter.items.length > 0, updateSearch, gridProps };
 }

@@ -27,8 +27,7 @@ function subscribeToDateChange(onChange: () => void) {
     return () => clearInterval(interval);
 }
 
-// The user's local date (YYYY-MM-DD). Only for components rendered in the browser (the app's pages aren't rendered on the server,
-// see src/routes/_app.tsx): the server doesn't know the user's time zone.
+// The user's local date (YYYY-MM-DD), updated when the date changes
 export function useToday() {
     return useSyncExternalStore(subscribeToDateChange, () => toDateString(new Date()));
 }

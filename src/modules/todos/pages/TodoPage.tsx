@@ -15,53 +15,46 @@ import {
     Typography,
 } from "@mui/material";
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute, createLink } from "@tanstack/react-router";
+import { type InferRequestType, type InferResponseType, parseResponse } from "hono/client";
 import type { ReactNode } from "react";
 import { Controller, useForm } from "react-hook-form";
+import { Link, matchPath, useNavigate } from "react-router";
 
-import { pageHead } from "~/app";
 import { useChatPage } from "~/chat/useChatPage";
+import { PageError, PageErrorBoundary } from "~/client/errors";
+import { useInvalidateModule, usePageQuery } from "~/client/queries";
+import { useDocumentTitle } from "~/components/useDocumentTitle";
 import { useUnsavedChangesPrompt } from "~/components/useUnsavedChangesPrompt";
-import { errorMessage } from "~/errors";
-import { validateGridSearch } from "~/gridSearch";
-import { useInvalidateModule, usePageQuery } from "~/moduleQueries";
-import type { OperationInput } from "~/operations";
+import { errorMessage, NotFoundError } from "~/errors";
 
+import { todosClient } from "../api";
 import { todosChatPage } from "../chatPage";
 import { maxTodoDescriptionLength, maxTodoTitleLength } from "../limits";
 import { todosModuleId } from "../moduleId";
-import type { todoOperations, TodoView } from "../operations.server";
-import { listsQuery, todoQuery } from "../queries";
-import { updateTodo } from "../todos.functions";
+import { listsQuery, todoQuery, useLists } from "../queries";
+import { listRoute, todoRoute } from "../routes";
 
-// A todo's detail page: a form, saved with its Save button. The search params are the state of the list's grid
-// (lists.$listId.index.tsx), kept for the back link.
-export const Route = createFileRoute("/_app/lists/$listId/$todoId")({
-    validateSearch: validateGridSearch,
-    loader: async ({ context: { queryClient }, params: { todoId } }) => {
-        // the lists for the list field (usually loaded already for the sidebar)
-        const [todo] = await Promise.all([queryClient.fetchQuery(todoQuery(todoId)), queryClient.ensureQueryData(listsQuery)]);
-        return { title: todo.title };
-    },
-    head: ({ loaderData }) => pageHead(loaderData?.title),
-    component: TodoPage,
-    // e.g. deleted by the assistant while open
-    notFoundComponent: () => (
-        <TodoPageLayout>
-            <Paper sx={{ p: 4, textAlign: "center" }}>
-                <Typography color="text.secondary">This todo doesn't exist (anymore).</Typography>
-            </Paper>
-        </TodoPageLayout>
-    ),
-});
+type Todo = InferResponseType<(typeof todosClient.todos)[":id"]["$get"], 200>;
+type TodoChanges = InferRequestType<(typeof todosClient.todos)[":id"]["$patch"]>["json"];
 
-const IconButtonLink = createLink(IconButton);
+// A todo's detail page: a form, saved with its Save button (see todoRoute). The search params are the state of the list's grid
+// (ListPage.tsx), kept for the back link.
+export default function TodoPage() {
+    return (
+        <PageErrorBoundary Fallback={TodoPageError}>
+            <TodoLoader />
+        </PageErrorBoundary>
+    );
+}
 
-function TodoPage() {
-    const { todoId } = Route.useParams();
-    const todo = usePageQuery(todoQuery(todoId));
+function TodoLoader() {
+    const { todoId } = todoRoute.useParams();
+    const { data: todo } = usePageQuery(todoQuery, todoId);
+    useDocumentTitle(todo.title);
     // what the assistant gets to know about the page
     useChatPage(todosChatPage, { listId: todo.listId, todoId: todo.id });
+    // Deliberately no redirect when the todo was moved elsewhere (unlike the note page): it would race with "save and leave" in the
+    // unsaved changes dialog (the reloaded todo would redirect to its new URL instead of the page the user wanted to go to)
     return (
         <TodoPageLayout>
             {/* a fresh form per todo */}
@@ -70,19 +63,34 @@ function TodoPage() {
     );
 }
 
+// e.g. deleted by the assistant while open
+function TodoPageError({ error }: { error: unknown }) {
+    useDocumentTitle();
+    if (!(error instanceof NotFoundError)) {
+        return <PageError error={error} />;
+    }
+    return (
+        <TodoPageLayout>
+            <Paper sx={{ p: 4, textAlign: "center" }}>
+                <Typography color="text.secondary">This todo doesn't exist (anymore).</Typography>
+            </Paper>
+        </TodoPageLayout>
+    );
+}
+
 // The back link to the list's grid (in the state it was left) above the form
 function TodoPageLayout({ children }: { children: ReactNode }) {
-    const { listId } = Route.useParams();
-    const search = Route.useSearch();
-    const list = useSuspenseQuery(listsQuery).data.find((item) => item.id === listId);
+    const { listId } = todoRoute.useParams();
+    const listLink = listRoute.href({ listId }, todoRoute.useSearch());
+    const list = useLists().find((item) => item.id === listId);
     return (
         <Container sx={{ py: 4 }}>
             <Stack spacing={2}>
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                     <Tooltip title="Back to the list">
-                        <IconButtonLink to="/lists/$listId" params={{ listId }} search={search} edge="start" aria-label="Back to the list">
+                        <IconButton component={Link} to={listLink} edge="start" aria-label="Back to the list">
                             <ArrowLeft />
-                        </IconButtonLink>
+                        </IconButton>
                     </Tooltip>
                     <Typography color="text.secondary" noWrap>
                         {list?.name}
@@ -97,15 +105,16 @@ function TodoPageLayout({ children }: { children: ReactNode }) {
 // The form's values: the todo's fields as the inputs hold them ("" for no due date)
 type TodoFormValues = { title: string; description: string; dueDate: string; done: boolean; listId: string };
 
-function formValues(todo: TodoView): TodoFormValues {
+function formValues(todo: Todo): TodoFormValues {
     return { title: todo.title, description: todo.description, dueDate: todo.dueDate ?? "", done: todo.done, listId: todo.listId };
 }
 
-function TodoForm({ todo }: { todo: TodoView }) {
-    const navigate = Route.useNavigate();
-    const search = Route.useSearch();
+function TodoForm({ todo }: { todo: Todo }) {
+    const navigate = useNavigate();
+    const search = todoRoute.useSearch();
     const queryClient = useQueryClient();
     const invalidate = useInvalidateModule(todosModuleId);
+    // the options of the list field: waits for them (usually loaded already for the sidebar)
     const lists = useSuspenseQuery(listsQuery).data;
 
     const {
@@ -123,25 +132,24 @@ function TodoForm({ todo }: { todo: TodoView }) {
     // resetOptions apply to every reset(): a reset by the form itself (saved, discarded) drops the changes
     const resetForm = (values?: TodoFormValues) => reset(values, { keepDirtyValues: false });
 
-    // Saves the changed fields: true if saved
+    // Saves the changed fields: the saved todo, undefined if saving failed
     const save = async (values: TodoFormValues) => {
         const title = values.title.trim();
         const dueDate = values.dueDate || null;
-        // the changed fields, undefined: unchanged (typed by the operation: a renamed field breaks the build)
-        const changes = {
-            id: todo.id,
+        // the changed fields, undefined: unchanged (a typed object literal: a renamed field of the API breaks the build)
+        const changes: TodoChanges = {
             title: title !== todo.title ? title : undefined,
             description: values.description !== todo.description ? values.description : undefined,
             dueDate: dueDate !== todo.dueDate ? dueDate : undefined,
             done: values.done !== todo.done ? values.done : undefined,
             listId: values.listId !== todo.listId ? values.listId : undefined,
-        } satisfies OperationInput<typeof todoOperations.updateTodo>;
+        };
         try {
-            const { updated } = await updateTodo({ data: changes });
+            const { updated } = await parseResponse(todosClient.todos[":id"].$patch({ param: { id: todo.id }, json: changes }));
             // the saved state is the form's new initial state (not dirty anymore)
             resetForm(formValues(updated));
             queryClient.setQueryData(todoQuery(todo.id).queryKey, updated);
-            // e.g. the sidebar's open counts, the list's grid, the tab title
+            // e.g. the sidebar's open counts, the list's grid
             void invalidate();
             return updated;
         } catch (error) {
@@ -156,7 +164,7 @@ function TodoForm({ todo }: { todo: TodoView }) {
         const updated = await save(values);
         if (updated && updated.listId !== todo.listId) {
             // moved to another list: the URL follows the todo
-            await navigate({ to: "/lists/$listId/$todoId", params: { listId: updated.listId, todoId: todo.id }, search, replace: true });
+            await navigate(todoRoute.href({ listId: updated.listId, todoId: todo.id }, search), { replace: true });
         }
     });
 
@@ -171,7 +179,7 @@ function TodoForm({ todo }: { todo: TodoView }) {
             return saved;
         },
         // the URL following the todo to another list (after saving) doesn't leave the form
-        stays: ({ next }) => next.routeId === Route.id && next.params.todoId === todo.id,
+        stays: ({ nextLocation }) => matchPath(todoRoute.path, nextLocation.pathname)?.params.todoId === todo.id,
     });
 
     return (

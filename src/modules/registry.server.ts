@@ -5,14 +5,14 @@ import type { AppTool, ServerModule } from "./types";
 
 // The modules of the app (server part): the `serverModule` export of every src/modules/<module>/module.server.ts, so a new module
 // needs no entry here. App shell part: registry.ts.
-const serverModules = Object.entries(import.meta.glob<ServerModule | undefined>("./*/module.server.ts", { eager: true, import: "serverModule" })).map(
-    ([path, module]) => {
-        if (!module) {
-            throw new Error(`${path} doesn't export serverModule`);
-        }
-        return module;
-    },
-);
+export const serverModules = Object.entries(
+    import.meta.glob<ServerModule | undefined>("./*/module.server.ts", { eager: true, import: "serverModule" }),
+).map(([path, module]) => {
+    if (!module) {
+        throw new Error(`${path} doesn't export serverModule`);
+    }
+    return module;
+});
 
 // The tools of all modules for the AI assistants (the operations with AI metadata), scoped to the user
 export function createTools(userId: string): Record<string, AppTool> {

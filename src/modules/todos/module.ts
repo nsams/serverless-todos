@@ -1,15 +1,35 @@
+import { parseResponse } from "hono/client";
+import { lazy } from "react";
+
+import { defaultCollectionPage } from "~/components/DefaultRedirect";
 import type { AppModule } from "~/modules/types";
 
+import { todosClient } from "./api";
 import { ListsNavigation } from "./components/ListsNavigation";
 import { todosModuleId } from "./moduleId";
 import { listsQuery } from "./queries";
+import { listRoute, listsRoute, todoRoute } from "./routes";
 
-// The todos module (todo lists and todos), app shell part. Server part: module.server.ts; routes: routes/ (/lists, /lists/$listId).
+// The todos module (todo lists and todos), app shell part. Server part: module.server.ts (REST API: api.server.ts);
+// pages: routes.ts (/lists, /lists/:listId, /lists/:listId/:todoId).
 export const todosModule: AppModule = {
     id: todosModuleId,
+    pages: [
+        {
+            path: listsRoute.path,
+            Component: defaultCollectionPage({
+                moduleId: todosModuleId,
+                collectionsQuery: listsQuery,
+                createDefault: () => parseResponse(todosClient.lists.default.$post()),
+                href: (listId) => listRoute.href({ listId }),
+            }),
+        },
+        // the pages' code is loaded when they are opened
+        { path: listRoute.path, Component: lazy(() => import("./pages/ListPage")) },
+        { path: todoRoute.path, Component: lazy(() => import("./pages/TodoPage")) },
+    ],
     navigation: {
         title: "Todo lists",
-        prefetch: (queryClient) => queryClient.prefetchQuery(listsQuery),
         Component: ListsNavigation,
     },
     chat: {

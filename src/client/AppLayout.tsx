@@ -1,59 +1,36 @@
 import { Chatbot, Hamburger, Logout } from "@dextinity/admin-icons";
-import {
-    AppBar,
-    Box,
-    CircularProgress,
-    Divider,
-    Drawer,
-    IconButton,
-    LinearProgress,
-    ListSubheader,
-    Skeleton,
-    Toolbar,
-    Typography,
-} from "@mui/material";
-import { queryOptions, useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { AppBar, Box, CircularProgress, Divider, Drawer, IconButton, ListSubheader, Toolbar, Typography } from "@mui/material";
+import { queryOptions, useQuery } from "@tanstack/react-query";
+import { parseResponse } from "hono/client";
 import { Fragment, lazy, Suspense, useState } from "react";
+import { Outlet } from "react-router";
 
+import { userClient } from "~/api/client";
 import { appName } from "~/app";
 import { appModules } from "~/modules/registry";
-import { getCurrentUser } from "~/user.functions";
 
-// Layout of the app pages: app bar and the navigation of the modules in a sidebar
-export const Route = createFileRoute("/_app")({
-    // The app's pages are rendered in the browser only, their data is still loaded on the server (in the same request, sent with the
-    // page). An app behind Cloudflare Access gains nothing from rendering them on the server (no search engines, the user waits for the
-    // scripts anyway), it would only cost CPU time per page view and need hydration-safe components: e.g. dates formatted in the
-    // user's time zone (the grids' date columns, useToday) would differ between the server and the browser.
-    ssr: "data-only",
-    loader: async ({ context: { queryClient }, cause }) => {
-        // Not awaited: the page doesn't wait for the sidebar, each module's navigation is shown when its data is there. Only when the
-        // app is opened: then the navigation queries keep themselves up to date (reloaded with their module's data, or when stale and
-        // shown again), so the loaders running again (e.g. after a change in one module) don't reload every module's navigation.
-        if (cause === "enter") {
-            for (const { navigation } of appModules) {
-                void navigation?.prefetch(queryClient);
-            }
-        }
-        await queryClient.ensureQueryData(userQuery);
-    },
-    component: AppLayout,
-    // the server's response, until the page is rendered in the browser
-    pendingComponent: () => <LinearProgress />,
+import { PageErrorBoundary, PageLoading } from "./errors";
+
+// Layout of the app pages: app bar and the navigation of the modules in a sidebar. The layout stays mounted while navigating
+// between the pages, so its data (the user, the sidebar's data loaded by the modules' navigation components) isn't reloaded by
+// navigations, only when its queries are invalidated (e.g. after creating a list).
+
+const userQuery = queryOptions({
+    queryKey: ["user"],
+    queryFn: () => parseResponse(userClient.user.$get()),
+    // doesn't change while the app is open
+    staleTime: Infinity,
 });
-
-// The authenticated user (doesn't change while the app is open)
-const userQuery = queryOptions({ queryKey: ["user"], queryFn: () => getCurrentUser(), staleTime: Infinity });
 
 const drawerWidth = 260;
 const chatWidth = 420;
 
-// loaded on first open: the chat (MUI X Chat, Agents SDK client) is only needed in the browser
+// loaded on first open: the chat (MUI X Chat, Agents SDK client) is a large part of the app's code
 const ChatPanel = lazy(() => import("~/components/ChatPanel"));
 
-function AppLayout() {
-    const { data: user } = useSuspenseQuery(userQuery);
+export function AppLayout() {
+    // shown once loaded, the layout doesn't wait for it
+    const { data: user } = useQuery(userQuery);
     const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
     const [chatOpen, setChatOpen] = useState(false);
     // stays mounted once opened, so the conversation (and a running answer) survives closing the panel
@@ -76,9 +53,7 @@ function AppLayout() {
                             <ListSubheader component="h2" disableSticky sx={{ pt: 1, lineHeight: 2.5 }}>
                                 {navigation.title}
                             </ListSubheader>
-                            <Suspense fallback={<NavigationSkeleton />}>
-                                <navigation.Component onNavigate={() => setMobileDrawerOpen(false)} />
-                            </Suspense>
+                            <navigation.Component onNavigate={() => setMobileDrawerOpen(false)} />
                         </Fragment>
                     ),
             )}
@@ -101,7 +76,7 @@ function AppLayout() {
                     <Typography variant="h6" sx={{ flexGrow: 1 }}>
                         {appName}
                     </Typography>
-                    <Typography sx={{ mr: 1, display: { xs: "none", sm: "block" } }}>{user.email}</Typography>
+                    <Typography sx={{ mr: 1, display: { xs: "none", sm: "block" } }}>{user?.email}</Typography>
                     <IconButton color="inherit" aria-label="Assistant" aria-pressed={chatOpen} onClick={toggleChat}>
                         <Chatbot />
                     </IconButton>
@@ -127,7 +102,13 @@ function AppLayout() {
             {/* on wide screens the open chat takes space from the page instead of covering it */}
             <Box component="main" sx={{ flexGrow: 1, minWidth: 0, mr: { lg: chatOpen ? `${chatWidth}px` : 0 } }}>
                 <Toolbar />
-                <Outlet />
+                {/* errors of the pages (e.g. a list that doesn't exist (anymore)) are shown in the layout */}
+                <PageErrorBoundary>
+                    {/* while a page's code or data is loading for the first time (see usePageQuery) */}
+                    <Suspense fallback={<PageLoading />}>
+                        <Outlet />
+                    </Suspense>
+                </PageErrorBoundary>
             </Box>
             <Drawer anchor="right" variant="persistent" open={chatOpen} sx={{ "& .MuiDrawer-paper": { width: { xs: "100%", sm: chatWidth } } }}>
                 {/* space for the app bar */}
@@ -144,17 +125,6 @@ function AppLayout() {
                     </Suspense>
                 )}
             </Drawer>
-        </Box>
-    );
-}
-
-// Shown while a module's navigation data is loading
-function NavigationSkeleton() {
-    return (
-        <Box sx={{ px: 2, py: 1 }}>
-            {[0, 1, 2].map((index) => (
-                <Skeleton key={index} height={40} />
-            ))}
         </Box>
     );
 }

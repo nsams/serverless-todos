@@ -4,7 +4,7 @@ import type { z } from "zod";
 import type { ChatPage, ChatPageDefinition } from "./chatPage";
 
 // The page the user is looking at (src/chat/chatPage.ts), reported by the pages and read by the chat panel. Independent of the router:
-// the root route renders ChatPageProvider around the pages and the chat panel.
+// AppRoutes (src/client/AppRoutes.tsx) renders ChatPageProvider around the pages and the chat panel.
 
 type ChatPageStore = {
     get: () => ChatPage | undefined;
