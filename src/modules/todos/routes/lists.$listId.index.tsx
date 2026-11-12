@@ -1,9 +1,9 @@
-import { Add, Delete, Move, Warning } from "@dextinity/admin-icons";
+import { Add, Delete, Edit, Move, Warning } from "@dextinity/admin-icons";
 import { Box, Button, Checkbox, Container, Paper, Stack, TextField } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import { DataGridPro, getGridBooleanOperators, getGridDateOperators, getGridStringOperators, GridActionsCellItem } from "@mui/x-data-grid-pro";
 import { type FormEvent, useState } from "react";
-import { href } from "react-router";
+import { href, useNavigate } from "react-router";
 
 import { appName } from "~/app";
 import { useChatPage } from "~/chat/useChatPage";
@@ -17,6 +17,7 @@ import { type GridColumns, supportedOperators, validateGridSearch } from "~/grid
 import { revalidateOnChangesOf } from "~/modules/client";
 import type { OperationInput } from "~/operations";
 import { loadGridOperation } from "~/routeOperations.server";
+import { stringifySearch } from "~/searchParams";
 
 import { todosChatPage } from "../chatPage";
 import { useLists, useTodoOperations } from "../client";
@@ -25,7 +26,7 @@ import { todosModuleId } from "../moduleId";
 import { todoOperations, type TodoView } from "../operations.server";
 import { isOverdue } from "../overdue";
 import { todoFields } from "../todoSearch";
-import type { Route } from "./+types/lists.$listId";
+import type { Route } from "./+types/lists.$listId.index";
 
 // The todos of a list (one page, sorted and filtered as in the URL)
 export async function loader({ params: { listId }, url, context }: Route.LoaderArgs) {
@@ -41,8 +42,9 @@ export default function Todos({ loaderData: { list, todos, totalCount } }: Route
     const { run, runAndNavigate } = useTodoOperations();
     const showError = useShowError();
     const mutate = useMutate();
+    const navigate = useNavigate();
     const today = useToday();
-    const { updateSearch, gridProps } = useServerGrid({
+    const { search, updateSearch, gridProps } = useServerGrid({
         validateSearch: validateGridSearch,
         fields: todoFields,
         rowCount: totalCount,
@@ -116,6 +118,13 @@ export default function Todos({ loaderData: { list, todos, totalCount } }: Route
             field: "actions",
             type: "actions",
             getActions: ({ row }) => [
+                <GridActionsCellItem
+                    key="edit"
+                    icon={<Edit />}
+                    label="Edit"
+                    // the detail page keeps the grid's state for its back link
+                    onClick={() => void navigate(href("/lists/:listId/:todoId", { listId: list.id, todoId: row.id }) + stringifySearch(search))}
+                />,
                 <GridActionsCellItem key="delete" icon={<Delete />} label="Delete" onClick={() => void mutate(run("deleteTodo", { id: row.id }))} />,
                 ...lists
                     .filter((otherList) => otherList.id !== list.id)

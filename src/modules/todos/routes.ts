@@ -6,5 +6,6 @@ const { index, prefix, route } = relative(import.meta.dirname);
 export default prefix("lists", [
     // redirects to the user's first list
     index("routes/lists.index.tsx"),
-    route(":listId", "routes/lists.$listId.tsx"),
+    route(":listId", "routes/lists.$listId.index.tsx"),
+    route(":listId/:todoId", "routes/lists.$listId.$todoId.tsx"),
 ]);

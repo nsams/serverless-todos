@@ -46,6 +46,7 @@ export default defineConfig({
             "@mui/material/styles",
             "@mui/x-data-grid-pro",
             "zod",
+            "react-hook-form",
             "markdown-to-jsx/react",
             "@cloudflare/ai-chat/react",
             "@mui/x-chat",
