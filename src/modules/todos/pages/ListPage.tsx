@@ -1,9 +1,10 @@
-import { Add, Delete, Move, Warning } from "@dextinity/admin-icons";
+import { Add, Delete, Edit, Move, Warning } from "@dextinity/admin-icons";
 import { Box, Button, Checkbox, Container, Paper, Stack, TextField } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import { DataGridPro, getGridBooleanOperators, getGridDateOperators, getGridStringOperators, GridActionsCellItem } from "@mui/x-data-grid-pro";
 import { type InferRequestType, type InferResponseType, parseResponse } from "hono/client";
 import { type FormEvent, useState } from "react";
+import { useNavigate } from "react-router";
 
 import { useChatPage } from "~/chat/useChatPage";
 import { useInvalidateModule, usePageQuery } from "~/client/queries";
@@ -22,12 +23,13 @@ import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from 
 import { todosModuleId } from "../moduleId";
 import { isOverdue } from "../overdue";
 import { todosQuery, useLists } from "../queries";
-import { listRoute, listsRoute } from "../routes";
+import { listRoute, listsRoute, todoRoute } from "../routes";
 import { todoFields } from "../todoSearch";
 
 type Todo = InferResponseType<(typeof todosClient.lists)[":listId"]["todos"]["$get"], 200>["todos"][number];
 
-// The todos of a list in a grid (pagination, sorting, filtering on the server, state in the URL), see listRoute
+// The todos of a list in a grid (pagination, sorting, filtering on the server, state in the URL), see listRoute; the edit action opens
+// a todo's detail page (TodoPage.tsx), which keeps the grid state for its back link
 export default function ListPage() {
     const { listId } = listRoute.useParams();
     const search = listRoute.useSearch();
@@ -39,6 +41,7 @@ export default function ListPage() {
     const invalidate = useInvalidateModule(todosModuleId);
     const showError = useShowError();
     const mutate = useMutate(todosModuleId);
+    const navigate = useNavigate();
     const today = useToday();
     const { updateSearch, gridProps } = useServerGrid({
         search,
@@ -121,6 +124,13 @@ export default function ListPage() {
             field: "actions",
             type: "actions",
             getActions: ({ row }) => [
+                <GridActionsCellItem
+                    key="edit"
+                    icon={<Edit />}
+                    label="Edit"
+                    // the detail page keeps the grid's state for its back link
+                    onClick={() => void navigate(todoRoute.href({ listId: list.id, todoId: row.id }, search))}
+                />,
                 <GridActionsCellItem
                     key="delete"
                     icon={<Delete />}

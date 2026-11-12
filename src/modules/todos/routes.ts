@@ -8,3 +8,6 @@ export const listsRoute = defineRoute({ path: "/lists" });
 
 // The todos of a list in a grid (pagination, sorting, filtering on the server, state in the URL)
 export const listRoute = defineRoute({ path: "/lists/:listId", validateSearch: validateGridSearch });
+
+// A todo's detail page (a form). The search params are the state of the list's grid, kept for the back link.
+export const todoRoute = defineRoute({ path: "/lists/:listId/:todoId", validateSearch: validateGridSearch });

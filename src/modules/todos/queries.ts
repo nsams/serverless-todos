@@ -25,3 +25,11 @@ export function todosQuery({ listId, ...search }: OperationInput<typeof todoOper
         queryFn: () => parseResponse(todosClient.lists[":listId"].todos.$get({ param: { listId }, query: search })),
     });
 }
+
+// A todo (its detail page)
+export function todoQuery(id: string) {
+    return queryOptions({
+        queryKey: [todosModuleId, "todo", id],
+        queryFn: () => parseResponse(todosClient.todos[":id"].$get({ param: { id } })),
+    });
+}

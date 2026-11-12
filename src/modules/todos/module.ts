@@ -8,10 +8,10 @@ import { todosClient } from "./api";
 import { ListsNavigation } from "./components/ListsNavigation";
 import { todosModuleId } from "./moduleId";
 import { listsQuery } from "./queries";
-import { listRoute, listsRoute } from "./routes";
+import { listRoute, listsRoute, todoRoute } from "./routes";
 
 // The todos module (todo lists and todos), app shell part. Server part: module.server.ts (REST API: api.server.ts);
-// pages: routes.ts (/lists, /lists/:listId).
+// pages: routes.ts (/lists, /lists/:listId, /lists/:listId/:todoId).
 export const todosModule: AppModule = {
     id: todosModuleId,
     pages: [
@@ -24,8 +24,9 @@ export const todosModule: AppModule = {
                 href: (listId) => listRoute.href({ listId }),
             }),
         },
-        // the page's code is loaded when it is opened
+        // the pages' code is loaded when they are opened
         { path: listRoute.path, Component: lazy(() => import("./pages/ListPage")) },
+        { path: todoRoute.path, Component: lazy(() => import("./pages/TodoPage")) },
     ],
     navigation: {
         title: "Todo lists",
