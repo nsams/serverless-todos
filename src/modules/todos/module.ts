@@ -3,16 +3,18 @@ import { NoContent } from "~/routes/root";
 
 import { todosModuleId } from "./moduleId";
 import { listsNavigation } from "./navigation";
-import { listRoute, listsRoute } from "./routes";
+import { listRoute, listsRoute, todoRoute } from "./routes";
 
-// The todos module (todo lists and todos), app shell part. Server part: module.server.ts; routes: routes.ts (/lists, /lists/:listId).
+// The todos module (todo lists and todos), app shell part. Server part: module.server.ts; routes: routes.ts (/lists, /lists/:listId,
+// /lists/:listId/:todoId).
 export const todosModule: AppModule = {
     id: todosModuleId,
     routes: [
         // only redirects
         { ...listsRoute.route, Component: NoContent },
-        // the page is loaded with the route (code splitting), its loader doesn't wait for it
+        // the pages are loaded with their route (code splitting), the loaders don't wait for them
         { ...listRoute.route, lazy: () => import("./pages/list") },
+        { ...todoRoute.route, lazy: () => import("./pages/todo") },
     ],
     navigation: listsNavigation,
     chat: {

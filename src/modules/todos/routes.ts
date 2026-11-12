@@ -18,7 +18,8 @@ export const listsRoute = defineRoute({
     },
 });
 
-// The todos of a list (pages/list.tsx). The grid state (pagination, sorting, filtering) lives in the URL.
+// The todos of a list (pages/list.tsx). The grid state (pagination, sorting, filtering) lives in the URL. A todo opens on its detail page
+// (todoRoute), which keeps the grid state for its back link.
 export const listRoute = defineRoute({
     path: "/lists/:listId",
     validateSearch: validateGridSearch,
@@ -31,4 +32,13 @@ export const listRoute = defineRoute({
         }
         return result;
     },
+});
+
+// A todo's detail page (pages/todo.tsx). The search params are the state of the list's grid, kept for the back link. Deliberately no
+// redirect when the todo is in another list than the URL's (unlike the note page): it would race with saving and leaving the page from
+// the "Save changes?" dialog (the reload after saving would redirect instead of leaving); the page itself follows a move made with its form.
+export const todoRoute = defineRoute({
+    path: "/lists/:listId/:todoId",
+    validateSearch: validateGridSearch,
+    loader: ({ params: { todoId }, request: { signal } }) => todosApi.getTodo.query({ id: todoId }, { signal }),
 });
