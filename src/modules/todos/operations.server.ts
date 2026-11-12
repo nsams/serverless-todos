@@ -5,7 +5,7 @@ import { NotFoundError } from "~/errors";
 import { defineOperation, type Operations } from "~/operations";
 
 import { getListRepository, type List } from "./db/lists.server";
-import { getTodoRepository, type Todo } from "./db/todos.server";
+import { getTodoRepository, type Todo, type TodoHistoryEntry } from "./db/todos.server";
 import { maxListNameLength, maxTodoDescriptionLength, maxTodoTitleLength } from "./limits";
 import { parseTodoSearch, todoSearchSchema } from "./todoSearch";
 
@@ -30,6 +30,10 @@ function todoView({ id, listId, title, description, dueDate, done, createdAt }: 
 }
 
 export type TodoView = ReturnType<typeof todoView>;
+
+function todoHistoryEntryView({ id, action, source, changes, createdAt }: TodoHistoryEntry) {
+    return { id, action, source, changes, createdAt };
+}
 
 async function getList(userId: string, listId: string) {
     const list = await getListRepository().get(userId, listId);
@@ -106,6 +110,24 @@ export const todoOperations = {
             return todoView(todo);
         },
     }),
+    // A todo's history (its detail page, the assistant): who changed what when
+    getTodoHistory: defineOperation({
+        input: z.object({ id: z.string() }),
+        effect: "read",
+        ai: {
+            title: "Get todo history",
+            description:
+                'Returns the history of a todo, newest entry first: when it was created and every change, with the old and new value of each changed field (listId: the list it was moved from/to) and where the change was made (source: "app" = the user in the app, "chat" = the chat assistant, "mcp" = an external AI client, null = unknown).',
+        },
+        handler: async ({ userId }, { id }) => {
+            const repository = getTodoRepository();
+            const [todo, history] = await Promise.all([repository.get(userId, id), repository.history(userId, id)]);
+            if (!todo) {
+                throw new NotFoundError(`Todo ${id} not found`);
+            }
+            return history.map(todoHistoryEntryView);
+        },
+    }),
     findTodos: defineOperation({
         input: z.object({
             listId: z.string().optional().describe("Only todos of this list"),
@@ -136,8 +158,8 @@ export const todoOperations = {
         }),
         effect: "write",
         ai: { title: "Create todo", description: "Creates a todo in a list." },
-        handler: async ({ userId }, { listId, ...values }) => {
-            const todo = await getTodoRepository().create(userId, listId, values);
+        handler: async ({ userId, source }, { listId, ...values }) => {
+            const todo = await getTodoRepository().create(userId, listId, values, source);
             if (!todo) {
                 throw new NotFoundError(`List ${listId} not found`);
             }
@@ -159,12 +181,12 @@ export const todoOperations = {
             description:
                 "Updates a todo: change title, description or due date, mark it as done or open again, or move it to another list. Omitted fields stay unchanged.",
         },
-        handler: async ({ userId }, { id, ...values }) => {
+        handler: async ({ userId, source }, { id, ...values }) => {
             if (values.listId !== undefined) {
                 // tells a missing target list from a missing todo
                 await getList(userId, values.listId);
             }
-            const todo = await getTodoRepository().update(userId, id, values);
+            const todo = await getTodoRepository().update(userId, id, values, source);
             if (!todo) {
                 throw new NotFoundError(`Todo ${id} not found`);
             }

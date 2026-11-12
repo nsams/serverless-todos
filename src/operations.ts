@@ -9,8 +9,11 @@ import type { AppTool } from "./modules/types";
 // So there is one input schema, one existence check and one error semantics per operation. Independent of the API layer and the
 // AI framework: an operation is plain data plus a handler, it doesn't import anything stack-specific.
 
-// Who calls the operation: the authenticated user (never chosen by the client or the model)
-export type OperationContext = { userId: string };
+// Where an operation is called from: the app (its REST API), the chat assistant or an MCP client (e.g. recorded in a todo's history)
+export type OperationSource = "app" | "chat" | "mcp";
+
+// Who calls the operation: the authenticated user (never chosen by the client or the model) and from where
+export type OperationContext = { userId: string; source: OperationSource };
 
 // read: doesn't change data; write: creates or changes data; delete: deletes data (the AI assistants ask the user to confirm)
 export type OperationEffect = "read" | "write" | "delete";

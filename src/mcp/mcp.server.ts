@@ -20,7 +20,7 @@ const annotations: Record<AppTool["effect"], ToolAnnotations> = {
 
 function createMcpServer(userId: string) {
     const server = new McpServer({ name: "serverless-todos", title: appName, version: "1.0.0" }, { instructions: toolsInstructions.join("\n") });
-    for (const [name, { title, description, inputSchema, effect, execute }] of Object.entries(createTools(userId))) {
+    for (const [name, { title, description, inputSchema, effect, execute }] of Object.entries(createTools({ userId, source: "mcp" }))) {
         server.registerTool(name, { title, description, inputSchema, annotations: { title, ...annotations[effect] } }, async (input: unknown) => {
             try {
                 const result = await execute(input);

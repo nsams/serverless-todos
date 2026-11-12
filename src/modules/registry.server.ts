@@ -1,5 +1,5 @@
 import type { ChatPage } from "~/chat/chatPage";
-import { toolsFromOperations } from "~/operations";
+import { type OperationContext, toolsFromOperations } from "~/operations";
 
 import type { AppTool, ServerModule } from "./types";
 
@@ -14,11 +14,11 @@ export const serverModules = Object.entries(
     return module;
 });
 
-// The tools of all modules for the AI assistants (the operations with AI metadata), scoped to the user
-export function createTools(userId: string): Record<string, AppTool> {
+// The tools of all modules for the AI assistants (the operations with AI metadata), scoped to the user (ctx: the user and the assistant)
+export function createTools(ctx: OperationContext): Record<string, AppTool> {
     const tools: Record<string, AppTool> = {};
     for (const module of serverModules) {
-        for (const [name, tool] of Object.entries(toolsFromOperations(module.id, module.operations, { userId }))) {
+        for (const [name, tool] of Object.entries(toolsFromOperations(module.id, module.operations, ctx))) {
             if (Object.hasOwn(tools, name)) {
                 throw new Error(`Tool ${name} is defined by more than one module`);
             }

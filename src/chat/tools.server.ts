@@ -6,7 +6,7 @@ import { createTools } from "~/modules/registry.server";
 // onChange: called with the module's id after a tool changed data (effect write or delete), so the client can reload that module's data.
 export function createChatTools(userId: string, onChange: (module: string) => void): ToolSet {
     return Object.fromEntries(
-        Object.entries(createTools(userId)).map(([name, { module, description, inputSchema, effect, execute }]) => [
+        Object.entries(createTools({ userId, source: "chat" })).map(([name, { module, description, inputSchema, effect, execute }]) => [
             name,
             tool({
                 description,

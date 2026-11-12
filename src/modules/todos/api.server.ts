@@ -16,5 +16,6 @@ export const todosApi = createApi()
     .on(...operationRoute("GET", "/lists/:listId/todos", todoOperations.listTodos))
     .on(...operationRoute("POST", "/lists/:listId/todos", todoOperations.createTodo))
     .on(...operationRoute("GET", "/todos/:id", todoOperations.getTodo))
+    .on(...operationRoute("GET", "/todos/:id/history", todoOperations.getTodoHistory))
     .on(...operationRoute("PATCH", "/todos/:id", todoOperations.updateTodo))
     .on(...operationRoute("DELETE", "/todos/:id", todoOperations.deleteTodo));

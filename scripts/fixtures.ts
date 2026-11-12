@@ -1,7 +1,7 @@
 import { drizzle } from "drizzle-orm/sqlite-proxy";
 
 import { notebooks, notes } from "../src/modules/notes/db/schema.ts";
-import { lists, todos } from "../src/modules/todos/db/schema.ts";
+import { lists, todoHistory, todos } from "../src/modules/todos/db/schema.ts";
 
 // Test data for Worker Previews and local development (`npm run db:seed`): lists with todos and notebooks with notes for each given user.
 // Due dates are relative to today, so there are always overdue, due and upcoming todos.
@@ -113,6 +113,7 @@ export function createFixtures(userId: string, now = new Date()) {
     const result = {
         lists: [] as Array<typeof lists.$inferInsert>,
         todos: [] as Array<typeof todos.$inferInsert>,
+        todoHistory: [] as Array<typeof todoHistory.$inferInsert>,
         notebooks: [] as Array<typeof notebooks.$inferInsert>,
         notes: [] as Array<typeof notes.$inferInsert>,
     };
@@ -122,15 +123,29 @@ export function createFixtures(userId: string, now = new Date()) {
         const listId = crypto.randomUUID();
         result.lists.push({ id: listId, userId, name: fixtureList.name, createdAt: new Date(createdAt++) });
         for (const todo of fixtureList.todos) {
-            result.todos.push({
-                id: crypto.randomUUID(),
-                userId,
-                listId,
+            const values = {
                 title: todo.title,
                 description: todo.description ?? "",
                 dueDate: todo.dueInDays !== undefined ? dateInDays(todo.dueInDays, now) : null,
                 done: todo.done ?? false,
-                createdAt: new Date(createdAt++),
+            };
+            const todoId = crypto.randomUUID();
+            const todoCreatedAt = new Date(createdAt++);
+            result.todos.push({ id: todoId, userId, listId, ...values, createdAt: todoCreatedAt });
+            // created in the app (done todos as if created done, the history has no separate change for it)
+            result.todoHistory.push({
+                userId,
+                todoId,
+                action: "created",
+                source: "app",
+                changes: {
+                    title: { to: values.title },
+                    description: { to: values.description },
+                    dueDate: { to: values.dueDate },
+                    done: { to: values.done },
+                    listId: { to: listId },
+                },
+                createdAt: todoCreatedAt,
             });
         }
     }
@@ -188,6 +203,7 @@ export function createFixturesSql(emails: string[]) {
         const fixtures = createFixtures(email.trim().toLowerCase());
         statements.push(toPlainSql(db.insert(lists).values(fixtures.lists).toSQL()));
         statements.push(toPlainSql(db.insert(todos).values(fixtures.todos).toSQL()));
+        statements.push(toPlainSql(db.insert(todoHistory).values(fixtures.todoHistory).toSQL()));
         statements.push(toPlainSql(db.insert(notebooks).values(fixtures.notebooks).toSQL()));
         statements.push(toPlainSql(db.insert(notes).values(fixtures.notes).toSQL()));
     }

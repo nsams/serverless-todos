@@ -37,3 +37,37 @@ export const todos = sqliteTable(
     },
     (table) => [index("todos_list_id_idx").on(table.listId)],
 );
+
+// The fields of a todo whose changes are recorded in its history
+export type TodoHistoryValues = {
+    title: string;
+    description: string;
+    dueDate: string | null;
+    done: boolean;
+    listId: string;
+};
+
+// The changed fields of a history entry: old and new value. A "created" entry has the todo's initial values (no `from`).
+export type TodoFieldChanges = { [Field in keyof TodoHistoryValues]?: { from?: TodoHistoryValues[Field]; to: TodoHistoryValues[Field] } };
+
+// The history of a todo: one entry per creation and per change (written together with the change, see todos.server.ts).
+// Deleted with the todo (and so with its list).
+export const todoHistory = sqliteTable(
+    "todo_history",
+    {
+        // ascending: the order of the entries, also within the same millisecond
+        id: integer().primaryKey({ autoIncrement: true }),
+        userId: text().notNull(),
+        todoId: text()
+            .notNull()
+            .references(() => todos.id, { onDelete: "cascade" }),
+        action: text({ enum: ["created", "updated"] }).notNull(),
+        // where the change was made (OperationSource in src/operations.ts); null: unknown (todos created before the history existed)
+        source: text({ enum: ["app", "chat", "mcp"] }),
+        changes: text({ mode: "json" }).$type<TodoFieldChanges>().notNull(),
+        createdAt: integer({ mode: "timestamp_ms" })
+            .notNull()
+            .$defaultFn(() => new Date()),
+    },
+    (table) => [index("todo_history_todo_id_idx").on(table.todoId)],
+);

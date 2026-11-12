@@ -33,3 +33,11 @@ export function todoQuery(id: string) {
         queryFn: () => parseResponse(todosClient.todos[":id"].$get({ param: { id } })),
     });
 }
+
+// A todo's history, newest entry first (its detail page). Reloaded with the module's data, e.g. after the todo was saved.
+export function todoHistoryQuery(id: string) {
+    return queryOptions({
+        queryKey: [todosModuleId, "todoHistory", id],
+        queryFn: () => parseResponse(todosClient.todos[":id"].history.$get({ param: { id } })),
+    });
+}

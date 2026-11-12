@@ -29,6 +29,7 @@ import { errorMessage, NotFoundError } from "~/errors";
 
 import { todosClient } from "../api";
 import { todosChatPage } from "../chatPage";
+import { TodoHistory } from "../components/TodoHistory";
 import { maxTodoDescriptionLength, maxTodoTitleLength } from "../limits";
 import { todosModuleId } from "../moduleId";
 import { listsQuery, todoQuery, useLists } from "../queries";
@@ -59,6 +60,7 @@ function TodoLoader() {
         <TodoPageLayout>
             {/* a fresh form per todo */}
             <TodoForm key={todo.id} todo={todo} />
+            <TodoHistory todoId={todo.id} />
         </TodoPageLayout>
     );
 }

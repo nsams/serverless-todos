@@ -47,7 +47,7 @@ export function operationRoute<const M extends Method, const Path extends string
         path,
         async (c) => {
             const input = method === "GET" ? parseSearch(new URL(c.req.url).search) : await readJson(c.req.raw);
-            const result = await runOperation(operation, { userId: c.var.user.id }, { ...input, ...c.req.param() });
+            const result = await runOperation(operation, { userId: c.var.user.id, source: "app" }, { ...input, ...c.req.param() });
             // c.json's type doesn't know the operation's output type (a type parameter)
             return c.json(result) as unknown as Awaited<RouteResponse<Op>>;
         },
